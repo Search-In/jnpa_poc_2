@@ -1,0 +1,83 @@
+# JNPA UC2 — AWS single-EC2 demo overlay.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+#
+# Differences from the local compose (docker-compose.yml):
+#   • adds the `web` service (nginx serving the Vite build + proxying /gateway)
+#   • drops the host-side port clashes (5433/9002) — only :80 is published; the
+#     gateway/db/etc. stay on the internal compose network
+#   • restart: unless-stopped on every service (survives reboots)
+#   • pulls JWT_DEV_SECRET (and any future live creds) from .env, not hardcoded
+#   • the web bundle is built in `live` mode so the dashboard exercises the
+#     gateway round-trip. Set WEB_DATA_MODE=mock to ship a 100%-client-side demo
+#     (then the gateway/connectors/AI containers are optional).
+#
+# .env (next to this file, gitignored) supplies: JWT_DEV_SECRET, WEB_DATA_MODE,
+# and the live-onboarding creds when DATA_MODE flips to live.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        DATA_MODE: ${WEB_DATA_MODE:-live}
+    ports:
+      - "80:80"
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+  gateway:
+    environment:
+      DATA_MODE: ${DATA_MODE:-mock}
+      GATEWAY_PORT: "8080"
+      KAFKA_BROKERS: redpanda:29092
+      PG_URL: postgresql://jnpa:${POSTGRES_PASSWORD:-jnpa}@postgres:5432/jnpa_uc2
+      JWT_DEV_SECRET: ${JWT_DEV_SECRET:?set JWT_DEV_SECRET in .env}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-jnpa-uc2}
+    # No host port published — the browser reaches the gateway only via nginx /gateway.
+    ports: !reset []
+    restart: unless-stopped
+
+  postgres:
+    environment:
+      POSTGRES_USER: jnpa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jnpa}
+      POSTGRES_DB: jnpa_uc2
+    # Keep Postgres internal to the compose network on the EC2 box.
+    ports: !reset []
+    restart: unless-stopped
+
+  redpanda:
+    ports: !reset []
+    restart: unless-stopped
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: !reset []
+    restart: unless-stopped
+
+  connector-ulip:
+    restart: unless-stopped
+  connector-icegate:
+    restart: unless-stopped
+  connector-tos:
+    restart: unless-stopped
+  connector-fois:
+    restart: unless-stopped
+  connector-eseal:
+    restart: unless-stopped
+  connector-shipline:
+    restart: unless-stopped
+
+  ai-dwell:
+    restart: unless-stopped
+  ai-gate-queue:
+    restart: unless-stopped
+  ai-rake-tat:
+    restart: unless-stopped
+  ai-anomaly:
+    restart: unless-stopped

@@ -6,7 +6,7 @@
   "threshold": 0.85,
   "passed": true,
   "n_test": 400,
-  "trained_at": "2026-06-17T12:52:56.751438+00:00",
+  "trained_at": "2026-06-17T13:36:18.731302+00:00",
   "feature_list": [
     "trail_json"
   ],

@@ -6,7 +6,7 @@
   "threshold": 2.0,
   "passed": true,
   "n_test": 500,
-  "trained_at": "2026-06-17T12:52:56.665293+00:00",
+  "trained_at": "2026-06-17T13:36:18.645670+00:00",
   "feature_list": [
     "siding",
     "cto_idx",
