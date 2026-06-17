@@ -1,0 +1,19 @@
+{
+  "model": "container-dwell-predictor",
+  "algorithm": "HistGradientBoostingRegressor (GBM; prod=LightGBM)",
+  "metric": "MAE",
+  "value": 3.47,
+  "threshold": 8.0,
+  "passed": true,
+  "n_test": 800,
+  "trained_at": "2026-06-17T13:16:01.661929+00:00",
+  "feature_list": [
+    "stream_idx",
+    "line_idx",
+    "arrival_cadence_h",
+    "customs_flag",
+    "reefer",
+    "facility_load"
+  ],
+  "version": "0.1.0"
+}

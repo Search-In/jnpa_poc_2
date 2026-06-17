@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+coverage/
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ML model artifacts (versioned out-of-band; metrics.json IS committed)
+services/ai/**/models/*.txt
+services/ai/**/models/*.bin
+services/ai/**/models/*.pkl
+services/ai/**/models/*.joblib
+!services/ai/**/models/.gitkeep
+
+# Env / secrets — only .env.example is committed
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Object store / data artifacts (raw EDI dumps in mock runs)
+data/object-store/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

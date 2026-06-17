@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CHSAIMessage>
+  <MessageType>LEO</MessageType>
+  <MessageId>ICESLEO0001</MessageId>
+  <CustodianCode>NSIGT</CustodianCode>
+  <Facility>NSIGT</Facility>
+  <DateTime>17-06-2026 09:45</DateTime>
+  <Container>
+    <ContainerNo>TGHU6543213</ContainerNo>
+    <SealNo>ESEAL900123</SealNo>
+  </Container>
+</CHSAIMessage>

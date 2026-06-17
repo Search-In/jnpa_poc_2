@@ -1,0 +1,29 @@
+{
+  "name": "@jnpa/scenarios",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "What-if scenario engine (prompt §12) — CGO-1/2/3 + congestion/lane sim. Recomputes KPIs, fires automated actions, emits the cross-twin CGO-2→UC3 event.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@jnpa/schemas": "workspace:*",
+    "@jnpa/sim": "workspace:*",
+    "@jnpa/kpi": "workspace:*",
+    "@jnpa/data": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

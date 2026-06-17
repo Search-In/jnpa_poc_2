@@ -1,0 +1,128 @@
+# JNPA UC2 — local stack (prompt §16.2): gateway + connectors (sim mode) +
+# Kafka/Redpanda + Postgres/PostGIS + AI services. Everything runs in mock/sim
+# mode with zero external credentials. Host-port notes follow the machine quirks
+# (Homebrew postgres often owns 5432 → published on 5433).
+#
+#   docker compose up        # full sim stack
+#   (the dashboard `pnpm dev` runs separately, pointing at the gateway in live mode)
+
+name: jnpa-uc2
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:19092
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: jnpa
+      POSTGRES_PASSWORD: jnpa
+      POSTGRES_DB: jnpa_uc2
+    ports:
+      - "5433:5432"   # 5432 is often taken by host Homebrew postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./packages/schemas/src/ddl:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jnpa -d jnpa_uc2"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9002:9001"   # 9001 host is often MinIO console clash → 9002
+    volumes:
+      - miniodata:/data
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      DATA_MODE: mock
+      GATEWAY_PORT: "8080"
+      KAFKA_BROKERS: redpanda:29092
+      PG_URL: postgresql://jnpa:jnpa@postgres:5432/jnpa_uc2
+      JWT_DEV_SECRET: dev-only-insecure-change-me
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # --- connectors (sim mode) — one container per source -----------------------
+  connector-ulip: &connector
+    build:
+      context: .
+      dockerfile: services/connectors/Dockerfile
+    environment:
+      DATA_MODE: mock
+      CONNECTOR: ulip
+      KAFKA_BROKERS: redpanda:29092
+    depends_on:
+      redpanda:
+        condition: service_healthy
+  connector-icegate:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: icegate, KAFKA_BROKERS: redpanda:29092 }
+  connector-tos:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: tos, KAFKA_BROKERS: redpanda:29092 }
+  connector-fois:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: fois, FOIS_VIA_ULIP: "true", KAFKA_BROKERS: redpanda:29092 }
+  connector-eseal:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: eseal, KAFKA_BROKERS: redpanda:29092 }
+  connector-shipline:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: shipline, KAFKA_BROKERS: redpanda:29092 }
+
+  # --- AI services ------------------------------------------------------------
+  ai-dwell: &ai
+    build:
+      context: .
+      dockerfile: services/ai/Dockerfile
+    environment:
+      AI_MODEL: dwell-predictor
+    depends_on:
+      - gateway
+  ai-gate-queue:
+    <<: *ai
+    environment: { AI_MODEL: gate-queue-forecaster }
+  ai-rake-tat:
+    <<: *ai
+    environment: { AI_MODEL: rake-tat-forecaster }
+  ai-anomaly:
+    <<: *ai
+    environment: { AI_MODEL: event-anomaly-detector }
+
+volumes:
+  pgdata:
+  miniodata:

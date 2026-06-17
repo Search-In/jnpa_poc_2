@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CHSAIMessage>
+  <MessageType>BE_FLAGS</MessageType>
+  <MessageId>ICESBE0007</MessageId>
+  <CustodianCode>NSICT</CustodianCode>
+  <Facility>NSICT</Facility>
+  <DateTime>17-06-2026 07:30</DateTime>
+  <Container>
+    <ContainerNo>MAEU1234567</ContainerNo>
+    <DPDReady>Y</DPDReady>
+    <SelectedForScan>N</SelectedForScan>
+  </Container>
+  <Container>
+    <ContainerNo>BMOU1122330</ContainerNo>
+    <DPDReady>N</DPDReady>
+    <SelectedForScan>Y</SelectedForScan>
+  </Container>
+</CHSAIMessage>
