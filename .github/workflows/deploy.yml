@@ -61,11 +61,8 @@ jobs:
               DB_PASS="$(openssl rand -hex 16)"
               sed -i "s/change-me-postgres/${DB_PASS}/g" .env
               
-              MINIO_KEY="$(openssl rand -hex 16)"
-              sed -i "s/change-me-minio-key/${MINIO_KEY}/g" .env
-              
-              MINIO_SEC="$(openssl rand -hex 24)"
-              sed -i "s/change-me-minio-secret/${MINIO_SEC}/g" .env
+              MINIO_PASS="$(openssl rand -hex 24)"
+              sed -i "s/change-me-minio/${MINIO_PASS}/g" .env
               
               JWT_SEC="$(openssl rand -hex 32)"
               sed -i "s|^JWT_DEV_SECRET=.*|JWT_DEV_SECRET=${JWT_SEC}|" .env
