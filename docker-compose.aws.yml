@@ -24,6 +24,10 @@ services:
         DATA_MODE: ${WEB_DATA_MODE:-live}
     ports:
       - "80:80"
+      - "443:443"  # Open HTTPS port
+    volumes:
+      # Mount Let's Encrypt certificates from host to container
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - gateway
     restart: unless-stopped
