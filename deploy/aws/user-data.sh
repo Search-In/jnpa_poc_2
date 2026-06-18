@@ -9,6 +9,20 @@ set -euo pipefail
 
 log() { echo "[bootstrap] $*"; }
 
+# --- 0. Configure Swap Space (Prevents OOM during build) -------------------
+if [ ! -f /swapfile ]; then
+  log "creating 4GB swap file"
+  fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+  log "swap space configured successfully"
+else
+  log "swap file already exists"
+fi
+
+
 # --- 1. Docker engine + Git -------------------------------------------------
 if ! command -v docker >/dev/null 2>&1; then
   log "installing docker and git"

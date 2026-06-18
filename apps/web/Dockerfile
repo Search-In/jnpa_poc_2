@@ -8,6 +8,7 @@
 FROM node:22-slim AS build
 WORKDIR /app
 RUN corepack enable
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 ARG DATA_MODE=live
 ENV DATA_MODE=${DATA_MODE}
 COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
