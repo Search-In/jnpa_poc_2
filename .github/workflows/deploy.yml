@@ -27,6 +27,8 @@ jobs:
 
       - name: Build Workspace
         run: pnpm -r build
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Configure SSH Key
         run: |

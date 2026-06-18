@@ -25,7 +25,7 @@ export default defineConfig({
       },
     },
   },
-  build: { target: 'es2022', sourcemap: true },
+  build: { target: 'es2022', sourcemap: false },
   define: {
     // expose DATA_MODE to the client (mock by default)
     'import.meta.env.VITE_DATA_MODE': JSON.stringify(process.env.DATA_MODE ?? 'mock'),
