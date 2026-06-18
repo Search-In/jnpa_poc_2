@@ -1,0 +1,29 @@
+{
+  "name": "@jnpa/sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Schema-accurate simulators + seeded synthetic generators + CloudEvents contracts (prompt §1, §6, Addendum B). Deterministic for repeatable demos.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./generators": "./dist/generators/index.js",
+    "./events": "./dist/events/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@jnpa/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

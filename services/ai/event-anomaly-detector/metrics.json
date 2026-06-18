@@ -1,0 +1,14 @@
+{
+  "model": "event-anomaly-detector",
+  "algorithm": "rule engine + IsolationForest hybrid",
+  "metric": "precision",
+  "value": 1.0,
+  "threshold": 0.85,
+  "passed": true,
+  "n_test": 400,
+  "trained_at": "2026-06-17T13:36:18.731302+00:00",
+  "feature_list": [
+    "trail_json"
+  ],
+  "version": "0.1.0"
+}

@@ -1,0 +1,69 @@
+/**
+ * Design tokens (prompt §14: "no colour literals outside tokens.ts"). Every
+ * colour, severity hue, and traffic-light used by the dashboard and the map
+ * renderers comes from here. Aligned to the Calcite dark theme.
+ */
+export const tokens = {
+  color: {
+    bg: '#f4f6f9',
+    bgPanel: '#ffffff',
+    bgElevated: '#eef1f5',
+    border: '#d6dce4',
+    text: '#1b1f27',
+    textMuted: '#5b6675',
+    brand: '#1a73c2',
+    accent: '#0079c1',
+  },
+  // Health Card / degradation traffic lights (§6)
+  degradation: {
+    GREEN: '#2dbb6a',
+    AMBER: '#f2a93b',
+    RED: '#e04545',
+  },
+  // Integration mode badges (§6)
+  mode: {
+    LIVE: '#2dbb6a',
+    CACHED: '#f2a93b',
+    SYNTHETIC: '#7c8aff',
+  },
+  // Notification severity (§11)
+  severity: {
+    INFO: '#3aa0ff',
+    WARN: '#f2a93b',
+    CRIT: '#e04545',
+  },
+  // KPI improvement direction
+  kpi: {
+    better: '#2dbb6a',
+    worse: '#e04545',
+    neutral: '#9aa6b6',
+  },
+  // Facility-type unique values (Addendum A.1 Facilities layer)
+  facility: {
+    TERMINAL: '#1a73c2',
+    CFS: '#00a3a3',
+    ICD: '#7c8aff',
+    DPE: '#c77dff',
+    DPD: '#ff9e64',
+    ECD: '#5bc8af',
+    CPP: '#b0bec5',
+    RAIL_SIDING: '#e0af68',
+  },
+  // Congestion class breaks (Addendum A.1 Port road network)
+  congestion: {
+    GREEN: '#2dbb6a',
+    AMBER: '#f2a93b',
+    RED: '#e04545',
+  },
+  // Cargo-flow stream colours (Addendum A.1 Cargo flows)
+  flow: {
+    IMPORT: '#3aa0ff',
+    EXPORT: '#2dbb6a',
+    TRANSSHIP: '#c77dff',
+    ITRHO: '#ff9e64',
+  },
+  space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
+  radius: { sm: 4, md: 8 },
+} as const;
+
+export type Tokens = typeof tokens;

@@ -1,0 +1,96 @@
+asyncapi: '2.6.0'
+info:
+  title: JNPA UC2 — Cargo Handling & Logistics Event Backbone
+  version: '0.1.0'
+  description: >
+    CloudEvents 1.0 envelopes over Kafka/Redpanda (prompt §1). Carries
+    gate/rail/customs events, notifications, the gate-automation feed (§13) and
+    the cross-twin channel (§12). Every message has a `jnpamode` extension
+    (LIVE/CACHED/SYNTHETIC) reflected by the dashboard Health Card.
+defaultContentType: application/json
+
+servers:
+  local:
+    url: localhost:19092
+    protocol: kafka
+    description: Redpanda for local dev
+
+channels:
+  jnpa.uc2.cargo-events:
+    description: The event-sourced spine — every canonical CargoEvent.
+    subscribe:
+      message:
+        $ref: '#/components/messages/CargoEventCE'
+    publish:
+      message:
+        $ref: '#/components/messages/CargoEventCE'
+
+  jnpa.uc2.integration-health:
+    description: Per-source Health Card updates (§6).
+    subscribe:
+      message:
+        $ref: '#/components/messages/IntegrationHealthCE'
+
+  jnpa.uc2.notifications:
+    description: Fanned-out notifications (§11).
+    subscribe:
+      message:
+        $ref: '#/components/messages/NotificationCE'
+
+  jnpa.uc2.gate-decisions:
+    description: Gate-automation decisions for terminal TOS (§13).
+    subscribe:
+      message:
+        $ref: '#/components/messages/GateDecisionCE'
+
+  jnpa.crosstwin.deferred-arrival:
+    description: Cross-twin channel UC2 ↔ UC3 (§12, D.2 sub-criterion 5).
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/DeferredArrivalCE'
+          - $ref: '#/components/messages/DpdReleaseCE'
+
+components:
+  messages:
+    CargoEventCE:
+      name: CargoEventCloudEvent
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+    IntegrationHealthCE:
+      name: IntegrationHealthCloudEvent
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+    NotificationCE:
+      name: NotificationCloudEvent
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+    GateDecisionCE:
+      name: GateDecisionCloudEvent
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+    DeferredArrivalCE:
+      name: DeferredArrivalWindow
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+    DpdReleaseCE:
+      name: DpdReleaseNotice
+      payload:
+        $ref: '#/components/schemas/CloudEventEnvelope'
+
+  schemas:
+    CloudEventEnvelope:
+      type: object
+      required: [specversion, type, source, id, time, data]
+      properties:
+        specversion: { type: string, const: '1.0' }
+        type: { type: string }
+        source: { type: string }
+        id: { type: string }
+        time: { type: string, format: date-time }
+        subject: { type: string }
+        datacontenttype: { type: string, const: application/json }
+        dataschema: { type: string }
+        jnpamode: { type: string, enum: [LIVE, CACHED, SYNTHETIC] }
+        data: { type: object }

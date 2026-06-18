@@ -1,0 +1,75 @@
+{
+  "$comment": "JNPA operating container terminals. CONFIRM current operators with JNPA before live cutover (Corrigendum 3). Geometry = approximate berth-line centroids at JNPT, EPSG:4326 [lng, lat]; replace with surveyed polygons from the JNPA WebMap before production. Siding mapping T1/T2 and TOS access mode are config-driven on purpose (prompt §3, §6).",
+  "port": {
+    "code": "INNSA",
+    "name": "Jawaharlal Nehru Port (JNPT)",
+    "authority": "Jawaharlal Nehru Port Authority (JNPA)",
+    "crs": "EPSG:4326"
+  },
+  "terminals": [
+    {
+      "terminalId": "NSICT",
+      "name": "Nhava Sheva International Container Terminal",
+      "operator": "DP World (Nhava Sheva)",
+      "status": "OPERATING",
+      "quayLengthM": 600,
+      "capacityTEU": 1500000,
+      "geom": { "type": "Point", "coordinates": [72.9512, 18.9498] },
+      "gates": ["NSICT-G1", "NSICT-G2"],
+      "sidingMapping": { "rail": ["T1"] },
+      "tos": { "mode": "EDIFACT", "ediVersion": "D21A" }
+    },
+    {
+      "terminalId": "NSIGT",
+      "name": "Nhava Sheva India Gateway Terminal",
+      "operator": "DP World (NSIGT)",
+      "status": "OPERATING",
+      "quayLengthM": 330,
+      "capacityTEU": 1200000,
+      "geom": { "type": "Point", "coordinates": [72.9486, 18.9472] },
+      "gates": ["NSIGT-G1"],
+      "sidingMapping": { "rail": ["T1"] },
+      "tos": { "mode": "REST" }
+    },
+    {
+      "terminalId": "GTI",
+      "name": "Gateway Terminals India",
+      "operator": "APM Terminals (Maersk-CMA)",
+      "status": "OPERATING",
+      "quayLengthM": 712,
+      "capacityTEU": 2000000,
+      "geom": { "type": "Point", "coordinates": [72.9461, 18.9447] },
+      "gates": ["GTI-G1", "GTI-G2"],
+      "sidingMapping": { "rail": ["T1", "T2"] },
+      "tos": { "mode": "X12" }
+    },
+    {
+      "terminalId": "BMCT",
+      "name": "Bharat Mumbai Container Terminals",
+      "operator": "PSA International",
+      "status": "OPERATING",
+      "quayLengthM": 2000,
+      "capacityTEU": 4800000,
+      "geom": { "type": "Point", "coordinates": [72.9420, 18.9410] },
+      "gates": ["BMCT-G1", "BMCT-G2", "BMCT-G3"],
+      "sidingMapping": { "rail": ["T2"] },
+      "tos": { "mode": "REST" }
+    },
+    {
+      "terminalId": "JNPCT",
+      "name": "Jawaharlal Nehru Port Container Terminal",
+      "operator": "JNPA / J M Baxi (operator transition — CONFIRM)",
+      "status": "OPERATING",
+      "quayLengthM": 680,
+      "capacityTEU": 1200000,
+      "geom": { "type": "Point", "coordinates": [72.9535, 18.9523] },
+      "gates": ["JNPCT-G1", "JNPCT-G2"],
+      "sidingMapping": { "rail": ["T1", "T2"] },
+      "tos": { "mode": "FILE_DROP" }
+    }
+  ],
+  "railSidings": [
+    { "sidingId": "T1", "name": "Central Rail Yard Siding T1", "geom": { "type": "Point", "coordinates": [72.9475, 18.9550] } },
+    { "sidingId": "T2", "name": "Central Rail Yard Siding T2", "geom": { "type": "Point", "coordinates": [72.9455, 18.9545] } }
+  ]
+}

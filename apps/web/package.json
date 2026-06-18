@@ -1,0 +1,32 @@
+{
+  "name": "@jnpa/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DTCCC Cargo dashboard — React 18 + ArcGIS Maps SDK 5.x + Calcite (prompt §10, Addendum A). Runs in mock mode with zero credentials.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@arcgis/core": "^4.34.0",
+    "@esri/calcite-components": "^3.3.0",
+    "@esri/calcite-components-react": "^3.3.0",
+    "@jnpa/data": "workspace:*",
+    "@jnpa/kpi": "workspace:*",
+    "@jnpa/schemas": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

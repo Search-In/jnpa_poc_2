@@ -1,0 +1,62 @@
+{
+  "$comment": "KPI baselines = current-state operations, used to compute improvement %. Each baseline cites a source. Where a public NLDS / jnport.gov.in figure exists it is cited; otherwise the value is ASSUMED-WITH-JUSTIFICATION and cross-referenced in docs/ASSUMPTIONS.md (prompt §8). DO NOT treat ASSUMED values as JNPA-confirmed — they are placeholders an evaluator can override in this file without code change.",
+  "asOf": "2026-04-01",
+  "baselines": {
+    "rakeTurnaroundTime": {
+      "value": 8.5,
+      "unit": "hr",
+      "scope": "per rake siding cycle (arrival -> departure), T1/T2 mean",
+      "source": "ASSUMED",
+      "justification": "Indian Railways CTO siding cycle norms 6–10 hr; midpoint used pending JNPA FOIS extract. See ASSUMPTIONS.md#rake-tat-baseline"
+    },
+    "interTerminalTransferTat": {
+      "value": 6.0,
+      "unit": "hr",
+      "scope": "ITRHO request-out -> in, mean across road+rail moves",
+      "source": "ASSUMED",
+      "justification": "Inter-terminal trans-shipment trailer cycle estimate pending ITRHO log extract. See ASSUMPTIONS.md#itrho-baseline"
+    },
+    "trailerTurnaroundTime": {
+      "value": 4.0,
+      "unit": "hr",
+      "scope": "gate-in -> gate-out for a trailer port visit, mean",
+      "source": "ASSUMED",
+      "justification": "Road trailer port-visit dwell estimate; targets sub-3hr post-twin. See ASSUMPTIONS.md#trailer-tat-baseline"
+    },
+    "scannerTurnaroundTime": {
+      "value": 2.5,
+      "unit": "hr",
+      "scope": "scan queue-in -> clear, mean over flagged containers",
+      "source": "ASSUMED",
+      "justification": "Customs scan queue + exam cycle estimate. See ASSUMPTIONS.md#scanner-tat-baseline"
+    },
+    "transshipmentTrailerTat": {
+      "value": 5.0,
+      "unit": "hr",
+      "scope": "trailer TAT filtered to originStream=TRANSSHIP / ITRHO road moves",
+      "source": "ASSUMED",
+      "justification": "Trans-shipment trailer cycle estimate. See ASSUMPTIONS.md#transship-trailer-baseline"
+    },
+    "bufferPendency": {
+      "value": 1200,
+      "unit": "Nos",
+      "scope": "containers in CFS/buffer beyond dwell threshold, port-wide snapshot",
+      "source": "ASSUMED",
+      "justification": "Typical CFS buffer pendency snapshot pending facility pendency extract. See ASSUMPTIONS.md#buffer-pendency-baseline"
+    },
+    "mixedTrainOptimization": {
+      "value": 78,
+      "unit": "containersPerRake",
+      "scope": "baseline mean containers per rake (mixed + dedicated)",
+      "source": "ASSUMED",
+      "justification": "BLCA/BLC rake nominal 90-TEU capacity at ~85% utilisation. See ASSUMPTIONS.md#mixed-train-baseline"
+    },
+    "gateTransactionTime": {
+      "value": 12.0,
+      "unit": "min",
+      "scope": "avg gate transaction time (arrival -> cleared), dashboard rollup",
+      "source": "ASSUMED",
+      "justification": "Pre-automation gate transaction estimate; target sub-5min at 100% automation. See ASSUMPTIONS.md#gate-txn-baseline"
+    }
+  }
+}

@@ -1,943 +1,128 @@
-# ============================================================================
-# JNPA Digital Twin — Use Case III (Traffic Monitoring & Vehicular
-# Decongestion) — local PoC infrastructure.
+# JNPA UC2 — local stack (prompt §16.2): gateway + connectors (sim mode) +
+# Kafka/Redpanda + Postgres/PostGIS + AI services. Everything runs in mock/sim
+# mode with zero external credentials. Host-port notes follow the machine quirks
+# (Homebrew postgres often owns 5432 → published on 5433).
 #
-# All services share the single user-defined bridge network "jnpa".
-# CPU-only; no GPU required for the PoC. Production swaps in GPU edge nodes.
-# ============================================================================
+#   docker compose up        # full sim stack
+#   (the dashboard `pnpm dev` runs separately, pointing at the gateway in live mode)
 
-name: jnpa-uc3-poc
-
-networks:
-  jnpa:
-    name: jnpa
-    driver: bridge
-
-volumes:
-  pgdata:
-  minio-data:
-  prometheus-data:
-  grafana-data:
-  congestion-artifacts:
-  anomaly-artifacts:
+name: jnpa-uc2
 
 services:
-  # --------------------------------------------------------------------------
-  # PostgreSQL + TimescaleDB
-  # --------------------------------------------------------------------------
-  postgres:
-    image: timescale/timescaledb-ha:pg15-latest
-    container_name: jnpa-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
-      TZ: Etc/UTC
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:19092
     ports:
-      # Host port 5433 -> container 5432. 5433 avoids clashing with a local
-      # (e.g. Homebrew) Postgres that may already own host 5432. Containers on
-      # the jnpa network still reach it as postgres:5432.
-      - "5433:5432"
-    volumes:
-      - pgdata:/home/postgres/pgdata/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - jnpa
+      - "19092:19092"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 20s
-
-  # --------------------------------------------------------------------------
-  # Redis
-  # --------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: jnpa-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    networks:
-      - jnpa
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  # --------------------------------------------------------------------------
-  # Kafka (single broker) + Zookeeper
-  # Two listeners:
-  #   INTERNAL  -> kafka:9092      (other containers on the jnpa network)
-  #   EXTERNAL  -> localhost:29092 (host machine: bootstrap_check, kafka-ui)
-  # --------------------------------------------------------------------------
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.0
-    container_name: jnpa-zookeeper
-    restart: unless-stopped
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-      # Enable the "ruok" four-letter word so the healthcheck can use it
-      # (only "srvr" is enabled by default in ZK 3.8).
-      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=ruok,srvr,stat"
-      TZ: Etc/UTC
-    networks:
-      - jnpa
-    healthcheck:
-      # "srvr" is enabled by default; querying it proves ZK is serving on 2181.
-      test: ["CMD-SHELL", "echo srvr | nc -w 2 localhost 2181 | grep -q Zookeeper"]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 10s
-
-  kafka:
-    image: confluentinc/cp-kafka:7.6.0
-    container_name: jnpa-kafka
-    restart: unless-stopped
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_NUM_PARTITIONS: 1
-      TZ: Etc/UTC
-    networks:
-      - jnpa
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 20
-      start_period: 30s
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: jnpa-kafka-ui
-    restart: unless-stopped
-    depends_on:
-      kafka:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    environment:
-      KAFKA_CLUSTERS_0_NAME: jnpa-local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      DYNAMIC_CONFIG_ENABLED: "true"
-      TZ: Etc/UTC
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # MQTT broker (Mosquitto) — anonymous local access
-  # --------------------------------------------------------------------------
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: jnpa-mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # MinIO — S3-compatible object store for model artefacts + ANPR snapshots
-  # Console on 9001 conflicts with mosquitto websockets above (also 9001 on the
-  # host), so MinIO console is published on 9101.
-  # --------------------------------------------------------------------------
-  minio:
-    image: minio/minio:latest
-    container_name: jnpa-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-      TZ: Etc/UTC
-    ports:
-      - "9000:9000"
-      - "9101:9001"
-    volumes:
-      - minio-data:/data
-    networks:
-      - jnpa
-    healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  # --------------------------------------------------------------------------
-  # Prometheus + Grafana
-  # --------------------------------------------------------------------------
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: jnpa-prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    networks:
-      - jnpa
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: jnpa-grafana
-    restart: unless-stopped
-    depends_on:
-      - prometheus
-    # Host 3000 is reserved for the control-room dashboard (web). Grafana is
-    # published on 3001 to avoid the clash; in-container it still serves 3000.
-    ports:
-      - "3001:3000"
+  postgres:
+    image: postgis/postgis:16-3.4
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_DEFAULT_THEME: dark
-      GF_SERVER_HTTP_PORT: "3000"
-      TZ: Etc/UTC
-    volumes:
-      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
-      - grafana-data:/var/lib/grafana
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # Jaeger (all-in-one) — distributed tracing backend. Services export OTLP/gRPC
-  # to :4317; the UI is on host :16686. A what-if scenario emits one trace
-  # spanning ingest -> AI -> alert -> action so an evaluator can see the full
-  # causal chain. See jnpa_shared.tracing + OTEL_* env on every service.
-  # --------------------------------------------------------------------------
-  jaeger:
-    image: jaegertracing/all-in-one:1.59
-    container_name: jnpa-jaeger
-    restart: unless-stopped
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-      TZ: Etc/UTC
+      POSTGRES_USER: jnpa
+      POSTGRES_PASSWORD: jnpa
+      POSTGRES_DB: jnpa_uc2
     ports:
-      - "16686:16686"   # Jaeger UI
-      - "4317:4317"     # OTLP gRPC receiver
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # ANPR ingestion — replays MP4 clips -> YOLOv8n -> Kafka (anpr.reads).
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # CPU-only. Metrics on container 9101, published on host 9108 (host 9101 is
-  # already used by the MinIO console above).
-  #
-  # The app source is also bind-mounted (volumes below) with
-  # PYTHONPATH=/app/ingest/anpr/src, so code edits take effect on `up` without a
-  # rebuild — handy for iteration and a workaround for container image-store
-  # quirks on some local engines (e.g. Colima's containerd snapshotter).
-  # --------------------------------------------------------------------------
-  anpr-ingest:
-    build:
-      context: .
-      dockerfile: ingest/anpr/Dockerfile
-    image: jnpa/anpr-ingest:0.1.0
-    container_name: jnpa-anpr-ingest
-    restart: unless-stopped
-    depends_on:
-      kafka:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      # Make the bind-mounted source win over the site-packages copy.
-      PYTHONPATH: /app/ingest/anpr/src
-      KAFKA_BROKERS: kafka:9092
-      ANPR_TOPIC: anpr.reads
-      CLIPS_DIR: /data/clips
-      # Shared frame bus (Redis Streams) — mirror sampled jpeg frames so
-      # ai/anomaly can consume the same feed. Trimmed to the last N entries.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      PUBLISH_FRAMES: ${ANPR_PUBLISH_FRAMES:-true}
-      FRAME_BUS_MAXLEN: ${ANPR_FRAME_BUS_MAXLEN:-600}
-      FRAME_JPEG_QUALITY: ${ANPR_FRAME_JPEG_QUALITY:-70}
-      DRY_RUN: ${ANPR_DRY_RUN:-true}
-      TARGET_FPS: ${ANPR_TARGET_FPS:-5}
-      SNAPSHOT_INTERVAL_S: "1"
-      NO_FEED_INTERVAL_S: "5"
-      METRICS_PORT: "9101"
-      LOG_LEVEL: ${ANPR_LOG_LEVEL:-INFO}
-      AI_ANPR_URL: ${ANPR_AI_URL:-http://anpr:8301/infer}
-      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
-      PORT_LAT: ${PORT_LAT:-18.9489}
-      PORT_LON: ${PORT_LON:-72.9492}
-      TZ: Etc/UTC
-    ports:
-      - "9108:9101"
+      - "5433:5432"   # 5432 is often taken by host Homebrew postgres
     volumes:
-      - ./data/clips:/data/clips
-      # Mount the service source over the image's copy so the running container
-      # always executes the current code. (Also insulates the PoC from a Colima
-      # containerd image-store quirk where rebuilt image tags can be GC'd before
-      # a container pins them.) PYTHONPATH below makes this src win over the
-      # site-packages copy baked at build time.
-      - ./ingest/anpr/src:/app/ingest/anpr/src:ro
-    networks:
-      - jnpa
+      - pgdata:/var/lib/postgresql/data
+      - ./packages/schemas/src/ddl:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jnpa -d jnpa_uc2"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  # --------------------------------------------------------------------------
-  # ANPR + OCR inference service (UC-III Sub-Criterion 2A).
-  # YOLOv8 plate detector -> PaddleOCR (PP-OCRv4, Indian fine-tune) ->
-  # post-processor (regex + state-code whitelist + confusion fixer). FastAPI on
-  # host 8301. Persists/loads YOLO weights to/from the MinIO "models" bucket.
-  #   POST /infer        multipart image -> {plate, conf, bbox}
-  #   POST /infer_batch  JSON base64 list -> results
-  #   GET  /eval         held-out benchmark -> metrics + OCR_TARGET_MET
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # Source is bind-mounted so code edits take effect on `up` without a rebuild.
-  # CPU-only; degrades to a classical detector + template OCR if paddle/weights
-  # are unavailable (the /eval `engine` field reports which path ran).
-  # --------------------------------------------------------------------------
-  anpr:
-    build:
-      context: .
-      dockerfile: ai/anpr/Dockerfile
-    image: jnpa/anpr-ai:0.1.0
-    container_name: jnpa-anpr
-    restart: unless-stopped
-    depends_on:
-      minio:
-        condition: service_healthy
+  minio:
+    image: minio/minio:RELEASE.2024-09-22T00-33-43Z
+    command: server /data --console-address ":9001"
     environment:
-      PYTHONPATH: /app/ai/anpr/src
-      PORT: "8301"
-      ANPR_DETECT_CONF: ${ANPR_DETECT_CONF:-0.25}
-      ANPR_USE_GPU: "false"
-      ANPR_EVAL_SIZE: ${ANPR_EVAL_SIZE:-200}
-      ANPR_EVAL_TARGET_PCT: ${ANPR_EVAL_TARGET_PCT:-95.0}
-      ANPR_YOLO_SHA256: ${ANPR_YOLO_SHA256:-}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      ANPR_MODEL_BUCKET: ${ANPR_MODEL_BUCKET:-models}
-      LOG_LEVEL: ${ANPR_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "8301:8301"
+      - "9000:9000"
+      - "9002:9001"   # 9001 host is often MinIO console clash → 9002
     volumes:
-      - ./ai/anpr/src:/app/ai/anpr/src:ro
-      - ./ai/anpr/resources:/app/ai/anpr/resources
-      - ./data/fixtures:/app/data/fixtures:ro
-    networks:
-      - jnpa
+      - miniodata:/data
 
-  # --------------------------------------------------------------------------
-  # Vahan / Sarathi / FASTag simulator — schema-faithful local stand-in for the
-  # Parivahan APIs (RC / DL / NETC). FastAPI on host 8201. Generates a
-  # deterministic 25k-plate dataset, writes the demo fixture, registers itself
-  # in jnpa.services, and upserts verified RCs into jnpa.vehicle_master.
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # --------------------------------------------------------------------------
-  vahan-sim:
-    build:
-      context: .
-      dockerfile: ingest/vahan_sim/Dockerfile
-    image: jnpa/vahan-sim:0.1.0
-    container_name: jnpa-vahan-sim
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      PYTHONPATH: /app/ingest
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+asyncpg://postgres:jnpa_pw@postgres:5432/postgres}
-      VAHAN_BASE_URL: http://vahan-sim:8201
-      VAHAN_SERVICE_NAME: vahan
-      VAHAN_SERVICE_KIND: sim
-      VAHAN_TOTAL_PLATES: ${VAHAN_TOTAL_PLATES:-25000}
-      VAHAN_FIXTURE_PATH: /data/fixtures/known_plates.json
-      VAHAN_LATENCY_MEAN_MS: ${VAHAN_LATENCY_MEAN_MS:-100}
-      VAHAN_LATENCY_JITTER_MS: ${VAHAN_LATENCY_JITTER_MS:-50}
-      PORT: "8201"
-      LOG_LEVEL: ${VAHAN_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
-    ports:
-      - "8201:8201"
-    volumes:
-      # Source bind-mount (live edits without rebuild) + writable fixtures dir.
-      - ./ingest/vahan_sim:/app/ingest/vahan_sim:ro
-      - ./data/fixtures:/data/fixtures
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # Vahan live adapter — proxies the same surface to Surepass's commercial KYC
-  # API. FastAPI on host 8202. Returns 503 {"error":"live_disabled"} unless
-  # SUREPASS_API_TOKEN is set; never falls back to the simulator (that is the
-  # orchestrator's job, Prompt 4).
-  # --------------------------------------------------------------------------
-  vahan-live:
-    build:
-      context: .
-      dockerfile: ingest/vahan_live/Dockerfile
-    image: jnpa/vahan-live:0.1.0
-    container_name: jnpa-vahan-live
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      PYTHONPATH: /app/ingest
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+asyncpg://postgres:jnpa_pw@postgres:5432/postgres}
-      VAHAN_BASE_URL: http://vahan-live:8202
-      VAHAN_SERVICE_NAME: vahan
-      VAHAN_SERVICE_KIND: live
-      SUREPASS_API_TOKEN: ${SUREPASS_API_TOKEN:-}
-      PORT: "8202"
-      LOG_LEVEL: ${VAHAN_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
-    ports:
-      - "8202:8202"
-    volumes:
-      - ./ingest/vahan_live:/app/ingest/vahan_live:ro
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # RFID emulator / consumer / correlator (UC-III Sub-Criterion 1C).
-  # One image (jnpa/rfid-ingest), three services picked via `command:`.
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # Source is bind-mounted so code edits take effect on `up` without a rebuild.
-  #
-  #   rfid-emulator   -> 25 readers publishing to MQTT rfid/readers/{id}
-  #   rfid-consumer   -> MQTT rfid/readers/+ -> jnpa.rfid_reads + Kafka rfid.reads
-  #   rfid-correlator -> join rfid.reads x anpr.reads -> Kafka vehicle.confirmed
-  #
-  # Metrics: container 9102, published on distinct host ports (9112/9113/9114;
-  # host 9102 onward are free — ANPR uses 9108).
-  # --------------------------------------------------------------------------
-  rfid-emulator:
-    build:
-      context: .
-      dockerfile: ingest/rfid/Dockerfile
-    image: jnpa/rfid-ingest:0.1.0
-    container_name: jnpa-rfid-emulator
-    restart: unless-stopped
-    depends_on:
-      - mosquitto
-    command: ["rfid-emulator"]
-    environment:
-      PYTHONPATH: /app/ingest/rfid
-      MQTT_HOST: mosquitto
-      MQTT_PORT: "1883"
-      KAFKA_BROKERS: kafka:9092
-      RFID_GATE_READERS: ${RFID_GATE_READERS:-10}
-      RFID_CORRIDOR_READERS: ${RFID_CORRIDOR_READERS:-15}
-      RFID_TAG_POOL_SIZE: ${RFID_TAG_POOL_SIZE:-12000}
-      RFID_BASE_RATE: ${RFID_BASE_RATE:-0.15}
-      RFID_PEAK_MULTIPLIER: ${RFID_PEAK_MULTIPLIER:-3.0}
-      METRICS_PORT: "9102"
-      LOG_LEVEL: ${RFID_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
-    ports:
-      - "9112:9102"
-    volumes:
-      - ./ingest/rfid:/app/ingest/rfid:ro
-    networks:
-      - jnpa
-
-  rfid-consumer:
-    build:
-      context: .
-      dockerfile: ingest/rfid/Dockerfile
-    image: jnpa/rfid-ingest:0.1.0
-    container_name: jnpa-rfid-consumer
-    restart: unless-stopped
-    depends_on:
-      mosquitto:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    command: ["rfid-consumer"]
-    environment:
-      PYTHONPATH: /app/ingest/rfid
-      MQTT_HOST: mosquitto
-      MQTT_PORT: "1883"
-      KAFKA_BROKERS: kafka:9092
-      RFID_TOPIC: rfid.reads
-      # asyncpg libpq DSN (no SQLAlchemy "+asyncpg" prefix).
-      POSTGRES_DSN_LIBPQ: ${RFID_POSTGRES_DSN:-postgresql://postgres:jnpa_pw@postgres:5432/postgres}
-      METRICS_PORT: "9102"
-      LOG_LEVEL: ${RFID_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
-    ports:
-      - "9113:9102"
-    volumes:
-      - ./ingest/rfid:/app/ingest/rfid:ro
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # Trucking-app GPS telemetry simulator (UC-III Sub-Criterion 1D).
-  # 20,000 devices (hot-scalable to 30,000+) driving realistic telemetry along
-  # NH-348 into the 4 JNPA gates and back. FastAPI control plane on host 8240.
-  #   MQTT   trucks/{device_id}/telemetry (qos0) + trucks/{device_id}/eta (qos1)
-  #   Kafka  truck.telemetry + truck.eta
-  #   Timescale  jnpa.truck_telemetry (batched COPY every 30s)
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # Source is bind-mounted so code edits take effect on `up` without a rebuild.
-  # CPU reservation of 3.0 (per spec) so it holds 4,000 msg/s on a 4-core laptop.
-  # --------------------------------------------------------------------------
-  truck-sim:
-    build:
-      context: .
-      dockerfile: ingest/trucking_app/Dockerfile
-    image: jnpa/trucking-app:0.1.0
-    container_name: jnpa-truck-sim
-    restart: unless-stopped
-    depends_on:
-      mosquitto:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      PYTHONPATH: /app/ingest/trucking_app
-      MQTT_HOST: mosquitto
-      MQTT_PORT: "1883"
-      KAFKA_BROKERS: kafka:9092
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      # asyncpg libpq DSN (no SQLAlchemy "+asyncpg" prefix).
-      POSTGRES_DSN_LIBPQ: ${TRUCK_POSTGRES_DSN:-postgresql://postgres:jnpa_pw@postgres:5432/postgres}
-      TRUCK_NUM_DEVICES: ${TRUCK_NUM_DEVICES:-20000}
-      TRUCK_MAX_DEVICES: ${TRUCK_MAX_DEVICES:-30000}
-      TRUCK_INTERVAL_S: ${TRUCK_INTERVAL_S:-5}
-      TRUCK_INTERVAL_GATE_S: ${TRUCK_INTERVAL_GATE_S:-2}
-      TRUCK_ETA_INTERVAL_S: ${TRUCK_ETA_INTERVAL_S:-30}
-      TRUCK_DB_FLUSH_S: ${TRUCK_DB_FLUSH_S:-30}
-      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://router.project-osrm.org/route/v1/driving/}
-      HERE_API_KEY: ${HERE_API_KEY:-}
-      PORT: "8240"
-      LOG_LEVEL: ${TRUCK_LOG_LEVEL:-INFO}
-      # OpenTelemetry -> Jaeger (cross-service tracing).
-      OTEL_SERVICE_NAME: truck-sim
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
-      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
-      TZ: Etc/UTC
-    ports:
-      - "8240:8240"
-    volumes:
-      - ./ingest/trucking_app:/app/ingest/trucking_app:ro
-    networks:
-      - jnpa
-    deploy:
-      resources:
-        reservations:
-          cpus: "3.0"
-
-  rfid-correlator:
-    build:
-      context: .
-      dockerfile: ingest/rfid/Dockerfile
-    image: jnpa/rfid-ingest:0.1.0
-    container_name: jnpa-rfid-correlator
-    restart: unless-stopped
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    command: ["rfid-correlator"]
-    environment:
-      PYTHONPATH: /app/ingest/rfid
-      KAFKA_BROKERS: kafka:9092
-      RFID_TOPIC: rfid.reads
-      ANPR_TOPIC: anpr.reads
-      CONFIRMED_TOPIC: vehicle.confirmed
-      RFID_CORRELATION_WINDOW_S: ${RFID_CORRELATION_WINDOW_S:-5.0}
-      RFID_CONFIRM_CONFIDENCE: ${RFID_CONFIRM_CONFIDENCE:-0.97}
-      POSTGRES_DSN_LIBPQ: ${RFID_POSTGRES_DSN:-postgresql://postgres:jnpa_pw@postgres:5432/postgres}
-      METRICS_PORT: "9102"
-      LOG_LEVEL: ${RFID_LOG_LEVEL:-INFO}
-      TZ: Etc/UTC
-    ports:
-      - "9114:9102"
-    volumes:
-      - ./ingest/rfid:/app/ingest/rfid:ro
-    networks:
-      - jnpa
-
-  # --------------------------------------------------------------------------
-  # Traffic congestion forecaster (UC-III Sub-Criterion 2B).
-  # GraphSAGE encoder over the NH-348 corridor graph -> 2-layer LSTM predicting
-  # P(congested in next 15 min) per segment. FastAPI on host 8311.
-  #   POST /predict  {horizon_min:15}  -> {segment_id: prob}
-  #   GET  /metrics                    -> training metrics summary (F1/P/R/AUC)
-  #   POST /backfill {hours:24}        -> rebuild features + store snapshots
-  # On first boot it trains on a 14-day synthetic bootstrap (commute-aware) plus
-  # any real jnpa.traffic_snapshots, persists weights+metrics to MinIO bucket
-  # "models" under congestion/, then serves. A background scheduler publishes
-  # per-segment predictions to Kafka topic "traffic.predictions" once a minute.
-  # CPU-only; the GraphSAGE conv is from-scratch so no torch-geometric needed.
-  # Source is bind-mounted (PYTHONPATH=/app/ai) so edits take effect on `up`.
-  # The entrypoint trains only if no weights exist locally or in MinIO, so a
-  # restart re-serves the existing model instantly instead of retraining.
-  # --------------------------------------------------------------------------
-  congestion:
-    build:
-      context: .
-      dockerfile: ai/congestion/Dockerfile
-    image: jnpa/congestion-ai:0.1.0
-    container_name: jnpa-congestion
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      PYTHONPATH: /app/ai
-      PORT: "8311"
-      # External traffic adapters (blank -> deterministic synthetic readings so
-      # the cascade + scheduler run offline; set keys to go live).
-      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
-      HERE_API_KEY: ${HERE_API_KEY:-}
-      TOMTOM_API_KEY: ${TOMTOM_API_KEY:-}
-      # Training / target knobs.
-      CONGESTION_HISTORY_DAYS: ${CONGESTION_HISTORY_DAYS:-14}
-      CONGESTION_EPOCHS: ${CONGESTION_EPOCHS:-50}
-      CONGESTION_TARGET_F1: ${CONGESTION_TARGET_F1:-0.85}
-      CONGESTION_TARGET_PRECISION: ${CONGESTION_TARGET_PRECISION:-0.80}
-      CONGESTION_TARGET_RECALL: ${CONGESTION_TARGET_RECALL:-0.80}
-      CONGESTION_PREDICTIONS_TOPIC: ${CONGESTION_PREDICTIONS_TOPIC:-traffic.predictions}
-      CONGESTION_PUBLISH_INTERVAL_S: ${CONGESTION_PUBLISH_INTERVAL_S:-60}
-      # asyncpg/psycopg libpq DSN (no SQLAlchemy "+asyncpg" prefix).
-      CONGESTION_POSTGRES_DSN: ${CONGESTION_POSTGRES_DSN:-postgresql://postgres:jnpa_pw@postgres:5432/postgres}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      KAFKA_BROKERS: kafka:9092
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      CONGESTION_MODEL_BUCKET: ${CONGESTION_MODEL_BUCKET:-models}
-      # Persist artifacts on a named volume so a rebuilt container reuses them.
-      CONGESTION_WEIGHTS_DIR: /artifacts
-      LOG_LEVEL: ${CONGESTION_LOG_LEVEL:-INFO}
-      OTEL_SERVICE_NAME: congestion
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
-      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
-      TZ: Etc/UTC
-    ports:
-      - "8311:8311"
-    volumes:
-      - ./ai/congestion:/app/ai/congestion:ro
-      - congestion-artifacts:/artifacts
-    networks:
-      - jnpa
-    # Train only if no weights are present (local or MinIO), then always serve.
-    command:
-      - sh
-      - -c
-      - |
-        # Seed the writable artifacts volume from the committed model (if the
-        # volume is empty) so a fresh `make up` serves instantly without the
-        # ~15-min first-boot training. Then MinIO sync fills any gaps.
-        if [ ! -f /artifacts/congestion_gnn_lstm.pt ] && [ -f /app/ai/congestion/artifacts/congestion_gnn_lstm.pt ]; then
-          echo "[congestion] seeding artifacts volume from committed model";
-          cp /app/ai/congestion/artifacts/* /artifacts/ 2>/dev/null || true;
-        fi
-        # Best-effort MinIO sync to pull newer weights if any (never fatal).
-        python -c "from congestion.config import CongestionConfig; from congestion import storage; storage.sync_weights(CongestionConfig.from_env())" || true
-        # Train ONLY when no usable weights exist on disk. (The previous heredoc
-        # exit-code capture broke under dash — "[: Illegal number" — and forced a
-        # ~30-min retrain on every boot even though a valid model was present.)
-        if [ -f /artifacts/congestion_gnn_lstm.pt ]; then
-          echo "[congestion] weights present — skipping training";
-        else
-          echo "[congestion] no weights found — training…";
-          congestion-train || echo "[congestion] training under target; serving best model anyway";
-        fi
-        exec congestion-api
-
-  # --------------------------------------------------------------------------
-  # Behavioural anomaly detector (UC-III Sub-Criterion 2C).
-  # Hybrid: ByteTrack (supervision wrapper + YOLOv8) + a rule engine (wrong-way,
-  # abandoned, illegal-parking, route-deviation) + a 1D-conv trajectory
-  # autoencoder. FastAPI on host 8321.
-  #   GET  /alerts/recent?since=PT1H -> list[Alert]
-  #   POST /train_ae                 -> train the AE on the last N days of tracks
-  #   GET  /health, GET /metrics
-  # Consumes the shared Redis frame bus (frames.{camera_id}, written by
-  # ingest/anpr) for ByteTrack, and the Kafka truck.telemetry topic for the GPS
-  # rule path. Alerts -> jnpa.alerts + Kafka "alerts"; the offending frame is
-  # saved to MinIO evidence/{alert_id}.jpg and its URL attached to the alert.
-  # CPU-only; degrades to rules+telemetry if the ByteTrack/torch stack is absent.
-  # Source is bind-mounted (PYTHONPATH=/app/ai) so edits take effect on `up`.
-  # On first boot it warms the AE (train if no weights local/MinIO), then serves.
-  # --------------------------------------------------------------------------
-  anomaly:
-    build:
-      context: .
-      dockerfile: ai/anomaly/Dockerfile
-    image: jnpa/anomaly-ai:0.1.0
-    container_name: jnpa-anomaly
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    environment:
-      PYTHONPATH: /app/ai
-      PORT: "8321"
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      KAFKA_BROKERS: kafka:9092
-      ANOMALY_ALERTS_TOPIC: ${ANOMALY_ALERTS_TOPIC:-alerts}
-      # psycopg libpq DSN (no SQLAlchemy "+asyncpg" prefix).
-      ANOMALY_POSTGRES_DSN: ${ANOMALY_POSTGRES_DSN:-postgresql://postgres:jnpa_pw@postgres:5432/postgres}
-      # Trucking-app control plane for the assigned-route lookup (route-deviation).
-      ANOMALY_TRUCK_API_URL: ${ANOMALY_TRUCK_API_URL:-http://truck-sim:8240}
-      # Rule thresholds (spec defaults; override per deployment).
-      ANOMALY_WRONGWAY_DEG: ${ANOMALY_WRONGWAY_DEG:-120}
-      ANOMALY_WRONGWAY_HOLD_S: ${ANOMALY_WRONGWAY_HOLD_S:-2}
-      ANOMALY_ABANDONED_S: ${ANOMALY_ABANDONED_S:-120}
-      ANOMALY_PARKING_S: ${ANOMALY_PARKING_S:-300}
-      ANOMALY_ROUTE_COSINE: ${ANOMALY_ROUTE_COSINE:-0.4}
-      ANOMALY_ROUTE_OFFROUTE_M: ${ANOMALY_ROUTE_OFFROUTE_M:-800}
-      ANOMALY_ROUTE_HOLD_S: ${ANOMALY_ROUTE_HOLD_S:-90}
-      ANOMALY_AE_THRESHOLD_PCT: ${ANOMALY_AE_THRESHOLD_PCT:-99}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      ANOMALY_MODEL_BUCKET: ${ANOMALY_MODEL_BUCKET:-models}
-      ANOMALY_EVIDENCE_BUCKET: ${ANOMALY_EVIDENCE_BUCKET:-evidence}
-      # Public base for evidence URLs (host-reachable MinIO S3 port by default).
-      ANOMALY_EVIDENCE_URL_BASE: ${ANOMALY_EVIDENCE_URL_BASE:-http://localhost:9000/evidence}
-      ANOMALY_WEIGHTS_DIR: /artifacts
-      LOG_LEVEL: ${ANOMALY_LOG_LEVEL:-INFO}
-      OTEL_SERVICE_NAME: anomaly
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
-      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
-      TZ: Etc/UTC
-    ports:
-      - "8321:8321"
-    volumes:
-      - ./ai/anomaly:/app/ai/anomaly:ro
-      - anomaly-artifacts:/artifacts
-    networks:
-      - jnpa
-    # Warm the AE on first boot (train if no weights are present locally or in
-    # MinIO), then serve. A restart re-serves the existing model instantly.
-    command:
-      - sh
-      - -c
-      - |
-        python - <<'PY'
-        from anomaly.config import AnomalyConfig
-        from anomaly import storage
-        from pathlib import Path
-        import sys
-        cfg = AnomalyConfig.from_env()
-        storage.sync_weights(cfg)
-        sys.exit(0 if Path(cfg.weights_path).is_file() else 7)
-        PY
-        have_weights=$?
-        if [ "$have_weights" -eq 0 ]; then
-          echo "[anomaly] AE weights present — skipping training";
-        else
-          echo "[anomaly] no AE weights — training on synthetic+telemetry corpus…";
-          anomaly-train || echo "[anomaly] AE training skipped/failed; serving rules-only";
-        fi
-        exec anomaly-api
-
-  # --------------------------------------------------------------------------
-  # API gateway + fallback orchestrator (UC-III Sub-Criterion 3).
-  # The single public-facing service (host 8000) the dashboard + trucking-app
-  # PWA talk to. Encodes the three fallback chains:
-  #   ANPR    LIVE -> CACHED -> SYNTHETIC                (per-camera)
-  #   Vahan   LIVE_PRIMARY -> LIVE_FALLBACK -> CACHED -> PROVISIONAL
-  #   Trucks  PRIMARY -> SECONDARY(ULIP) -> TERTIARY(/checkin)
-  # Every successful upstream response is cached in Redis (jnpa:cache:{api}:{key})
-  # and every decision is logged with decision_path + kept in a 1000-entry ring
-  # buffer (GET /api/debug/decisions). WebSocket /api/ws fans out alerts, traffic
-  # snapshots, sampled truck positions, and fallback decisions.
-  #   GET  /api/vahan/rc/{plate}     orchestrated RC lookup
-  #   GET  /api/kpi/sources          System-Health table
-  #   GET  /api/debug/decisions      last 1000 fallback decisions (demo evidence)
-  #   GET  /checkin                  TERTIARY manual check-in form
-  # Build context is the repo root so the Dockerfile can COPY the shared lib.
-  # Source is bind-mounted (PYTHONPATH=/app) so edits take effect on `up`.
-  # --------------------------------------------------------------------------
   gateway:
     build:
       context: .
-      dockerfile: gateway/Dockerfile
-    image: jnpa/gateway:0.1.0
-    container_name: jnpa-gateway
-    restart: unless-stopped
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      DATA_MODE: mock
+      GATEWAY_PORT: "8080"
+      KAFKA_BROKERS: redpanda:29092
+      PG_URL: postgresql://jnpa:jnpa@postgres:5432/jnpa_uc2
+      JWT_DEV_SECRET: dev-only-insecure-change-me
+    ports:
+      - "8080:8080"
     depends_on:
+      redpanda:
+        condition: service_healthy
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      mosquitto:
-        condition: service_started
-    environment:
-      PYTHONPATH: /app
-      PORT: "8000"
-      # Upstream services (jnpa network names).
-      GATEWAY_ANPR_URL: ${GATEWAY_ANPR_URL:-http://anpr:8301}
-      GATEWAY_VAHAN_SIM_URL: ${GATEWAY_VAHAN_SIM_URL:-http://vahan-sim:8201}
-      GATEWAY_VAHAN_LIVE_URL: ${GATEWAY_VAHAN_LIVE_URL:-http://vahan-live:8202}
-      GATEWAY_TRUCK_URL: ${GATEWAY_TRUCK_URL:-http://truck-sim:8240}
-      GATEWAY_CONGESTION_URL: ${GATEWAY_CONGESTION_URL:-http://congestion:8311}
-      GATEWAY_ANOMALY_URL: ${GATEWAY_ANOMALY_URL:-http://anomaly:8321}
-      GATEWAY_SCENARIOS_URL: ${GATEWAY_SCENARIOS_URL:-http://scenarios:8400}
-      # ULIP relay — empty -> mock relay used for the SECONDARY truck rung.
-      GATEWAY_ULIP_URL: ${GATEWAY_ULIP_URL:-}
-      ULIP_API_KEY: ${ULIP_API_KEY:-}
-      # Surepass token drives the LIVE_PRIMARY vahan rung (empty -> LIVE_FALLBACK).
-      SUREPASS_API_TOKEN: ${SUREPASS_API_TOKEN:-}
-      # Infra.
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+asyncpg://postgres:jnpa_pw@postgres:5432/postgres}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      KAFKA_BROKERS: kafka:9092
-      MQTT_HOST: mosquitto
-      MQTT_PORT: "1883"
-      # Fallback / cache knobs (spec defaults).
-      GATEWAY_UPSTREAM_TIMEOUT_S: ${GATEWAY_UPSTREAM_TIMEOUT_S:-2.0}
-      GATEWAY_ANPR_LAG_S: ${GATEWAY_ANPR_LAG_S:-2.0}
-      GATEWAY_CACHE_TTL_VAHAN_S: ${GATEWAY_CACHE_TTL_VAHAN_S:-43200}
-      GATEWAY_CACHE_TTL_ANPR_S: ${GATEWAY_CACHE_TTL_ANPR_S:-60}
-      GATEWAY_PROVISIONAL_WINDOW_H: ${GATEWAY_PROVISIONAL_WINDOW_H:-24}
-      GATEWAY_GATE_BOOM_DELAY_S: ${GATEWAY_GATE_BOOM_DELAY_S:-5}
-      GATEWAY_DECISION_RING_SIZE: ${GATEWAY_DECISION_RING_SIZE:-1000}
-      GATEWAY_TRUCK_SAMPLE: ${GATEWAY_TRUCK_SAMPLE:-50}
-      # WebPush (trucking-app PWA re-route notifications). Generate with
-      # `make vapid-keys`; empty -> push disabled, PWA uses WS/polling fallback.
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@jnpa-uc3.example}
-      LOG_LEVEL: ${GATEWAY_LOG_LEVEL:-INFO}
-      OTEL_SERVICE_NAME: gateway
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
-      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
-      TZ: Etc/UTC
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./gateway:/app/gateway:ro
-    networks:
-      - jnpa
 
-  # --------------------------------------------------------------------------
-  # What-if scenarios runner (UC-III Sub-Criterion 5) — host 8400.
-  # Drives TFC-1 (gate closure), TFC-2 (wrong-way + e-Challan), TFC-3 (cargo
-  # surge cross-twin). Each scenario orchestrates the gateway / trucking-app /
-  # congestion / anomaly services, emits a step-by-step timeline (persisted +
-  # pushed to /api/ws as type=scenario_step), and an OpenTelemetry trace to
-  # Jaeger spanning ingest -> AI -> alert -> action.
-  #   POST /scenarios/{name}/run      run the chain -> {handle_id}
-  #   POST /scenarios/{name}/reset    reset to baseline
-  #   GET  /scenarios/{handle_id}/timeline  event-by-event log
-  # --------------------------------------------------------------------------
-  scenarios:
+  # --- connectors (sim mode) — one container per source -----------------------
+  connector-ulip: &connector
     build:
       context: .
-      dockerfile: scenarios/Dockerfile
-    image: jnpa/scenarios:0.1.0
-    container_name: jnpa-scenarios
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      gateway:
-        condition: service_started
-      truck-sim:
-        condition: service_started
-      congestion:
-        condition: service_started
+      dockerfile: services/connectors/Dockerfile
     environment:
-      PYTHONPATH: /app
-      PORT: "8400"
-      SCENARIOS_GATEWAY_URL: ${SCENARIOS_GATEWAY_URL:-http://gateway:8000}
-      SCENARIOS_TRUCK_URL: ${SCENARIOS_TRUCK_URL:-http://truck-sim:8240}
-      SCENARIOS_CONGESTION_URL: ${SCENARIOS_CONGESTION_URL:-http://congestion:8311}
-      SCENARIOS_ANOMALY_URL: ${SCENARIOS_ANOMALY_URL:-http://anomaly:8321}
-      POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+asyncpg://postgres:jnpa_pw@postgres:5432/postgres}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      KAFKA_BROKERS: kafka:9092
-      SCENARIOS_FORECAST_ATTEMPTS: ${SCENARIOS_FORECAST_ATTEMPTS:-6}
-      LOG_LEVEL: ${SCENARIOS_LOG_LEVEL:-INFO}
-      OTEL_SERVICE_NAME: scenarios-runner
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
-      OTEL_SDK_DISABLED: ${OTEL_SDK_DISABLED:-false}
-      TZ: Etc/UTC
-    ports:
-      - "8400:8400"
-    volumes:
-      - ./scenarios:/app/scenarios:ro
-    networks:
-      - jnpa
+      DATA_MODE: mock
+      CONNECTOR: ulip
+      KAFKA_BROKERS: redpanda:29092
+    depends_on:
+      redpanda:
+        condition: service_healthy
+  connector-icegate:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: icegate, KAFKA_BROKERS: redpanda:29092 }
+  connector-tos:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: tos, KAFKA_BROKERS: redpanda:29092 }
+  connector-fois:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: fois, FOIS_VIA_ULIP: "true", KAFKA_BROKERS: redpanda:29092 }
+  connector-eseal:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: eseal, KAFKA_BROKERS: redpanda:29092 }
+  connector-shipline:
+    <<: *connector
+    environment: { DATA_MODE: mock, CONNECTOR: shipline, KAFKA_BROKERS: redpanda:29092 }
 
-  # --------------------------------------------------------------------------
-  # Control-room dashboard (UC-III Sub-Criterion 4).
-  # React + Vite SPA built into an nginx image; nginx serves the static bundle
-  # on host :3000 and reverse-proxies /api (REST + WebSocket) to the gateway so
-  # the browser talks to a single origin. The Mapbox token is a build arg (free
-  # tier OK); when blank the map falls back to the Bhuvan (ISRO) WMS basemap.
-  #   open http://localhost:3000/live
-  # --------------------------------------------------------------------------
-  # Serves the control-room dashboard at / and the trucking-app PWA (Prompt 11)
-  # at /pwa from one nginx (build context is the repo root so the image can build
-  # both web/ and mobile-pwa/). The PWA's re-route push reaches the gateway via
-  # the same /api reverse-proxy the dashboard uses.
-  web:
+  # --- AI services ------------------------------------------------------------
+  ai-dwell: &ai
     build:
       context: .
-      dockerfile: web/Dockerfile
-      args:
-        VITE_MAPBOX_TOKEN: ${MAPBOX_TOKEN:-}
-        VITE_BHUVAN_WMS: ${VITE_BHUVAN_WMS:-https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms}
-    image: jnpa/web:0.1.0
-    container_name: jnpa-web
-    restart: unless-stopped
+      dockerfile: services/ai/Dockerfile
+    environment:
+      AI_MODEL: dwell-predictor
     depends_on:
-      gateway:
-        condition: service_started
-    ports:
-      - "3000:3000"
-    networks:
-      - jnpa
+      - gateway
+  ai-gate-queue:
+    <<: *ai
+    environment: { AI_MODEL: gate-queue-forecaster }
+  ai-rake-tat:
+    <<: *ai
+    environment: { AI_MODEL: rake-tat-forecaster }
+  ai-anomaly:
+    <<: *ai
+    environment: { AI_MODEL: event-anomaly-detector }
+
+volumes:
+  pgdata:
+  miniodata:

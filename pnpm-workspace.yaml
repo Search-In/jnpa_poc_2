@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "services/gateway"
+  - "services/kpi"
+  - "services/scenarios"
+  - "services/notifications"

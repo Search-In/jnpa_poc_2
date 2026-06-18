@@ -1,0 +1,29 @@
+{
+  "name": "@jnpa/data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed data adapter (prompt §5). MockAdapter | LiveAdapter behind one interface, selected by DATA_MODE. The UI binds ONLY to these methods.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@jnpa/schemas": "workspace:*",
+    "@jnpa/sim": "workspace:*",
+    "@jnpa/kpi": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

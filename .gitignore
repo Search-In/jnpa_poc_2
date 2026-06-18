@@ -1,42 +1,47 @@
-# Local environment (never commit real keys)
-.env.local
-*.env.local
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+coverage/
+.vite/
 
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
 .venv/
 venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
 
-# OS / editor
-.DS_Store
-*.swp
-.idea/
-.vscode/
+# ML model artifacts (versioned out-of-band; metrics.json IS committed)
+services/ai/**/models/*.txt
+services/ai/**/models/*.bin
+services/ai/**/models/*.pkl
+services/ai/**/models/*.joblib
+!services/ai/**/models/.gitkeep
 
-# Data / artefacts
+# Env / secrets — only .env.example is committed
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Object store / data artifacts (raw EDI dumps in mock runs)
+data/object-store/
 *.log
-minio-data/
-pgdata/
 
-# Clip data: ignore downloaded/synthesized media, but keep the placeholder
-# layout (the 0-byte .mp4 placeholders + README) under version control.
-data/clips/*.mp4
-data/clips/*.mov
-data/clips/*.mkv
-!data/clips/.gitkeep
-data/**/*.bin
+# OS
+.DS_Store
+Thumbs.db
 
-# ANPR model artefacts: large/generated, fetched by scripts or MinIO at runtime.
-# Keep the small text resources (char dict, state codes) + the sample image.
-ai/anpr/resources/*.pt
-ai/anpr/resources/rec_indian/
-ai/anpr/resources/datasets/
-ai/anpr/eval/metrics.json
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

@@ -1,0 +1,18 @@
+{
+  "model": "gate-queue-forecaster",
+  "algorithm": "GBM autoregressor (prod=LSTM/TFT)",
+  "metric": "RMSE",
+  "value": 0.323,
+  "threshold": 3.5,
+  "passed": true,
+  "n_test": 400,
+  "trained_at": "2026-06-17T13:36:17.844067+00:00",
+  "feature_list": [
+    "queue_lag1",
+    "queue_lag2",
+    "hour_sin",
+    "hour_cos",
+    "uc3_truck_inflow"
+  ],
+  "version": "0.1.0"
+}
