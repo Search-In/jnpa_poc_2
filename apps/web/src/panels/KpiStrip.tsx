@@ -10,6 +10,7 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
+import { useSimStore } from '../sim/useSimStore.js';
 
 function KpiCard({ kpi }: { kpi: KpiResult }) {
   const { lang } = useApp();
@@ -37,7 +38,12 @@ function KpiCard({ kpi }: { kpi: KpiResult }) {
 
 export function KpiStrip() {
   const { adapter, lang } = useApp();
-  const state = useAsync<KpiResult[]>(() => adapter.getKPIs(), [adapter]);
+  // Refetch when the simulator advances (tick) or its levers change, so the
+  // headline KPIs move with the rest of the dashboard. The override signature
+  // catches manual changes even while the clock is paused.
+  const sim = useSimStore();
+  const simSig = JSON.stringify([sim.gates, sim.pendency, sim.rail, sim.movementRate, sim.scanQueue]);
+  const state = useAsync<KpiResult[]>(() => adapter.getKPIs(), [adapter, sim.tick, simSig]);
   // The seven primary KPIs are first; show them prominently, rollups after.
   return (
     <Panel heading={t('panel_kpis', lang)} state={state} isEmpty={(d) => d.length === 0}>

@@ -16,6 +16,7 @@ import type { BaselinesConfig } from '@jnpa/kpi';
 import terminalsConfig from '../../../../config/terminals.json';
 import baselinesConfig from '../../../../config/baselines.json';
 import type { Lang } from '../i18n/strings.js';
+import { SimAdapter } from '../sim/SimAdapter.js';
 
 interface AppState {
   adapter: DataAdapter;
@@ -41,13 +42,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef<string | undefined>(undefined);
 
   const adapter = useMemo<DataAdapter>(() => {
-    if (MODE === 'live') {
-      return new LiveAdapter({ gatewayBaseUrl: GATEWAY_BASE, getToken: () => tokenRef.current });
-    }
-    return new MockAdapter({
-      terminalsConfig: terminalsConfig as unknown as ConstructorParameters<typeof MockAdapter>[0]['terminalsConfig'],
-      baselines: baselinesConfig as unknown as BaselinesConfig,
-    });
+    const base =
+      MODE === 'live'
+        ? new LiveAdapter({ gatewayBaseUrl: GATEWAY_BASE, getToken: () => tokenRef.current })
+        : new MockAdapter({
+            terminalsConfig: terminalsConfig as unknown as ConstructorParameters<typeof MockAdapter>[0]['terminalsConfig'],
+            baselines: baselinesConfig as unknown as BaselinesConfig,
+          });
+    // Wrap so the live-data Simulator's overrides flow into every tab + the map.
+    return new SimAdapter(base);
   }, []);
 
   // Live mode: (re)mint a dev token whenever the role changes.

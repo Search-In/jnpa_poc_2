@@ -14,12 +14,14 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
+import { useSimDep } from '../sim/useSimStore.js';
 
 const qColor = (n: number) => (n > 16 ? tokens.congestion.RED : n > 8 ? tokens.congestion.AMBER : tokens.congestion.GREEN);
 
 export function GateOps({ window }: { window: { from: string; to: string } }) {
   const { adapter, lang } = useApp();
-  const ops = useAsync<GateOpsDTO[]>(() => adapter.getGateOps(window), [adapter, window.from, window.to]);
+  const simDep = useSimDep();
+  const ops = useAsync<GateOpsDTO[]>(() => adapter.getGateOps(window), [adapter, window.from, window.to, simDep]);
   const [gate, setGate] = useState<string>('NSICT-G1');
   const forecast = useAsync<GateQueueForecastDTO>(() => adapter.getGateQueueForecast(gate), [adapter, gate]);
 

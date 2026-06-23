@@ -9,13 +9,15 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
+import { useSimDep } from '../sim/useSimStore.js';
 
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
 
 export function ScanQueue() {
   const { adapter, lang } = useApp();
-  const state = useAsync<ScanEvent[]>(() => adapter.getScanQueue(), [adapter]);
+  const simDep = useSimDep();
+  const state = useAsync<ScanEvent[]>(() => adapter.getScanQueue(), [adapter, simDep]);
   return (
     <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(scans) => (

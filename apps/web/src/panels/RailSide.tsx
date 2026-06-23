@@ -19,6 +19,7 @@ import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
+import { useSimDep } from '../sim/useSimStore.js';
 
 const hrs = (a?: string, b?: string) =>
   a && b ? `${((new Date(b).getTime() - new Date(a).getTime()) / 3.6e6).toFixed(1)}h` : '—';
@@ -26,7 +27,8 @@ const hrs = (a?: string, b?: string) =>
 export function RailSide({ window }: { window: { from: string; to: string } }) {
   const { adapter, lang } = useApp();
   const [siding, setSiding] = useState<SidingId>('T1');
-  const state = useAsync<RailSideDTO>(() => adapter.getRailSide(siding, window), [adapter, siding, window.from, window.to]);
+  const simDep = useSimDep();
+  const state = useAsync<RailSideDTO>(() => adapter.getRailSide(siding, window), [adapter, siding, window.from, window.to, simDep]);
 
   return (
     <Panel heading={t('panel_rail', lang)} state={state} isEmpty={(d) => d.rakes.length === 0}>
@@ -38,6 +40,16 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
             <CalciteSegmentedControlItem value="T1" checked={siding === 'T1'}>T1</CalciteSegmentedControlItem>
             <CalciteSegmentedControlItem value="T2" checked={siding === 'T2'}>T2</CalciteSegmentedControlItem>
           </CalciteSegmentedControl>
+
+          {(() => {
+            const sim = rail as RailSideDTO & { simInbound?: number; simPlaced?: number };
+            if (!sim.simInbound && !sim.simPlaced) return null;
+            return (
+              <p style={{ fontSize: 12, marginTop: 8, color: 'var(--calcite-color-brand)' }}>
+                ⚡ Simulator: {sim.simInbound ?? 0} inbound rake(s) queued · {sim.simPlaced ?? 0} placed on {siding}
+              </p>
+            );
+          })()}
 
           <CalciteTable caption={`Rakes on ${siding}`} style={{ marginTop: 8 }}>
             <CalciteTableRow slot="table-header">

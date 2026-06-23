@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import {
   CalciteShell, CalciteShellPanel, CalcitePanel, CalciteNavigation, CalciteNavigationLogo,
   CalciteLabel, CalciteSelect, CalciteOption, CalciteChip, CalciteTabs, CalciteTab,
-  CalciteTabNav, CalciteTabTitle, CalciteLoader,
+  CalciteTabNav, CalciteTabTitle, CalciteLoader, CalciteButton,
 } from '@esri/calcite-components-react';
 import type { Role, Facility, Terminal } from '@jnpa/schemas';
 import { ROLES } from '@jnpa/schemas';
@@ -28,19 +28,42 @@ import { EmptyPool } from './panels/EmptyPool.js';
 import { HealthCards } from './panels/HealthCards.js';
 import { Notifications } from './panels/Notifications.js';
 import { Scenarios } from './panels/Scenarios.js';
+import { useSimStore, hasSimOverrides, useSimDep } from './sim/useSimStore.js';
+import { applyFlows } from './sim/applySim.js';
+import { navigate } from './sim/useHashRoute.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
   to: new Date(Date.UTC(2026, 5, 17, 0, 0, 0)).toISOString(),
 };
 
+/** Stable tab ids ↔ labels; ids drive the controlled tab selection. */
+const TABS = [
+  { id: 'movements', label: 'Movements' },
+  { id: 'rail', label: 'Rail T1/T2' },
+  { id: 'gate', label: 'Gate' },
+  { id: 'pendency', label: 'Pendency' },
+  { id: 'scan', label: 'Scan' },
+  { id: 'empty', label: 'Empty' },
+  { id: 'scenarios', label: 'Scenarios' },
+  { id: 'health', label: 'Health' },
+  { id: 'notifications', label: 'Notifications' },
+] as const;
+
 export function Dashboard() {
   const { adapter, role, setRole, lang, setLang, authReady } = useApp();
+  // Live-data simulator state. `tick` advances while the sim clock runs; keying
+  // the data fetches on it makes every panel + the map refetch (through the
+  // SimAdapter overlay) so the board updates in real time.
+  const sim = useSimStore();
+  // simDep changes on every tick AND on every manual lever change (even while
+  // paused), so the map's gate/pendency data refetches through the SimAdapter.
+  const simDep = useSimDep();
   // In live mode, panels must not fetch before the JWT lands → key on authReady.
   const facilities = useAsync<Facility[]>(() => adapter.getFacilities(role), [adapter, role, authReady]);
   const terminals = useAsync<Terminal[]>(() => adapter.getTerminals(), [adapter, authReady]);
-  const gateOps = useAsync<GateOpsDTO[]>(() => adapter.getGateOps(DEMO_WINDOW), [adapter, authReady]);
-  const pendency = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, authReady]);
+  const gateOps = useAsync<GateOpsDTO[]>(() => adapter.getGateOps(DEMO_WINDOW), [adapter, authReady, simDep]);
+  const pendency = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, authReady, simDep]);
 
   // Derive cargo OD flows between terminals for the map (import/export/transship/ITRHO).
   const flows = useMemo(() => {
@@ -56,7 +79,17 @@ export function Dashboard() {
     return out;
   }, [terminals.data]);
 
+  // Scale flow thickness/counts by the simulator's movement rate.
+  const liveFlows = useMemo(() => applyFlows(flows, sim), [flows, sim.movementRate]);
+
+  // Assets the simulator is driving → drawn with a highlight halo on the map.
+  const highlights = useMemo(
+    () => [...new Set([...Object.keys(sim.gates), ...Object.keys(sim.pendency)])],
+    [sim.gates, sim.pendency],
+  );
+
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
+  const [activeTab, setActiveTab] = useState<string>('movements');
 
   return (
     <CalciteShell style={{ height: '100vh', background: tokens.color.bg }}>
@@ -67,6 +100,14 @@ export function Dashboard() {
           description={`JNPA UC2 · ${adapter.mode.toUpperCase()} mode`}
         />
         <div slot="content-end" style={{ display: 'flex', gap: 16, alignItems: 'center', paddingInline: 16 }}>
+          {hasSimOverrides(sim) && (
+            <CalciteChip value="sim" kind="brand" icon={sim.running ? 'play-f' : 'pause-f'}>
+              SIM {sim.running ? 'LIVE' : 'PAUSED'}
+            </CalciteChip>
+          )}
+          <CalciteButton appearance="outline" iconStart="play" scale="s" onClick={() => navigate('/simulator')}>
+            Simulator
+          </CalciteButton>
           <CalciteChip
             value={adapter.mode}
             kind={adapter.mode === 'live' ? 'brand' : 'neutral'}
@@ -103,8 +144,9 @@ export function Dashboard() {
                 terminals={terminals.data}
                 gateOps={gateOps.data}
                 pendency={pendency.data}
-                flows={flows}
+                flows={liveFlows}
                 scenarioOverlay={mapOverlay}
+                highlights={highlights}
               />
             ) : null}
           </div>
@@ -122,27 +164,32 @@ export function Dashboard() {
             <div style={{ padding: 12 }}>
               <KpiStrip />
             </div>
+            {/* Controlled tabs: the active tab lives in React state (`activeTab`)
+                and is re-asserted via the `selected`/`tab` linkage on every
+                render. Without this, each sim-tick re-render would reset the
+                uncontrolled selection back to the first tab. */}
             <CalciteTabs layout="inline" style={{ padding: 12 }}>
               <CalciteTabNav slot="title-group">
-                <CalciteTabTitle selected>Movements</CalciteTabTitle>
-                <CalciteTabTitle>Rail T1/T2</CalciteTabTitle>
-                <CalciteTabTitle>Gate</CalciteTabTitle>
-                <CalciteTabTitle>Pendency</CalciteTabTitle>
-                <CalciteTabTitle>Scan</CalciteTabTitle>
-                <CalciteTabTitle>Empty</CalciteTabTitle>
-                <CalciteTabTitle>Scenarios</CalciteTabTitle>
-                <CalciteTabTitle>Health</CalciteTabTitle>
-                <CalciteTabTitle>Notifications</CalciteTabTitle>
+                {TABS.map((tb) => (
+                  <CalciteTabTitle
+                    key={tb.id}
+                    tab={tb.id}
+                    selected={activeTab === tb.id}
+                    onCalciteTabsActivate={() => setActiveTab(tb.id)}
+                  >
+                    {tb.label}
+                  </CalciteTabTitle>
+                ))}
               </CalciteTabNav>
-              <CalciteTab selected><ContainerMovements /></CalciteTab>
-              <CalciteTab><RailSide window={DEMO_WINDOW} /></CalciteTab>
-              <CalciteTab><GateOps window={DEMO_WINDOW} /></CalciteTab>
-              <CalciteTab><Pendency /></CalciteTab>
-              <CalciteTab><ScanQueue /></CalciteTab>
-              <CalciteTab><EmptyPool /></CalciteTab>
-              <CalciteTab><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></CalciteTab>
-              <CalciteTab><HealthCards /></CalciteTab>
-              <CalciteTab><Notifications /></CalciteTab>
+              <CalciteTab tab="movements" selected={activeTab === 'movements'}><ContainerMovements /></CalciteTab>
+              <CalciteTab tab="rail" selected={activeTab === 'rail'}><RailSide window={DEMO_WINDOW} /></CalciteTab>
+              <CalciteTab tab="gate" selected={activeTab === 'gate'}><GateOps window={DEMO_WINDOW} /></CalciteTab>
+              <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><Pendency /></CalciteTab>
+              <CalciteTab tab="scan" selected={activeTab === 'scan'}><ScanQueue /></CalciteTab>
+              <CalciteTab tab="empty" selected={activeTab === 'empty'}><EmptyPool /></CalciteTab>
+              <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></CalciteTab>
+              <CalciteTab tab="health" selected={activeTab === 'health'}><HealthCards /></CalciteTab>
+              <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><Notifications /></CalciteTab>
             </CalciteTabs>
           </div>
         )}

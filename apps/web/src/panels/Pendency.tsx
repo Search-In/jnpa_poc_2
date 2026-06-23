@@ -10,12 +10,14 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
+import { useSimDep } from '../sim/useSimStore.js';
 
 const sev = (n: number) => (n > 150 ? tokens.congestion.RED : n > 50 ? tokens.congestion.AMBER : tokens.congestion.GREEN);
 
 export function Pendency() {
   const { adapter, lang } = useApp();
-  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter]);
+  const simDep = useSimDep();
+  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, simDep]);
   return (
     <Panel heading={t('panel_pendency', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(rows) => (

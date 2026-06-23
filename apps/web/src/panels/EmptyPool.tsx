@@ -9,10 +9,12 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
+import { useSimDep } from '../sim/useSimStore.js';
 
 export function EmptyPool() {
   const { adapter, lang } = useApp();
-  const state = useAsync<EmptyPoolDTO>(() => adapter.getEmptyPool(), [adapter]);
+  const simDep = useSimDep();
+  const state = useAsync<EmptyPoolDTO>(() => adapter.getEmptyPool(), [adapter, simDep]);
   return (
     <Panel heading={t('panel_empty', lang)} state={state} isEmpty={(d) => d.pools.length === 0}>
       {(dto) => (

@@ -12,12 +12,20 @@ import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { tokens } from '../theme/tokens.js';
 
-let oid = 1;
-const nextOid = () => oid++;
+/**
+ * Stable, deterministic objectId from a logical key (gateId, facilityId, …).
+ * Using a stable id per asset lets the FeatureLayerView UPDATE a feature in
+ * place (smooth attribute/renderer transition) instead of delete+re-add, which
+ * is what caused the whole-layer "blink" on every sim tick.
+ */
+export function stableOid(key: string): number {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) h = ((h << 5) + h + key.charCodeAt(i)) | 0;
+  return Math.abs(h) || 1;
+}
 
-/** Facilities layer — unique-value renderer by type (A.1). */
-export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
-  const graphics = facilities
+function facilityGraphics(facilities: Facility[]): Graphic[] {
+  return facilities
     .filter((f) => f.geom.type === 'Point')
     .map(
       (f) =>
@@ -27,7 +35,7 @@ export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
             latitude: (f.geom as { coordinates: [number, number] }).coordinates[1],
           }),
           attributes: {
-            objectId: nextOid(),
+            objectId: stableOid(`fac:${f.facilityId}`),
             facilityId: f.facilityId,
             type: f.type,
             name: f.name,
@@ -36,10 +44,13 @@ export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
           },
         }),
     );
+}
 
+/** Facilities layer — unique-value renderer by type (A.1). */
+export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
   return new FeatureLayer({
     title: 'Facilities',
-    source: graphics as unknown as Graphic[],
+    source: facilityGraphics(facilities) as unknown as Graphic[],
     objectIdField: 'objectId',
     geometryType: 'point',
     spatialReference: { wkid: 4326 },
@@ -66,21 +77,20 @@ export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
   });
 }
 
-/** Gates layer — graduated symbols by live queue length + heatmap behaviour (A.1). */
-export function gatesLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): FeatureLayer {
+function gateGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
   const gatePos = new Map<string, [number, number]>();
   for (const t of terminals) {
     const c = (t.geom as { coordinates: [number, number] }).coordinates;
     t.gates.forEach((g, i) => gatePos.set(g, [c[0] + 0.002 * (i + 1), c[1] + 0.001 * (i + 1)]));
   }
-  const graphics = gateOps
+  return gateOps
     .filter((g) => gatePos.has(g.gateId))
     .map((g) => {
       const [lng, lat] = gatePos.get(g.gateId)!;
       return new Graphic({
         geometry: new Point({ longitude: lng, latitude: lat }),
         attributes: {
-          objectId: nextOid(),
+          objectId: stableOid(`gate:${g.gateId}`),
           gateId: g.gateId,
           terminalId: g.terminalId,
           queueLength: g.queueLength,
@@ -88,10 +98,13 @@ export function gatesLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
         },
       });
     });
+}
 
+/** Gates layer — graduated symbols by live queue length + heatmap behaviour (A.1). */
+export function gatesLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): FeatureLayer {
   return new FeatureLayer({
     title: 'Gates',
-    source: graphics as unknown as Graphic[],
+    source: gateGraphics(gateOps, terminals) as unknown as Graphic[],
     objectIdField: 'objectId',
     geometryType: 'point',
     spatialReference: { wkid: 4326 },
@@ -125,9 +138,8 @@ export function gatesLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
   });
 }
 
-/** Pendency choropleth — graduated colour on facility points by pendency (A.1). */
-export function pendencyLayer(pend: PendencyDTO[]): FeatureLayer {
-  const graphics = pend
+function pendencyGraphics(pend: PendencyDTO[]): Graphic[] {
+  return pend
     .filter((p) => p.geom.type === 'Point')
     .map(
       (p) =>
@@ -136,13 +148,17 @@ export function pendencyLayer(pend: PendencyDTO[]): FeatureLayer {
             longitude: (p.geom as { coordinates: [number, number] }).coordinates[0],
             latitude: (p.geom as { coordinates: [number, number] }).coordinates[1],
           }),
-          attributes: { objectId: nextOid(), facilityId: p.facilityId, name: p.facilityName, pendency: p.pendency },
+          attributes: { objectId: stableOid(`pend:${p.facilityId}`), facilityId: p.facilityId, name: p.facilityName, pendency: p.pendency },
         }),
     );
+}
+
+/** Pendency choropleth — graduated colour on facility points by pendency (A.1). */
+export function pendencyLayer(pend: PendencyDTO[]): FeatureLayer {
   return new FeatureLayer({
     title: 'Pendency',
     visible: false,
-    source: graphics as unknown as Graphic[],
+    source: pendencyGraphics(pend) as unknown as Graphic[],
     objectIdField: 'objectId',
     geometryType: 'point',
     spatialReference: { wkid: 4326 },
@@ -172,27 +188,91 @@ export function pendencyLayer(pend: PendencyDTO[]): FeatureLayer {
   });
 }
 
-/** Cargo flows — animated-style OD polylines by stream incl. ITRHO (A.1). */
-export function cargoFlowsLayer(
+/**
+ * Highlighted-assets layer — a pulsing halo around the assets the Simulator is
+ * actively driving, so operators can see *what* the live data is changing. The
+ * positions are resolved from facilities + gate offsets (same geometry rules as
+ * the operational layers) so highlights sit exactly over the real markers.
+ */
+export function highlightGraphics(
+  assetIds: string[],
+  facilities: Facility[],
   terminals: Terminal[],
-  flows: Array<{ from: string; to: string; stream: keyof typeof tokens.flow; count: number }>,
+): Graphic[] {
+  // Build a lookup of id -> [lng, lat] for facilities and gates.
+  const pos = new Map<string, [number, number]>();
+  for (const f of facilities) {
+    if (f.geom.type === 'Point') pos.set(f.facilityId, (f.geom as { coordinates: [number, number] }).coordinates);
+  }
+  for (const t of terminals) {
+    const c = (t.geom as { coordinates: [number, number] }).coordinates;
+    pos.set(t.terminalId, c);
+    t.gates.forEach((g, i) => pos.set(g, [c[0] + 0.002 * (i + 1), c[1] + 0.001 * (i + 1)]));
+  }
+
+  return assetIds
+    .filter((id) => pos.has(id))
+    .map((id) => {
+      const [lng, lat] = pos.get(id)!;
+      return new Graphic({
+        geometry: new Point({ longitude: lng, latitude: lat }),
+        attributes: { objectId: stableOid(`hl:${id}`), assetId: id },
+      });
+    });
+}
+
+export function highlightedAssetsLayer(
+  assetIds: string[],
+  facilities: Facility[],
+  terminals: Terminal[],
 ): FeatureLayer {
+  return new FeatureLayer({
+    title: 'Live (simulated)',
+    source: highlightGraphics(assetIds, facilities, terminals) as unknown as Graphic[],
+    objectIdField: 'objectId',
+    geometryType: 'point',
+    spatialReference: { wkid: 4326 },
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'assetId', type: 'string' },
+    ],
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'simple-marker',
+        style: 'circle',
+        size: 22,
+        color: [0, 0, 0, 0],
+        outline: { color: tokens.color.brand, width: 3 },
+      },
+    } as never,
+    popupTemplate: { title: 'Live: {assetId}', content: 'Driven by the simulator.' } as never,
+  });
+}
+
+type Flow = { from: string; to: string; stream: keyof typeof tokens.flow; count: number };
+
+function flowGraphics(terminals: Terminal[], flows: Flow[]): Graphic[] {
   const pos = new Map<string, [number, number]>(
     terminals.map((t) => [t.terminalId, (t.geom as { coordinates: [number, number] }).coordinates]),
   );
-  const graphics = flows
+  return flows
     .filter((f) => pos.has(f.from) && pos.has(f.to))
     .map((f) => {
       const a = pos.get(f.from)!;
       const b = pos.get(f.to)!;
       return new Graphic({
         geometry: new Polyline({ paths: [[a, b]], spatialReference: { wkid: 4326 } }),
-        attributes: { objectId: nextOid(), stream: f.stream, count: f.count, from: f.from, to: f.to },
+        attributes: { objectId: stableOid(`flow:${f.from}->${f.to}:${f.stream}`), stream: f.stream, count: f.count, from: f.from, to: f.to },
       });
     });
+}
+
+/** Cargo flows — animated-style OD polylines by stream incl. ITRHO (A.1). */
+export function cargoFlowsLayer(terminals: Terminal[], flows: Flow[]): FeatureLayer {
   return new FeatureLayer({
     title: 'Cargo Flows',
-    source: graphics as unknown as Graphic[],
+    source: flowGraphics(terminals, flows) as unknown as Graphic[],
     objectIdField: 'objectId',
     geometryType: 'polyline',
     spatialReference: { wkid: 4326 },
@@ -213,4 +293,57 @@ export function cargoFlowsLayer(
     } as never,
     popupTemplate: { title: '{stream} flow', content: '{from} → {to}: {count} containers' } as never,
   });
+}
+
+// ---- smooth in-place updates ----------------------------------------------
+
+/** Builds the current graphics array for an operational layer kind. */
+export const graphicsFor = {
+  facilities: facilityGraphics,
+  pendency: pendencyGraphics,
+  gates: gateGraphics,
+  flows: flowGraphics,
+};
+
+/**
+ * Smoothly reconcile a layer's features to `next` via a single applyEdits:
+ * features present in both are UPDATED (attributes/geometry), new ones ADDED,
+ * gone ones DELETED. Because objectIds are stable per asset (stableOid), the
+ * FeatureLayerView transitions the changed markers in place instead of
+ * delete-all + add-all — no whole-layer blink. Returns a promise.
+ *
+ * `attrsEqual` skips no-op updates so unchanged features aren't re-edited (the
+ * sim only changes a handful of assets per tick), keeping transitions targeted.
+ */
+export async function applyGraphics(layer: FeatureLayer, next: Graphic[]): Promise<void> {
+  const existing = await layer.queryFeatures();
+  const oidField = layer.objectIdField;
+  const prevByOid = new Map<number, Graphic>();
+  for (const g of existing.features) prevByOid.set(g.attributes[oidField] as number, g);
+
+  const addFeatures: Graphic[] = [];
+  const updateFeatures: Graphic[] = [];
+  const seen = new Set<number>();
+
+  for (const g of next) {
+    const id = g.attributes[oidField] as number;
+    seen.add(id);
+    const prev = prevByOid.get(id);
+    if (!prev) {
+      addFeatures.push(g);
+    } else if (!attrsEqual(prev.attributes, g.attributes)) {
+      updateFeatures.push(g);
+    }
+  }
+  const deleteFeatures = existing.features.filter((g) => !seen.has(g.attributes[oidField] as number));
+
+  if (!addFeatures.length && !updateFeatures.length && !deleteFeatures.length) return;
+  await layer.applyEdits({ addFeatures, updateFeatures, deleteFeatures });
+}
+
+function attrsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const k of keys) if (a[k] !== b[k]) return false;
+  return true;
 }
