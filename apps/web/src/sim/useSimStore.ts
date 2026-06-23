@@ -17,13 +17,14 @@ export function useSimStore(): SimState {
  */
 export function useSimDep(): string {
   const s = useSimStore();
-  return `${s.tick}|${s.movementRate}|${s.scanQueue}|${s.emptyDelta}|${JSON.stringify(s.gates)}|${JSON.stringify(s.pendency)}|${JSON.stringify(s.rail)}`;
+  return `${s.tick}|${s.movementRate}|${s.scanQueue}|${s.emptyDelta}|${JSON.stringify(s.gates)}|${JSON.stringify(s.pendency)}|${JSON.stringify(s.rail)}|${s.tour.scenarioId}:${s.tour.stepIndex}`;
 }
 
 /** True if the sim currently overrides anything (used to badge the dashboard). */
 export function hasSimOverrides(s: SimState): boolean {
   return (
     s.running ||
+    s.tour.scenarioId !== null ||
     Object.keys(s.gates).length > 0 ||
     Object.keys(s.pendency).length > 0 ||
     Object.keys(s.rail).length > 0 ||

@@ -51,6 +51,9 @@ export function PortMap(props: PortMapProps) {
     gates: FeatureLayer;
   } | null>(null);
   const highlightRef = useRef<FeatureLayer | null>(null);
+  // Last spotlight id-set we zoomed to, so we only re-frame when it changes
+  // (not on every sim tick that merely re-creates the highlights array).
+  const lastZoomKey = useRef<string>('');
   // Latest props for the init effect's first layer build (init runs once).
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -148,11 +151,29 @@ export function PortMap(props: PortMapProps) {
   }, [props.facilities, props.terminals, props.gateOps, props.pendency, props.flows]);
 
   // Highlight halos are edited in place too, so adding/removing a driven asset
-  // fades just that ring in/out instead of recreating the layer.
+  // fades just that ring in/out instead of recreating the layer. When the set of
+  // spotlighted assets changes we also pan/zoom the map to frame them, so the
+  // map view stays synced with the guided What-If tour ("show me on the map").
   useEffect(() => {
     const layer = highlightRef.current;
+    const view = viewRef.current;
     if (!layer) return;
-    void applyGraphics(layer, highlightGraphics(props.highlights ?? [], props.facilities, props.terminals));
+    const next = highlightGraphics(props.highlights ?? [], props.facilities, props.terminals);
+    void applyGraphics(layer, next);
+
+    const zoomKey = [...(props.highlights ?? [])].sort().join('|');
+    if (view && next.length > 0 && zoomKey !== lastZoomKey.current) {
+      lastZoomKey.current = zoomKey;
+      const targets = next.map((g) => g.geometry).filter(Boolean);
+      view.when(() => {
+        void view.goTo(
+          targets.length === 1 ? { target: targets[0], zoom: Math.max(view.zoom, 15) } : { target: targets },
+          { duration: 700, easing: 'ease-in-out' },
+        ).catch(() => { /* goTo rejects if interrupted by a newer animation — fine */ });
+      });
+    } else if (next.length === 0) {
+      lastZoomKey.current = '';
+    }
   }, [props.highlights, props.facilities, props.terminals]);
 
   return (

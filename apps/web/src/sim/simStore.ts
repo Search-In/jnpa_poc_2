@@ -15,6 +15,8 @@
  * Simulator page set target values that the tick eases toward.
  */
 
+import { getScript, type StepPatch } from './scenarioPlayer.js';
+
 export type Faction = 'gates' | 'rail' | 'pendency' | 'movements' | 'scan' | 'empty';
 
 /** Per-gate live override. */
@@ -34,6 +36,23 @@ export interface RailOverride {
   inboundQueue?: number;
   /** Rakes currently placed (occupying the siding). */
   placed?: number;
+}
+
+/**
+ * Guided What-If tour state. When a scenario is playing, `scenarioId` is set and
+ * `stepIndex` points at the current storyline step; `autoAdvance` drives the
+ * step-by-step playback on a timer. The dashboard reads this to show the
+ * coach-mark tour, spotlight the right tab, and badge the running scenario.
+ */
+export interface TourState {
+  /** Active scenario id, or null when no tour is playing. */
+  scenarioId: string | null;
+  /** Index of the current step in the scenario's storyline. */
+  stepIndex: number;
+  /** Auto-advance through steps on a timer (pause to read a step). */
+  autoAdvance: boolean;
+  /** Bumped each time autoAdvance ticks, so the UI can show a progress bar. */
+  stepStartedAt: number;
 }
 
 export interface SimState {
@@ -59,11 +78,38 @@ export interface SimState {
   emptyDelta: number;
   /** Asset ids the operator is actively driving — highlighted on the map. */
   highlights: string[];
+  /** Guided What-If scenario tour (null scenarioId = no tour). */
+  tour: TourState;
 }
 
 const STORAGE_KEY = 'jnpa.sim.state.v1';
 const CHANNEL = 'jnpa-sim';
 const TICK_MS = 1000;
+/** How long each guided scenario step stays on screen before auto-advancing. */
+const TOUR_STEP_MS = 6000;
+
+/** Merge a scenario step's patch into the override fields of the sim state. */
+function mergePatch(s: SimState, patch: StepPatch): SimState {
+  const next: SimState = { ...s };
+  if (patch.gates) {
+    next.gates = { ...s.gates };
+    for (const [id, g] of Object.entries(patch.gates)) {
+      next.gates[id] = { ...next.gates[id], ...g };
+    }
+  }
+  if (patch.pendency) {
+    next.pendency = { ...s.pendency };
+    for (const [id, v] of Object.entries(patch.pendency)) next.pendency[id] = { pendency: v };
+  }
+  if (patch.rail) {
+    next.rail = { ...s.rail };
+    for (const [id, r] of Object.entries(patch.rail)) next.rail[id] = { ...next.rail[id], ...r };
+  }
+  if (patch.movementRate != null) next.movementRate = patch.movementRate;
+  if (patch.scanQueue !== undefined) next.scanQueue = patch.scanQueue;
+  if (patch.emptyDelta != null) next.emptyDelta = patch.emptyDelta;
+  return next;
+}
 
 function baseState(): SimState {
   return {
@@ -78,6 +124,7 @@ function baseState(): SimState {
     scanQueue: null,
     emptyDelta: 0,
     highlights: [],
+    tour: { scenarioId: null, stepIndex: 0, autoAdvance: true, stepStartedAt: 0 },
   };
 }
 
@@ -88,6 +135,10 @@ class SimStore {
   private listeners = new Set<Listener>();
   private channel: BroadcastChannel | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Auto-advance timer for the guided scenario tour. */
+  private tourTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Monotonic stamp source for step progress (avoids Date.now in the store). */
+  private stamp = 0;
   /** Set when an update arrives from another tab, to avoid echo loops. */
   private applyingRemote = false;
 
@@ -109,6 +160,7 @@ class SimStore {
           this.applyingRemote = false;
           this.emit(/* broadcast */ false);
           this.syncTimer();
+          this.armTourTimer();
         }
       };
     }
@@ -155,6 +207,111 @@ class SimStore {
 
   /** Clear all overrides back to baseline (keeps nothing). */
   reset = () => this.set(() => baseState());
+
+  // ---- guided What-If scenario tour ----
+
+  /**
+   * Start a scenario tour: clear prior overrides, apply step 0, spotlight its
+   * assets, and (if autoAdvance) arm the step timer. The board animates live as
+   * each step's patch lands; the coach-mark overlay reads `tour` to narrate.
+   */
+  startScenario = (scenarioId: string, autoAdvance = true) => {
+    const script = getScript(scenarioId);
+    if (!script || script.steps.length === 0) return;
+    this.set((s) => {
+      const fresh = baseState();
+      // Keep the clock/speed the operator already set; reset only the overrides.
+      const seeded: SimState = {
+        ...fresh,
+        running: s.running,
+        speed: s.speed,
+        clockMs: s.clockMs,
+        tick: s.tick,
+        tour: { scenarioId, stepIndex: 0, autoAdvance, stepStartedAt: ++this.stamp },
+      };
+      return this.applyStep(seeded, scenarioId, 0);
+    });
+    this.armTourTimer();
+  };
+
+  /** Jump to a specific step (used by the prev/next buttons & progress dots). */
+  gotoStep = (index: number) => {
+    this.set((s) => {
+      const id = s.tour.scenarioId;
+      const script = id ? getScript(id) : undefined;
+      if (!script) return s;
+      const i = Math.max(0, Math.min(script.steps.length - 1, index));
+      const stepped: SimState = {
+        ...s,
+        tour: { ...s.tour, stepIndex: i, stepStartedAt: ++this.stamp },
+      };
+      return this.applyStep(stepped, script.id, i);
+    });
+    this.armTourTimer();
+  };
+
+  nextStep = () => this.gotoStep(this.state.tour.stepIndex + 1);
+  prevStep = () => this.gotoStep(this.state.tour.stepIndex - 1);
+
+  /** Toggle auto-advance without changing the current step. */
+  setTourAutoAdvance = (autoAdvance: boolean) => {
+    this.set((s) =>
+      s.tour.scenarioId
+        ? { ...s, tour: { ...s.tour, autoAdvance, stepStartedAt: ++this.stamp } }
+        : s,
+    );
+    this.armTourTimer();
+  };
+
+  /** End the tour and clear every override the scenario applied. */
+  stopScenario = () => {
+    this.clearTourTimer();
+    this.set((s) => ({ ...baseState(), running: s.running, speed: s.speed, clockMs: s.clockMs, tick: s.tick }));
+  };
+
+  /**
+   * Compose the cumulative effect of all steps up to and including `index` so a
+   * jump-back leaves the board exactly where that step's narrative says it is
+   * (steps are written as a running storyline, later patches superseding earlier
+   * ones). Also sets the map spotlight to the current step's assets.
+   */
+  private applyStep(s: SimState, scenarioId: string, index: number): SimState {
+    const script = getScript(scenarioId);
+    if (!script) return s;
+    // Start from a clean override surface, replay patches 0..index in order.
+    let acc: SimState = {
+      ...s,
+      gates: {},
+      pendency: {},
+      rail: {},
+      movementRate: 1,
+      scanQueue: null,
+      emptyDelta: 0,
+    };
+    for (let i = 0; i <= index; i++) {
+      const step = script.steps[i];
+      if (step) acc = mergePatch(acc, step.patch);
+    }
+    const step = script.steps[index];
+    acc.highlights = step ? [...step.spotlight] : [];
+    return acc;
+  }
+
+  private armTourTimer() {
+    this.clearTourTimer();
+    const { scenarioId, autoAdvance, stepIndex } = this.state.tour;
+    if (!scenarioId || !autoAdvance) return;
+    const script = getScript(scenarioId);
+    if (!script || stepIndex >= script.steps.length - 1) return; // last step: stop
+    this.tourTimer = setTimeout(() => this.nextStep(), TOUR_STEP_MS);
+  }
+
+  private clearTourTimer() {
+    if (this.tourTimer) {
+      clearTimeout(this.tourTimer);
+      this.tourTimer = null;
+    }
+  }
 
   // ---- tick engine ----
 
@@ -241,3 +398,6 @@ function ease(from: number, to: number, k: number): number {
 
 /** Singleton store shared by every component in the tab. */
 export const simStore = new SimStore();
+
+/** Exposed for the tour progress bar so the UI matches the auto-advance pace. */
+export { TOUR_STEP_MS };

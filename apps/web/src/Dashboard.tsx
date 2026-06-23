@@ -4,7 +4,7 @@
  * health, notifications, scenarios) are composed around it. Role + language
  * selectors in the shell drive RBAC scoping and i18n.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CalciteShell, CalciteShellPanel, CalcitePanel, CalciteNavigation, CalciteNavigationLogo,
   CalciteLabel, CalciteSelect, CalciteOption, CalciteChip, CalciteTabs, CalciteTab,
@@ -31,6 +31,9 @@ import { Scenarios } from './panels/Scenarios.js';
 import { useSimStore, hasSimOverrides, useSimDep } from './sim/useSimStore.js';
 import { applyFlows } from './sim/applySim.js';
 import { navigate } from './sim/useHashRoute.js';
+import { GuidedTour } from './sim/GuidedTour.js';
+import { simStore } from './sim/simStore.js';
+import { getScript, type TabId } from './sim/scenarioPlayer.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
@@ -83,15 +86,32 @@ export function Dashboard() {
   const liveFlows = useMemo(() => applyFlows(flows, sim), [flows, sim.movementRate]);
 
   // Assets the simulator is driving → drawn with a highlight halo on the map.
+  // During a guided What-If tour the step's explicit spotlight wins (it may
+  // include terminals/facilities the levers don't key on); otherwise fall back
+  // to whatever the manual simulator is driving.
   const highlights = useMemo(
-    () => [...new Set([...Object.keys(sim.gates), ...Object.keys(sim.pendency)])],
-    [sim.gates, sim.pendency],
+    () =>
+      sim.tour.scenarioId
+        ? sim.highlights
+        : [...new Set([...Object.keys(sim.gates), ...Object.keys(sim.pendency)])],
+    [sim.tour.scenarioId, sim.highlights, sim.gates, sim.pendency],
   );
 
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<string>('movements');
 
+  // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause) auto-starts a
+  // guided What-If tour on load, so a single link can open straight into it.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('scenario');
+    if (id && getScript(id) && simStore.getState().tour.scenarioId == null) {
+      const auto = new URLSearchParams(window.location.search).get('auto') !== '0';
+      simStore.startScenario(id, auto);
+    }
+  }, []);
+
   return (
+    <>
     <CalciteShell style={{ height: '100vh', background: tokens.color.bg }}>
       <CalciteNavigation slot="header">
         <CalciteNavigationLogo
@@ -160,8 +180,8 @@ export function Dashboard() {
         {!authReady ? (
           <CalciteLoader label="Authenticating" text="Authenticating with gateway…" />
         ) : (
-          <div key={role}>
-            <div style={{ padding: 12 }}>
+          <div key={role} data-tour-panels>
+            <div style={{ padding: 12 }} data-tour-tab="kpis">
               <KpiStrip />
             </div>
             {/* Controlled tabs: the active tab lives in React state (`activeTab`)
@@ -181,19 +201,23 @@ export function Dashboard() {
                   </CalciteTabTitle>
                 ))}
               </CalciteTabNav>
-              <CalciteTab tab="movements" selected={activeTab === 'movements'}><ContainerMovements /></CalciteTab>
-              <CalciteTab tab="rail" selected={activeTab === 'rail'}><RailSide window={DEMO_WINDOW} /></CalciteTab>
-              <CalciteTab tab="gate" selected={activeTab === 'gate'}><GateOps window={DEMO_WINDOW} /></CalciteTab>
-              <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><Pendency /></CalciteTab>
-              <CalciteTab tab="scan" selected={activeTab === 'scan'}><ScanQueue /></CalciteTab>
-              <CalciteTab tab="empty" selected={activeTab === 'empty'}><EmptyPool /></CalciteTab>
-              <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></CalciteTab>
-              <CalciteTab tab="health" selected={activeTab === 'health'}><HealthCards /></CalciteTab>
-              <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><Notifications /></CalciteTab>
+              <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>
+              <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>
+              <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>
+              <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>
+              <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>
+              <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>
+              <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>
+              <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health"><HealthCards /></div></CalciteTab>
+              <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>
             </CalciteTabs>
           </div>
         )}
       </CalcitePanel>
     </CalciteShell>
+    {/* Guided What-If tour overlay — narrates a scenario as it drives the board.
+        Switches the active tab per step so the spotlight lands on the right panel. */}
+    <GuidedTour onTab={(tab: TabId) => setActiveTab(tab)} />
+    </>
   );
 }

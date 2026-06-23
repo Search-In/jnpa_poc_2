@@ -241,11 +241,30 @@ export function highlightedAssetsLayer(
       symbol: {
         type: 'simple-marker',
         style: 'circle',
-        size: 22,
-        color: [0, 0, 0, 0],
-        outline: { color: tokens.color.brand, width: 3 },
+        size: 30,
+        // Soft translucent fill + a thick brand ring so the spotlighted asset is
+        // unmistakable on the map (the previous transparent thin ring was easy to
+        // miss). The asset id is also drawn as a label below.
+        color: [26, 115, 194, 0.18],
+        outline: { color: tokens.color.brand, width: 4 },
       },
     } as never,
+    // Label each spotlighted asset with its id so a viewer immediately sees
+    // *which* gate/facility the scenario is talking about.
+    labelingInfo: [
+      {
+        labelExpressionInfo: { expression: '$feature.assetId' },
+        symbol: {
+          type: 'text',
+          color: tokens.color.brand,
+          haloColor: tokens.color.bgPanel,
+          haloSize: 1.5,
+          font: { size: 11, weight: 'bold' },
+          yoffset: -22,
+        },
+        labelPlacement: 'center-center',
+      },
+    ] as never,
     popupTemplate: { title: 'Live: {assetId}', content: 'Driven by the simulator.' } as never,
   });
 }
