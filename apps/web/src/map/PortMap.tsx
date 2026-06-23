@@ -64,7 +64,7 @@ export function PortMap(props: PortMapProps) {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new Map({ basemap: 'gray-vector' });
+    const map = new Map({ basemap: 'hybrid' });
     mapRef.current = map;
 
     // Build the operational layers once; the data effect edits their features
@@ -100,32 +100,34 @@ export function PortMap(props: PortMapProps) {
     view.when(() => {
       // Legend wrapped in an Expand so operators can minimise it — the
       // bottom-left box collapses to a single button and expands on click.
+      // Collapsed by default so it doesn't obscure the map on load.
       view.ui.add(
         new Expand({
           view,
           content: new Legend({ view }),
-          expanded: true,
+          expanded: false,
           expandTooltip: 'Show legend',
           collapseTooltip: 'Hide legend',
         }),
         'bottom-left',
       );
       // Layer list wrapped in an Expand so it's closable too — collapses to a
-      // single button at top-right and expands on click.
+      // single button at top-right and expands on click. Collapsed by default
+      // so it doesn't obscure the map on load.
       view.ui.add(
         new Expand({
           view,
           content: new LayerList({ view }),
-          expanded: true,
+          expanded: false,
           expandTooltip: 'Show layers',
           collapseTooltip: 'Hide layers',
         }),
         'top-right',
       );
-      // Basemap toggle (A.2 map tools): switch between the gray vector basemap
-      // and a satellite/imagery view. 'hybrid' keeps street/place labels over
-      // the imagery so operators can still read the port layout.
-      view.ui.add(new BasemapToggle({ view, nextBasemap: 'hybrid' }), 'bottom-right');
+      // Basemap toggle (A.2 map tools): switch between the satellite/imagery
+      // default and the gray vector basemap. 'hybrid' keeps street/place labels
+      // over the imagery so operators can still read the port layout.
+      view.ui.add(new BasemapToggle({ view, nextBasemap: 'gray-vector' }), 'bottom-right');
     });
 
     return () => {
