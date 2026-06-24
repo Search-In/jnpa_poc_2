@@ -18,7 +18,7 @@ function KpiCard({ kpi }: { kpi: KpiResult }) {
   const color = positive ? tokens.kpi.better : tokens.kpi.worse;
   const arrow = positive ? '▲' : '▼';
   return (
-    <CalciteCard style={{ minWidth: 180 }}>
+    <CalciteCard style={{ minWidth: 180 }} data-kpi={kpi.key}>
       <div slot="heading" style={{ fontSize: 13, color: tokens.color.textMuted }}>{kpi.label}</div>
       <div style={{ fontSize: 26, fontWeight: 700, color: tokens.color.text }}>
         {kpi.value}
@@ -54,7 +54,7 @@ export function KpiStrip() {
           ))}
           <div style={{ flexBasis: '100%' }} />
           {kpis.slice(7).map((k) => (
-            <CalciteChip key={k.key} kind="neutral" value={k.key}>
+            <CalciteChip key={k.key} kind="neutral" value={k.key} data-kpi={k.key}>
               {k.label}: {k.value} {k.unit}
             </CalciteChip>
           ))}

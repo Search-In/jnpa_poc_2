@@ -100,13 +100,17 @@ export function Dashboard() {
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<string>('movements');
 
-  // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause) auto-starts a
-  // guided What-If tour on load, so a single link can open straight into it.
+  // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause, &step=N to jump to
+  // a step) auto-starts a guided What-If tour on load, so a single link can open
+  // straight into it.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get('scenario');
+    const q = new URLSearchParams(window.location.search);
+    const id = q.get('scenario');
     if (id && getScript(id) && simStore.getState().tour.scenarioId == null) {
-      const auto = new URLSearchParams(window.location.search).get('auto') !== '0';
+      const auto = q.get('auto') !== '0';
       simStore.startScenario(id, auto);
+      const step = Number(q.get('step'));
+      if (Number.isFinite(step) && step > 0) simStore.gotoStep(step);
     }
   }, []);
 

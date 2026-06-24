@@ -43,6 +43,18 @@ export interface StepPatch {
   emptyDelta?: number;
 }
 
+/**
+ * A precise, value-level highlight target. Resolves to a single DOM node on the
+ * dashboard (a KPI card, a gate/facility table row) that the coach-mark rings
+ * and tags with the live value — so the viewer sees the *exact* number moving,
+ * not just the panel it lives in.
+ */
+export type ValueTarget =
+  /** A KPI strip card, by KPI key (matches KpiResult.key / data-kpi). */
+  | { kind: 'kpi'; key: string }
+  /** A gate/facility table row, by asset id (matches data-asset). */
+  | { kind: 'asset'; id: string };
+
 export interface ScenarioStep {
   /** Coach-mark title — what's happening, in plain words. */
   title: string;
@@ -52,6 +64,11 @@ export interface ScenarioStep {
   tab: TabId;
   /** Map asset ids to spotlight (gates/facilities/terminals). [] = none. */
   spotlight: string[];
+  /**
+   * Exact dashboard values to ring (KPI cards / table rows). The coach-mark
+   * pulses a tight ring around each and pins the live number to it.
+   */
+  valueTargets?: ValueTarget[];
   /** Metric deltas shown as little chips in the coach-mark. */
   metrics: MetricChange[];
   /** Sim overrides this step writes (drives the live board + map). */
@@ -95,6 +112,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Containers are arriving at the Pune CFS faster than they are being cleared. The pile of waiting containers ("pendency") begins to climb.',
         tab: 'pendency',
         spotlight: [CFS],
+        valueTargets: [{ kind: 'asset', id: CFS }],
         metrics: [{ label: 'CFS Pune backlog', from: 60, to: 150, unit: 'containers', tone: 'worse' }],
         patch: { pendency: { [CFS]: 150 } },
       },
@@ -114,6 +132,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Because the yard is congested, rakes take longer to load and turn around. You can see rake turnaround time tick up in the KPI strip.',
         tab: 'rail',
         spotlight: [CFS],
+        valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }],
         metrics: [{ label: 'Rake turnaround time', from: 18, to: 20, unit: 'hrs', tone: 'worse' }],
         patch: { pendency: { [CFS]: 168 }, rail: { T1: { inboundQueue: 4 } } },
       },
@@ -123,6 +142,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'The twin recommends re-sequencing rake loading to drain the CFS buffer before the next departure. Apply it and the backlog starts to ease.',
         tab: 'pendency',
         spotlight: [CFS],
+        valueTargets: [{ kind: 'asset', id: CFS }],
         metrics: [{ label: 'CFS Pune backlog', from: 168, to: 95, unit: 'containers', tone: 'better' }],
         patch: { pendency: { [CFS]: 95 }, rail: { T1: { inboundQueue: 1 } } },
         action: { kind: 'RECOMMENDATION', detail: 'Re-sequence rake loading to drain the CFS buffer first' },
@@ -141,6 +161,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'A wave of containers gets flagged for customs scanning. The scan queue depth jumps, so boxes start waiting for the scanner.',
         tab: 'scan',
         spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'kpi', key: 'scannerTurnaroundTime' }],
         metrics: [{ label: 'Pending scans', from: 8, to: 45, unit: 'boxes', tone: 'worse' }],
         patch: { scanQueue: 45 },
       },
@@ -150,6 +171,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Trucks carrying flagged boxes can\'t clear until they\'re scanned, so the queue at gate NSICT-G1 grows and transaction time rises.',
         tab: 'gate',
         spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }, { kind: 'kpi', key: 'gateTransactionTime' }],
         metrics: [
           { label: 'Gate NSICT-G1 queue', from: 6, to: 22, unit: 'trucks', tone: 'worse' },
           { label: 'Gate txn time', from: 4.0, to: 4.8, unit: 'min', tone: 'worse' },
@@ -162,6 +184,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'The twin re-runs its gate-queue forecast and predicts the jam will last ~90 minutes if nothing changes.',
         tab: 'gate',
         spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }],
         metrics: [{ label: 'Predicted jam', from: '—', to: '~90 min', tone: 'neutral' }],
         patch: { scanQueue: 48, gates: { [G_NSICT]: { queueLength: 24, avgTxnTimeMin: 5.0 } } },
         action: { kind: 'FORECAST_RERUN', detail: 'Gate-queue forecaster re-run for NSICT-G1 after the surge' },
@@ -172,6 +195,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'The twin pushes a "deferred-arrival window" to the UC-3 Trucking App, telling drivers to arrive later. Fewer trucks show up early, so the gate queue eases.',
         tab: 'gate',
         spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }, { kind: 'kpi', key: 'gateTransactionTime' }],
         metrics: [{ label: 'Gate NSICT-G1 queue', from: 24, to: 11, unit: 'trucks', tone: 'better' }],
         patch: { scanQueue: 30, gates: { [G_NSICT]: { queueLength: 11, avgTxnTimeMin: 4.2 } } },
         action: { kind: 'CROSS_TWIN_PUSH', detail: 'Deferred-arrival window pushed to the UC-3 Trucking App' },
@@ -190,6 +214,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Empty containers needed at T2 are sitting at T1 (and vice-versa). Moving them inefficiently wastes rake time.',
         tab: 'rail',
         spotlight: ['GTI', 'BMCT'],
+        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }],
         metrics: [{ label: 'Inter-terminal transfer TAT', from: 6.0, to: 6.0, unit: 'hrs', tone: 'neutral' }],
         patch: { rail: { T1: { inboundQueue: 5 }, T2: { inboundQueue: 4 } } },
       },
@@ -199,6 +224,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'The optimiser consolidates empty moves between T1 and T2. This trims empty-rake turnaround by 8–12%.',
         tab: 'rail',
         spotlight: ['GTI', 'BMCT'],
+        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }, { kind: 'kpi', key: 'rakeTurnaroundTime' }],
         metrics: [{ label: 'Empty-rake TAT', from: 6.0, to: 5.4, unit: 'hrs', tone: 'better' }],
         patch: { rail: { T1: { inboundQueue: 2 }, T2: { inboundQueue: 2 } }, movementRate: 1.3 },
         action: { kind: 'OPTIMISATION', detail: 'ITRHO re-routing yields ~10% empty-rake-TAT reduction' },
@@ -209,6 +235,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'With empties where they\'re needed, more containers share each outbound rake — the Mixed-Train Optimization KPI climbs.',
         tab: 'movements',
         spotlight: ['GTI', 'BMCT'],
+        valueTargets: [{ kind: 'kpi', key: 'mixedTrainOptimization' }],
         metrics: [{ label: 'Mixed-train optimisation', from: 72, to: 79, unit: '%', tone: 'better' }],
         patch: { rail: { T1: { inboundQueue: 1 }, T2: { inboundQueue: 1 } }, movementRate: 1.5 },
         action: { kind: 'RECOMMENDATION', detail: 'Consolidate mixed-terminal containers onto shared outbound rakes' },
@@ -227,6 +254,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Traffic builds up at gate GTI-G2. The queue grows and each truck takes longer to process.',
         tab: 'gate',
         spotlight: [G_GTI],
+        valueTargets: [{ kind: 'asset', id: G_GTI }, { kind: 'kpi', key: 'gateTransactionTime' }],
         metrics: [
           { label: 'Gate GTI-G2 queue', from: 7, to: 20, unit: 'trucks', tone: 'worse' },
           { label: 'Gate txn time', from: 4.2, to: 5.1, unit: 'min', tone: 'worse' },
@@ -239,6 +267,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'Two lanes are diverted from the busy gate to the adjacent one and trucks are rerouted — balancing the load in real time.',
         tab: 'gate',
         spotlight: [G_GTI],
+        valueTargets: [{ kind: 'asset', id: G_GTI }],
         metrics: [{ label: 'Gate GTI-G2 queue', from: 20, to: 12, unit: 'trucks', tone: 'better' }],
         patch: { gates: { [G_GTI]: { queueLength: 12, avgTxnTimeMin: 4.4 } } },
         action: { kind: 'LANE_ASSIGNMENT', detail: 'Divert 2 lanes from GTI-G2 to the adjacent gate; reroute trailers' },
@@ -249,6 +278,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           'With the load spread out, the average gate transaction time falls by about 18%. Watch the gate KPI recover.',
         tab: 'gate',
         spotlight: [G_GTI],
+        valueTargets: [{ kind: 'asset', id: G_GTI }, { kind: 'kpi', key: 'gateTransactionTime' }],
         metrics: [{ label: 'Gate txn time', from: 5.1, to: 4.2, unit: 'min', tone: 'better' }],
         patch: { gates: { [G_GTI]: { queueLength: 9, avgTxnTimeMin: 4.2 } } },
         action: { kind: 'RECOMMENDATION', detail: 'Dynamic lane reassignment cuts avg gate transaction time ~18%' },

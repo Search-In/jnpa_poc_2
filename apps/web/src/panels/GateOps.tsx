@@ -37,7 +37,7 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
               <CalciteTableHeader heading="Avg txn (min)" />
             </CalciteTableRow>
             {rows.map((g) => (
-              <CalciteTableRow key={g.gateId}>
+              <CalciteTableRow key={g.gateId} data-asset={g.gateId}>
                 <CalciteTableCell>{g.gateId}</CalciteTableCell>
                 <CalciteTableCell>{g.terminalId}</CalciteTableCell>
                 <CalciteTableCell>

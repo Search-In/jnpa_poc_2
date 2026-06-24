@@ -198,6 +198,8 @@ export function highlightGraphics(
   assetIds: string[],
   facilities: Facility[],
   terminals: Terminal[],
+  /** Optional live-value resolver so the map label reads "GATE · 22" pin-point. */
+  valueOf?: (id: string) => string | undefined,
 ): Graphic[] {
   // Build a lookup of id -> [lng, lat] for facilities and gates.
   const pos = new Map<string, [number, number]>();
@@ -214,9 +216,11 @@ export function highlightGraphics(
     .filter((id) => pos.has(id))
     .map((id) => {
       const [lng, lat] = pos.get(id)!;
+      const v = valueOf?.(id);
       return new Graphic({
         geometry: new Point({ longitude: lng, latitude: lat }),
-        attributes: { objectId: stableOid(`hl:${id}`), assetId: id },
+        // `label` carries the id + live value so the map labels the exact number.
+        attributes: { objectId: stableOid(`hl:${id}`), assetId: id, label: v ? `${id} · ${v}` : id },
       });
     });
 }
@@ -235,6 +239,7 @@ export function highlightedAssetsLayer(
     fields: [
       { name: 'objectId', type: 'oid' },
       { name: 'assetId', type: 'string' },
+      { name: 'label', type: 'string' },
     ],
     renderer: {
       type: 'simple',
@@ -244,16 +249,16 @@ export function highlightedAssetsLayer(
         size: 30,
         // Soft translucent fill + a thick brand ring so the spotlighted asset is
         // unmistakable on the map (the previous transparent thin ring was easy to
-        // miss). The asset id is also drawn as a label below.
+        // miss). The asset id + live value is also drawn as a label below.
         color: [26, 115, 194, 0.18],
         outline: { color: tokens.color.brand, width: 4 },
       },
     } as never,
-    // Label each spotlighted asset with its id so a viewer immediately sees
-    // *which* gate/facility the scenario is talking about.
+    // Label each spotlighted asset with its id AND live value so a viewer sees
+    // *which* gate/facility the scenario is changing and the exact number.
     labelingInfo: [
       {
-        labelExpressionInfo: { expression: '$feature.assetId' },
+        labelExpressionInfo: { expression: '$feature.label' },
         symbol: {
           type: 'text',
           color: tokens.color.brand,

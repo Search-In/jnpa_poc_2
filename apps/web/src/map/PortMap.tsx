@@ -39,6 +39,24 @@ interface PortMapProps {
   highlights?: string[];
 }
 
+/**
+ * Build a resolver from a live id → short value string (e.g. a gate's queue, a
+ * facility's pendency), so the map's spotlight label can show the exact number
+ * the scenario is changing — pin-point, not just the asset name.
+ */
+function makeValueOf(gateOps: GateOpsDTO[], pendency: PendencyDTO[]): (id: string) => string | undefined {
+  // Plain records (not JS Map — `Map` here is the ArcGIS class import).
+  const gate: Record<string, number> = {};
+  for (const g of gateOps) gate[g.gateId] = g.queueLength;
+  const pend: Record<string, number> = {};
+  for (const p of pendency) pend[p.facilityId] = p.pendency;
+  return (id: string) => {
+    if (id in gate) return `${gate[id]} q`;
+    if (id in pend) return `${pend[id]}`;
+    return undefined;
+  };
+}
+
 export function PortMap(props: PortMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<MapView | null>(null);
@@ -85,6 +103,8 @@ export function PortMap(props: PortMapProps) {
       p0.facilities,
       p0.terminals,
     );
+    // First label values use the initial data; the update effect re-applies the
+    // labelled graphics (with live values) immediately after.
     highlightRef.current = highlight;
     map.add(highlight);
 
@@ -160,7 +180,8 @@ export function PortMap(props: PortMapProps) {
     const layer = highlightRef.current;
     const view = viewRef.current;
     if (!layer) return;
-    const next = highlightGraphics(props.highlights ?? [], props.facilities, props.terminals);
+    const valueOf = makeValueOf(props.gateOps, props.pendency);
+    const next = highlightGraphics(props.highlights ?? [], props.facilities, props.terminals, valueOf);
     void applyGraphics(layer, next);
 
     const zoomKey = [...(props.highlights ?? [])].sort().join('|');
@@ -176,7 +197,10 @@ export function PortMap(props: PortMapProps) {
     } else if (next.length === 0) {
       lastZoomKey.current = '';
     }
-  }, [props.highlights, props.facilities, props.terminals]);
+  // gateOps/pendency in deps so the map label refreshes the live value as it
+  // moves; the zoom is still guarded by lastZoomKey so it only re-frames on a
+  // spotlight change, not on every value tick.
+  }, [props.highlights, props.facilities, props.terminals, props.gateOps, props.pendency]);
 
   return (
     <div

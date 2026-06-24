@@ -30,7 +30,7 @@ export function Pendency() {
           {[...rows]
             .sort((a, b) => b.pendency - a.pendency)
             .map((r) => (
-              <CalciteTableRow key={r.facilityId}>
+              <CalciteTableRow key={r.facilityId} data-asset={r.facilityId}>
                 <CalciteTableCell>{r.facilityName}</CalciteTableCell>
                 <CalciteTableCell>{r.facilityType}</CalciteTableCell>
                 <CalciteTableCell>

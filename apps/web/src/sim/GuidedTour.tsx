@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CalciteButton, CalciteChip, CalciteIcon } from '@esri/calcite-components-react';
 import { simStore, TOUR_STEP_MS } from './simStore.js';
 import { useSimStore } from './useSimStore.js';
-import { getScript, type MetricChange, type TabId } from './scenarioPlayer.js';
+import { getScript, type MetricChange, type TabId, type ValueTarget } from './scenarioPlayer.js';
 import { tokens } from '../theme/tokens.js';
 
 const toneColor: Record<MetricChange['tone'], string> = {
@@ -80,6 +80,75 @@ function useSpotlightRect(tab: TabId | null, dep: unknown): Rect | null {
   return rect;
 }
 
+/** A resolved value-level highlight: where it is + the live number to pin. */
+interface ValueHit { rect: Rect; value: string; tone: 'worse' | 'better' | 'neutral'; label: string; }
+
+const css = (sel: string) => document.querySelector<HTMLElement>(sel);
+
+/**
+ * Resolve each step's `valueTargets` (a KPI card or a gate/facility row) to its
+ * on-screen rect + the live number it shows, so the overlay can ring the EXACT
+ * value that's moving. Re-measures every frame for a short burst after a step
+ * change (the panel may still be laying out / the value still animating), then
+ * tracks resize/scroll. Targets that aren't on screen are dropped (no stray box).
+ */
+function useValueRects(
+  targets: ValueTarget[] | undefined,
+  step: number,
+  tick: number,
+): ValueHit[] {
+  const [hits, setHits] = useState<ValueHit[]>([]);
+  useLayoutEffect(() => {
+    if (!targets || targets.length === 0) { setHits([]); return; }
+    let cancelled = false;
+    let frames = 0;
+
+    const resolve = (t: ValueTarget): ValueHit | null => {
+      if (t.kind === 'kpi') {
+        const card = css(`[data-kpi="${t.key}"]`);
+        if (!card) return null;
+        const r = card.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8 || r.bottom <= 0) return null;
+        // KPI card: the big number is the first non-heading text block. KPI
+        // rollup chip: no heading slot, so use the chip's own text.
+        const heading = card.querySelector('[slot="heading"]');
+        const valEl = heading ? card.querySelector('div') : card;
+        const value = (valEl?.textContent ?? card.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 36);
+        const label = heading?.textContent?.trim() ?? t.key;
+        return { rect: r, value, tone: 'neutral', label };
+      }
+      // asset row (gate / facility)
+      const row = css(`[data-asset="${t.id}"]`);
+      if (!row) return null;
+      const r = row.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8 || r.bottom <= 0) return null;
+      return { rect: r, value: (row.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40), tone: 'neutral', label: t.id };
+    };
+
+    const measure = () => {
+      if (cancelled) return;
+      const next = targets.map(resolve).filter((h): h is ValueHit => h != null);
+      setHits(next);
+      if (frames++ < 24) requestAnimationFrame(measure); // ~0.4s of re-measures
+    };
+    requestAnimationFrame(measure);
+
+    const remeasure = () => {
+      if (cancelled) return;
+      setHits(targets.map(resolve).filter((h): h is ValueHit => h != null));
+    };
+    window.addEventListener('resize', remeasure);
+    window.addEventListener('scroll', remeasure, true);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('resize', remeasure);
+      window.removeEventListener('scroll', remeasure, true);
+    };
+  // Re-resolve when the step changes or the sim ticks (values animate per tick).
+  }, [targets, step, tick]);
+  return hits;
+}
+
 export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
   const sim = useSimStore();
   const { scenarioId, stepIndex, autoAdvance, stepStartedAt } = sim.tour;
@@ -96,6 +165,9 @@ export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
   }, [step, stepIndex, onTab]);
 
   const rect = useSpotlightRect(step?.tab ?? null, stepIndex);
+  // Pin-point value highlights — the EXACT KPI cards / rows whose numbers move.
+  // Re-resolved each sim tick so the ring tracks the value as it animates.
+  const valueHits = useValueRects(step?.valueTargets, stepIndex, sim.tick);
 
   // Collapse the card to a compact pill so it never blocks the dashboard.
   const [collapsed, setCollapsed] = useState(false);
@@ -122,13 +194,24 @@ export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
 
   const isLast = stepIndex >= script.steps.length - 1;
 
+  // Tone for the value rings comes from the step's first metric (better/worse).
+  const valueTone = step.metrics[0]?.tone ?? 'neutral';
+  const valueColor = toneColor[valueTone];
+
   return (
     <>
-      {/* Spotlight ring around the active dashboard panel. A localized glow —
-          NOT a full-screen dim — so the rest of the dashboard stays fully
-          visible while the tour runs. Pointer-events off so the panel stays
-          interactive. */}
-      {rect && (
+      {/* One-time keyframes for the pin-point pulse. */}
+      <style>{`
+        @keyframes jnpaTourPulse {
+          0%   { box-shadow: 0 0 0 0 var(--jnpa-tour-glow); }
+          70%  { box-shadow: 0 0 0 10px transparent; }
+          100% { box-shadow: 0 0 0 0 transparent; }
+        }
+      `}</style>
+
+      {/* Soft outline around the active panel — context only. The pin-point
+          value rings below are the real focus. No full-screen dim. */}
+      {rect && valueHits.length === 0 && (
         <div
           aria-hidden
           style={{
@@ -146,6 +229,52 @@ export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
           }}
         />
       )}
+
+      {/* Pin-point value highlights: a tight pulsing ring around the EXACT KPI
+          card / table row whose number is changing, with a floating value tag.
+          pointer-events off so the underlying value stays interactive. */}
+      {valueHits.map((h, i) => (
+        <div key={i} aria-hidden style={{ pointerEvents: 'none' }}>
+          <div
+            style={{
+              position: 'fixed',
+              top: h.rect.top - 4,
+              left: h.rect.left - 4,
+              width: h.rect.width + 8,
+              height: h.rect.height + 8,
+              border: `2.5px solid ${valueColor}`,
+              borderRadius: 8,
+              zIndex: 950,
+              ['--jnpa-tour-glow' as never]: `${valueColor}66`,
+              animation: 'jnpaTourPulse 1.6s ease-out infinite',
+              transition: 'top 200ms ease, left 200ms ease, width 200ms ease, height 200ms ease',
+            }}
+          />
+          {/* Value tag pinned to the top-right of the highlighted element. */}
+          <div
+            style={{
+              position: 'fixed',
+              top: h.rect.top - 13,
+              left: Math.min(h.rect.left + h.rect.width - 4, window.innerWidth - 8),
+              transform: 'translateX(-100%)',
+              background: valueColor,
+              color: '#fff',
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '1px 7px',
+              borderRadius: 999,
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(12,20,33,0.25)',
+              zIndex: 951,
+              maxWidth: 220,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {h.value || h.label}
+          </div>
+        </div>
+      ))}
 
       {/* Collapsed pill: a tiny bottom-right chip so the dashboard is fully
           visible. Click to expand the full coach-mark again. */}
