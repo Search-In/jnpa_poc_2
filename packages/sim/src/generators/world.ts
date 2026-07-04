@@ -45,13 +45,40 @@ export interface World {
 /** JNPT centroid-ish for placing satellite facilities. */
 const PORT_CENTER: [number, number] = [72.949, 18.95];
 
-function jitterPoint(rng: Rng, base: [number, number], radiusDeg: number): GeoPoint {
+/**
+ * Real-world coordinates for the off-port satellite facilities (EPSG:4326
+ * [lng, lat]). These were previously scattered at random within 0.05° of the
+ * port centroid by jitterPoint, which put "ICD Dadri" (near Greater Noida, UP)
+ * and "Pune CFS" (Pune) physically on top of JNPA — geographically nonsense and
+ * the cause of the mis-aligned map markers. Each now sits at its true location
+ * (CFS/ICDs at their real cities; on-port depots/plaza near JNPT) so both the
+ * 2D map and the 3D scene place them where they actually are. Sources are the
+ * respective facility's published address / OSM; good enough for a PoC twin and
+ * clearly better than random. Replace with surveyed points before production.
+ */
+const SATELLITE_COORDS: Record<string, [number, number]> = {
+  // Off-port CFS / ICDs — at their real cities (far from the port).
+  'CFS-PUNE': [73.9143, 18.6298], // Chakan/Pune industrial belt
+  'CFS-DRONAGIRI': [72.9975, 18.8895], // Dronagiri node, Navi Mumbai (near port)
+  'CFS-PANVEL': [73.1005, 18.9894], // Panvel
+  'ICD-DADRI': [77.6050, 28.5610], // ICD Dadri, Greater Noida, UP (CONCOR)
+  'ICD-NAGPUR': [79.0490, 21.1180], // ICD Nagpur (CONCOR)
+  // On/near-port JNPA facilities — clustered around the port road network.
+  'DPE-WEST': [72.9430, 18.9490], // Direct Port Entry, west of the terminals
+  'DPD-CENTRAL': [72.9505, 18.9560], // Direct Port Delivery yard, central
+  'ECD-MAEU': [72.9640, 18.9420], // Maersk empty depot, JNPT SEZ road
+  'ECD-MSC': [72.9670, 18.9385], // MSC empty depot, JNPT SEZ road
+  'CPP-1': [72.9560, 18.9605], // Central Parking Plaza, port entry
+};
+
+/** Real coordinate for a satellite id, or a deterministic fallback near port. */
+function satellitePoint(rng: Rng, id: string): GeoPoint {
+  const real = SATELLITE_COORDS[id];
+  if (real) return { type: 'Point', coordinates: [real[0], real[1]] };
+  // Fallback for any future id without a mapping: small deterministic offset.
   return {
     type: 'Point',
-    coordinates: [
-      base[0] + rng.float(-radiusDeg, radiusDeg),
-      base[1] + rng.float(-radiusDeg, radiusDeg),
-    ],
+    coordinates: [PORT_CENTER[0] + rng.float(-0.02, 0.02), PORT_CENTER[1] + rng.float(-0.02, 0.02)],
   };
 }
 
@@ -116,7 +143,7 @@ export function buildWorld(config: TerminalsConfig, seed = 42): World {
       type: s.type,
       name: s.name,
       operator: s.operator,
-      geom: jitterPoint(rng, PORT_CENTER, 0.05),
+      geom: satellitePoint(rng, s.id),
       capacityTEU: s.type === 'CFS' || s.type === 'ICD' ? rng.int(5000, 25000) : undefined,
       currentPendency: 0,
     });

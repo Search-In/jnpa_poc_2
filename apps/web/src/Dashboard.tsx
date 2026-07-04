@@ -4,11 +4,12 @@
  * health, notifications, scenarios) are composed around it. Role + language
  * selectors in the shell drive RBAC scoping and i18n.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalciteShell, CalciteShellPanel, CalcitePanel, CalciteNavigation, CalciteNavigationLogo,
   CalciteLabel, CalciteSelect, CalciteOption, CalciteChip, CalciteTabs, CalciteTab,
-  CalciteTabNav, CalciteTabTitle, CalciteLoader, CalciteButton,
+  CalciteTabNav, CalciteTabTitle, CalciteLoader, CalciteButton, CalciteSegmentedControl,
+  CalciteSegmentedControlItem,
 } from '@esri/calcite-components-react';
 import type { Role, Facility, Terminal } from '@jnpa/schemas';
 import { ROLES } from '@jnpa/schemas';
@@ -16,6 +17,9 @@ import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { useApp } from './state/AppContext.js';
 import { useAsync } from './state/useAsync.js';
 import { PortMap } from './map/PortMap.js';
+import { PortScene, type PortSceneHandle } from './map/PortScene.js';
+import { AssetExplorer } from './map/AssetExplorer.js';
+import { placementStore, downloadPlacements } from './map/placementStore.js';
 import { tokens } from './theme/tokens.js';
 import { t, type Lang } from './i18n/strings.js';
 import { KpiStrip } from './panels/KpiStrip.js';
@@ -99,6 +103,16 @@ export function Dashboard() {
 
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<string>('movements');
+  // Anchor-map view mode: flat 2D MapView vs. the new 3D SceneView sea-port.
+  const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
+  // Asset selected in the 3D scene / explorer tree (kept in sync both ways).
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  // The selected asset's placement key (the movable ones: vessel/crane/gate/yard).
+  const [selectedPkey, setSelectedPkey] = useState<string | null>(null);
+  const sceneRef = useRef<PortSceneHandle | null>(null);
+  // Placement edit mode: pick an asset in the tree, then click the map to place it.
+  const [editingPlacement, setEditingPlacement] = useState(false);
+  const [placementCount, setPlacementCount] = useState(0);
 
   // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause, &step=N to jump to
   // a step) auto-starts a guided What-If tour on load, so a single link can open
@@ -158,20 +172,113 @@ export function Dashboard() {
         </div>
       </CalciteNavigation>
 
-      {/* Left: the map is the anchor */}
+      {/* Left: the map is the anchor. A 2D/3D toggle flips it between the flat
+          MapView and the georeferenced 3D SceneView sea-port. In 3D mode an
+          asset-explorer tree rides alongside so operators can pick berths,
+          cranes, gates and yard blocks and fly the camera to them. */}
       <CalciteShellPanel slot="panel-start" widthScale="l" resizable>
-        <CalcitePanel heading={t('panel_map', lang)}>
-          <div style={{ height: 'calc(100vh - 120px)' }}>
+        <CalcitePanel heading={mapMode === '3d' ? `${t('panel_map', lang)} · 3D` : t('panel_map', lang)}>
+          <div slot="header-actions-end" style={{ display: 'flex', gap: 8, alignItems: 'center', paddingInline: 8 }}>
+            {/* Placement editor (3D only): toggle edit mode, then drag assets to
+                their real spot and export the corrected positions.json. */}
+            {mapMode === '3d' && (
+              <>
+                <CalciteButton
+                  scale="s"
+                  appearance={editingPlacement ? 'solid' : 'outline'}
+                  kind={editingPlacement ? 'brand' : 'neutral'}
+                  iconStart={editingPlacement ? 'check' : 'pencil'}
+                  onClick={() => setEditingPlacement((v) => !v)}
+                  title="Pick an asset in the left tree, then click the map to place it"
+                >
+                  {editingPlacement
+                    ? selectedPkey
+                      ? `Click map to place ${selectedAsset ?? ''}`
+                      : 'Editing — pick an asset in the tree'
+                    : 'Edit placement'}
+                </CalciteButton>
+                <CalciteButton
+                  scale="s"
+                  appearance="outline"
+                  iconStart="download"
+                  disabled={placementCount === 0}
+                  onClick={() => downloadPlacements('JNPA 3D asset placements')}
+                  title="Download positions.json"
+                >
+                  Export{placementCount ? ` (${placementCount})` : ''}
+                </CalciteButton>
+                {placementCount > 0 && (
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="danger"
+                    iconStart="reset"
+                    onClick={() => { placementStore.clear(); sceneRef.current?.rebuild(); setPlacementCount(0); }}
+                    title="Discard all placement edits"
+                  >
+                    Reset
+                  </CalciteButton>
+                )}
+              </>
+            )}
+            <CalciteSegmentedControl
+              width="auto"
+              scale="s"
+              onCalciteSegmentedControlChange={(e) =>
+                setMapMode(((e.target as unknown as { value: '2d' | '3d' }).value) === '3d' ? '3d' : '2d')
+              }
+            >
+              <CalciteSegmentedControlItem value="2d" checked={mapMode === '2d'} iconStart="map">2D</CalciteSegmentedControlItem>
+              <CalciteSegmentedControlItem value="3d" checked={mapMode === '3d'} iconStart="urban-model">3D</CalciteSegmentedControlItem>
+            </CalciteSegmentedControl>
+          </div>
+
+          <div style={{ height: 'calc(100vh - 120px)', display: 'flex' }}>
             {facilities.data && terminals.data && gateOps.data && pendency.data ? (
-              <PortMap
-                facilities={facilities.data}
-                terminals={terminals.data}
-                gateOps={gateOps.data}
-                pendency={pendency.data}
-                flows={liveFlows}
-                scenarioOverlay={mapOverlay}
-                highlights={highlights}
-              />
+              mapMode === '3d' ? (
+                <>
+                  <div style={{ width: 260, flexShrink: 0, borderRight: `1px solid ${tokens.color.border}`, overflow: 'hidden' }}>
+                    <AssetExplorer
+                      terminals={terminals.data}
+                      facilities={facilities.data}
+                      gateOps={gateOps.data}
+                      pendency={pendency.data}
+                      selectedId={selectedAsset}
+                      onSelect={(id, pkey) => {
+                        setSelectedAsset(id);
+                        setSelectedPkey(pkey ?? null);
+                        sceneRef.current?.focus(id);
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PortScene
+                      ref={sceneRef}
+                      facilities={facilities.data}
+                      terminals={terminals.data}
+                      gateOps={gateOps.data}
+                      pendency={pendency.data}
+                      highlights={highlights}
+                      onSelect={setSelectedAsset}
+                      editing={editingPlacement}
+                      movePkey={selectedPkey}
+                      onPlacementsChanged={() => setPlacementCount(placementStore.count())}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <PortMap
+                    facilities={facilities.data}
+                    terminals={terminals.data}
+                    gateOps={gateOps.data}
+                    pendency={pendency.data}
+                    flows={liveFlows}
+                    scenarioOverlay={mapOverlay}
+                    highlights={highlights}
+                  />
+                </div>
+              )
             ) : null}
           </div>
         </CalcitePanel>

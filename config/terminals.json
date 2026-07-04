@@ -14,7 +14,7 @@
       "status": "OPERATING",
       "quayLengthM": 600,
       "capacityTEU": 1500000,
-      "geom": { "type": "Point", "coordinates": [72.9512, 18.9498] },
+      "geom": { "type": "Point", "coordinates": [72.9435, 18.9490] },
       "gates": ["NSICT-G1", "NSICT-G2"],
       "sidingMapping": { "rail": ["T1"] },
       "tos": { "mode": "EDIFACT", "ediVersion": "D21A" }
@@ -26,7 +26,7 @@
       "status": "OPERATING",
       "quayLengthM": 330,
       "capacityTEU": 1200000,
-      "geom": { "type": "Point", "coordinates": [72.9486, 18.9472] },
+      "geom": { "type": "Point", "coordinates": [72.9425, 18.9470] },
       "gates": ["NSIGT-G1"],
       "sidingMapping": { "rail": ["T1"] },
       "tos": { "mode": "REST" }
@@ -38,7 +38,7 @@
       "status": "OPERATING",
       "quayLengthM": 712,
       "capacityTEU": 2000000,
-      "geom": { "type": "Point", "coordinates": [72.9461, 18.9447] },
+      "geom": { "type": "Point", "coordinates": [72.9412, 18.9445] },
       "gates": ["GTI-G1", "GTI-G2"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "X12" }
@@ -50,7 +50,7 @@
       "status": "OPERATING",
       "quayLengthM": 2000,
       "capacityTEU": 4800000,
-      "geom": { "type": "Point", "coordinates": [72.9420, 18.9410] },
+      "geom": { "type": "Point", "coordinates": [72.9360, 18.9350] },
       "gates": ["BMCT-G1", "BMCT-G2", "BMCT-G3"],
       "sidingMapping": { "rail": ["T2"] },
       "tos": { "mode": "REST" }
@@ -62,14 +62,14 @@
       "status": "OPERATING",
       "quayLengthM": 680,
       "capacityTEU": 1200000,
-      "geom": { "type": "Point", "coordinates": [72.9535, 18.9523] },
+      "geom": { "type": "Point", "coordinates": [72.9455, 18.9520] },
       "gates": ["JNPCT-G1", "JNPCT-G2"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "FILE_DROP" }
     }
   ],
   "railSidings": [
-    { "sidingId": "T1", "name": "Central Rail Yard Siding T1", "geom": { "type": "Point", "coordinates": [72.9475, 18.9550] } },
-    { "sidingId": "T2", "name": "Central Rail Yard Siding T2", "geom": { "type": "Point", "coordinates": [72.9455, 18.9545] } }
+    { "sidingId": "T1", "name": "Central Rail Yard Siding T1", "geom": { "type": "Point", "coordinates": [72.9505, 18.9435] } },
+    { "sidingId": "T2", "name": "Central Rail Yard Siding T2", "geom": { "type": "Point", "coordinates": [72.9498, 18.9425] } }
   ]
 }
