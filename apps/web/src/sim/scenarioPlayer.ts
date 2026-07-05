@@ -16,7 +16,7 @@
 
 /** Which dashboard tab a step is about (matches Dashboard TABS ids). */
 export type TabId =
-  | 'movements' | 'rail' | 'gate' | 'pendency'
+  | 'movements' | 'rail' | 'itrho' | 'gate' | 'pendency'
   | 'scan' | 'empty' | 'scenarios' | 'health' | 'notifications'
   | 'models' | 'methodology' | 'workflows';
 

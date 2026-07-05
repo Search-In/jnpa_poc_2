@@ -17,15 +17,17 @@ import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { useApp } from './state/AppContext.js';
 import { useAsync } from './state/useAsync.js';
 import { PortMap } from './map/PortMap.js';
-import { PortScene, type PortSceneHandle } from './map/PortScene.js';
+import { PortScene, type PortSceneHandle, type CameraPreset, type Lighting } from './map/PortScene.js';
 import { AssetExplorer } from './map/AssetExplorer.js';
-import { placementStore, downloadPlacements } from './map/placementStore.js';
+import { AssetTransform } from './map/AssetTransform.js';
+import { placementStore, downloadPlacements, importPlacements } from './map/placementStore.js';
 import { tokens } from './theme/tokens.js';
 import { t, type Lang } from './i18n/strings.js';
 import { KpiStrip } from './panels/KpiStrip.js';
 import { ContainerMovements } from './panels/ContainerMovements.js';
 import { Pendency } from './panels/Pendency.js';
 import { RailSide } from './panels/RailSide.js';
+import { Itrho } from './panels/Itrho.js';
 import { GateOps } from './panels/GateOps.js';
 import { ScanQueue } from './panels/ScanQueue.js';
 import { EmptyPool } from './panels/EmptyPool.js';
@@ -55,6 +57,7 @@ const DEMO_WINDOW = {
 const TABS = [
   { id: 'movements', label: 'Movements' },
   { id: 'rail', label: 'Rail T1/T2' },
+  { id: 'itrho', label: 'ITRHO' },
   { id: 'gate', label: 'Gate' },
   { id: 'pendency', label: 'Pendency' },
   { id: 'scan', label: 'Scan' },
@@ -125,6 +128,8 @@ export function Dashboard() {
   const sceneRef = useRef<PortSceneHandle | null>(null);
   // Placement edit mode: pick an asset in the tree, then click the map to place it.
   const [editingPlacement, setEditingPlacement] = useState(false);
+  // 3D cinematic controls: current lighting (day/dusk) for the day/dusk toggle.
+  const [lighting, setLighting] = useState<Lighting>('day');
   // Seeded from data/positions.json, so Export/Reset are live from first render.
   const [placementCount, setPlacementCount] = useState(() => placementStore.count());
 
@@ -237,9 +242,29 @@ export function Dashboard() {
                   iconStart="download"
                   disabled={placementCount === 0}
                   onClick={() => downloadPlacements('JNPA 3D asset placements')}
-                  title="Download positions.json"
+                  title="Download positions.json (commit it to data/positions.json to make it permanent)"
                 >
                   Export{placementCount ? ` (${placementCount})` : ''}
+                </CalciteButton>
+                <CalciteButton
+                  scale="s"
+                  appearance="outline"
+                  iconStart="upload"
+                  onClick={() => {
+                    void importPlacements()
+                      .then((n) => {
+                        sceneRef.current?.rebuild();
+                        setPlacementCount(placementStore.count());
+                        // eslint-disable-next-line no-console
+                        console.info(`Imported ${n} placements`);
+                      })
+                      .catch(() => {
+                        /* user cancelled or invalid file — no-op */
+                      });
+                  }}
+                  title="Upload a positions.json to preview it live (then Export + commit to make it permanent)"
+                >
+                  Import
                 </CalciteButton>
                 {placementCount > 0 && (
                   <CalciteButton
@@ -253,6 +278,20 @@ export function Dashboard() {
                     Reset
                   </CalciteButton>
                 )}
+                {/* Day / dusk lighting toggle — repositions the sun in the scene. */}
+                <CalciteButton
+                  scale="s"
+                  appearance="outline"
+                  iconStart={lighting === 'day' ? 'brightness' : 'moon'}
+                  onClick={() => {
+                    const next: Lighting = lighting === 'day' ? 'dusk' : 'day';
+                    setLighting(next);
+                    sceneRef.current?.setLighting(next);
+                  }}
+                  title="Toggle day / dusk lighting"
+                >
+                  {lighting === 'day' ? 'Dusk' : 'Day'}
+                </CalciteButton>
               </>
             )}
             <CalciteSegmentedControl
@@ -285,7 +324,7 @@ export function Dashboard() {
                       }}
                     />
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
                     <PortScene
                       ref={sceneRef}
                       facilities={facilities.data}
@@ -298,6 +337,60 @@ export function Dashboard() {
                       movePkey={selectedPkey}
                       onPlacementsChanged={() => setPlacementCount(placementStore.count())}
                     />
+                    {/* Move & rotate controls — in Edit mode, once an asset is
+                        picked, rotate it (heading) and nudge it N/S/E/W. Edits
+                        persist (localStorage) and export to positions.json. */}
+                    {editingPlacement && selectedPkey && (
+                      <AssetTransform
+                        pkey={selectedPkey}
+                        label={selectedAsset}
+                        terminals={terminals.data}
+                        onChange={(pkey) => {
+                          // Rebuild ONLY this asset's layer → the move/rotate shows
+                          // on the map instantly; the store write already happened
+                          // synchronously (that's the export data).
+                          sceneRef.current?.rebuildOne(pkey);
+                          setPlacementCount(placementStore.count());
+                        }}
+                      />
+                    )}
+                    {/* Cinematic camera presets — fly the SceneView to framed
+                        viewpoints (each computed from real terminal geography). */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 12,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        display: 'flex',
+                        gap: 4,
+                        background: tokens.color.bgPanel,
+                        border: `1px solid ${tokens.color.border}`,
+                        borderRadius: 6,
+                        padding: 4,
+                        boxShadow: '0 2px 8px rgba(0,0,0,.12)',
+                        zIndex: 5,
+                      }}
+                    >
+                      {([
+                        ['overview', 'Overview', 'extent'],
+                        ['channel', 'Channel', 'water'],
+                        ['gate', 'Gate', 'car'],
+                        ['rail', 'Rail', 'train'],
+                        ['crane', 'Cranes', 'organization'],
+                      ] as [CameraPreset, string, string][]).map(([id, label, icon]) => (
+                        <CalciteButton
+                          key={id}
+                          scale="s"
+                          appearance="outline"
+                          iconStart={icon}
+                          onClick={() => sceneRef.current?.goToPreset(id)}
+                          title={`Fly to ${label}`}
+                        >
+                          {label}
+                        </CalciteButton>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
@@ -348,6 +441,7 @@ export function Dashboard() {
               </CalciteTabNav>
               <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>
               <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>
+              <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>
               <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>
               <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>
               <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>

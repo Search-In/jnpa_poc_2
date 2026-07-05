@@ -83,7 +83,7 @@ const seaN = Math.cos(SEAWARD_BRG); // ≈ +0.47 (slightly north)
 // container blocks rather than in open water.
 const LANDWARD_BIAS_M = 150;
 
-function place(lng: number, lat: number, alongM: number, offsetM: number): [number, number] {
+export function place(lng: number, lat: number, alongM: number, offsetM: number): [number, number] {
   // +offsetM landward = OPPOSITE of the seaward unit vector.
   const off = offsetM + LANDWARD_BIAS_M;
   const e = alongM * alongE - off * seaE;
@@ -93,10 +93,22 @@ function place(lng: number, lat: number, alongM: number, offsetM: number): [numb
 
 /** Shift an absolute point by along/offset metres in the quay frame (NO bias) —
  *  for trailing assets (truck queues) relative to an already-placed anchor. */
-function offsetFrom(lng: number, lat: number, alongM: number, offsetM: number): [number, number] {
+export function offsetFrom(lng: number, lat: number, alongM: number, offsetM: number): [number, number] {
   const e = alongM * alongE - offsetM * seaE;
   const n = alongM * alongN - offsetM * seaN;
   return [lng + dLon(e), lat + dLat(n)];
+}
+
+/**
+ * Bearing (deg, compass) from point A to point B in the local quay frame — used
+ * to face a moving model along its travel direction. Uses the same metric frame
+ * as {@link place} so headings are consistent with the static asset headings.
+ */
+export function headingBetween(a: [number, number], b: [number, number]): number {
+  const e = (b[0] - a[0]) * M_PER_DEG_LON;
+  const n = (b[1] - a[1]) * M_PER_DEG_LAT;
+  const deg = (Math.atan2(e, n) * 180) / Math.PI; // 0 = north, CW positive
+  return (deg + 360) % 360;
 }
 
 /**
@@ -194,13 +206,19 @@ export function terminalDeckLayer(terminals: Terminal[]): FeatureLayer {
 }
 
 // ---------------------------------------------------------------------------
-// Container-yard stacks — real container-pile GLBs behind each quay, laid in
-// rows landward. Height/tint of the block scales with live pendency so a full
-// terminal literally piles higher and reddens.
+// Container-yard stacks — REAL ISO-container GLBs stacked into blocks behind each
+// quay (matching the reference cockpit's stacked-box yards, not a single pile).
+// Each block is a grid position; the stack HEIGHT (number of container tiers)
+// scales with live pendency, so a full terminal literally stacks higher. Each
+// tier is one container GLB at an increasing `z`, coloured red/green/blue per
+// line. The block's `pkey` anchors the whole stack, so the placement editor
+// moves every container in the block together.
 // ---------------------------------------------------------------------------
 
 const YARD_ROWS = 3;
 const YARD_COLS = 4;
+const CONTAINER_H_M = 5.8; // ISO container ≈ 2.6 m; we stack a touch taller for legibility
+const YARD_MODELS = ['red', 'green', 'blue'] as const;
 
 function yardBlockGraphics(terminals: Terminal[], pendency: PendencyDTO[]): Graphic[] {
   const pendById = new Map(pendency.map((p) => [p.facilityId, p.pendency] as const));
@@ -217,26 +235,36 @@ function yardBlockGraphics(terminals: Terminal[], pendency: PendencyDTO[]): Grap
         const offsetM = 230 + r * 70; // landward rows
         const i = r * YARD_COLS + c;
         const pkey = `yard:${t.terminalId}:${i}`;
+        // The whole stack sits at the block anchor (honours a placement override).
         const [bx, by] = withOverride(pkey, place(lng, lat, alongM, offsetM));
         const jitter = 0.5 + rand01(t.terminalId, `blk${i}`) * 1.0;
         const frac = Math.max(0.05, Math.min(1, (totalPend / (cap * 0.9)) * jitter));
-        // Stack height as number of container tiers (1..6) → scale the pile GLB.
+        // 1..6 container tiers driven by pendency (reference: h = 2 + …).
         const tiers = 1 + Math.round(frac * 5);
-        out.push(
-          new Graphic({
-            geometry: new Point({ longitude: bx, latitude: by, spatialReference: { wkid: 4326 } }),
-            attributes: {
-              objectId: stableOid(pkey),
-              pkey,
-              blockId: `${t.terminalId}-Y${i + 1}`,
-              terminalId: t.terminalId,
-              tiers,
-              fillPct: Math.round(frac * 100),
-              // pick one of the two pile meshes deterministically
-              pile: rand01(t.terminalId, `pile${i}`) > 0.5 ? 'a' : 'b',
-            },
-          }),
-        );
+        const fillPct = Math.round(frac * 100);
+        for (let k = 0; k < tiers; k++) {
+          // Colour by fill severity for the top tier, else cycle line liveries so
+          // the block reads as a real mixed container stack.
+          const model = k === tiers - 1 && fillPct >= 66 ? 'red' : YARD_MODELS[(i + k) % YARD_MODELS.length]!;
+          out.push(
+            new Graphic({
+              geometry: new Point({ longitude: bx, latitude: by, z: k * CONTAINER_H_M, spatialReference: { wkid: 4326 } }),
+              attributes: {
+                // Each tier is its own feature; only the base tier carries the
+                // block pkey (the editor anchor) so a drag moves the block once.
+                objectId: stableOid(`${pkey}:${k}`),
+                ...(k === 0 ? { pkey } : {}),
+                blockId: `${t.terminalId}-Y${i + 1}`,
+                terminalId: t.terminalId,
+                tier: k,
+                fillPct,
+                model,
+                // Honour a rotation override on the block (all tiers share it).
+                heading: placementStore.get(pkey)?.heading ?? QUAY_HEADING,
+              },
+            }),
+          );
+        }
       }
     }
   }
@@ -244,8 +272,6 @@ function yardBlockGraphics(terminals: Terminal[], pendency: PendencyDTO[]): Grap
 }
 
 export function yardStackLayer(terminals: Terminal[], pendency: PendencyDTO[]): FeatureLayer {
-  // Container-pile GLB native height ≈ 2.2 units; a "tier" ≈ that. Scale so 1
-  // tier ≈ 6 m and colour-tint by fill via the color visual variable.
   return new FeatureLayer({
     title: '3D · Yard stacks (pendency)',
     source: yardBlockGraphics(terminals, pendency) as unknown as Graphic[],
@@ -257,48 +283,36 @@ export function yardStackLayer(terminals: Terminal[], pendency: PendencyDTO[]): 
       { name: 'pkey', type: 'string' },
       { name: 'blockId', type: 'string' },
       { name: 'terminalId', type: 'string' },
-      { name: 'tiers', type: 'integer' },
+      { name: 'tier', type: 'integer' },
       { name: 'fillPct', type: 'integer' },
-      { name: 'pile', type: 'string' },
+      { name: 'model', type: 'string' },
+      { name: 'heading', type: 'double' },
     ],
-    elevationInfo: { mode: 'on-the-ground' },
+    // relative-to-ground so each tier's `z` lifts it into a real stack.
+    elevationInfo: { mode: 'relative-to-ground' },
     renderer: {
       type: 'unique-value',
-      field: 'pile',
-      uniqueValueInfos: ['a', 'b'].map((p) => ({
-        value: p,
+      field: 'model',
+      uniqueValueInfos: YARD_MODELS.map((m) => ({
+        value: m,
         symbol: {
           type: 'point-3d',
           symbolLayers: [
             {
               type: 'object',
-              resource: { href: `${MODELS}/cargo-pile-${p}.glb` },
-              heading: QUAY_HEADING,
-              height: 14,
+              resource: { href: `${MODELS}/yard-container-${m}.glb` },
+              height: CONTAINER_H_M,
               anchor: 'bottom',
             },
           ],
         },
       })),
-      visualVariables: [
-        // Grow the stack with tiers (each tier ≈ 6 m of real height).
-        { type: 'size', field: 'tiers', axis: 'height', valueUnit: 'meters', stops: [
-          { value: 1, size: 8 }, { value: 6, size: 38 },
-        ] },
-        {
-          type: 'color',
-          field: 'fillPct',
-          stops: [
-            { value: 0, color: tokens.congestion.GREEN },
-            { value: 50, color: tokens.congestion.AMBER },
-            { value: 100, color: tokens.congestion.RED },
-          ],
-        },
-      ],
+      // Per-block heading so a rotated yard block keeps its orientation.
+      visualVariables: [{ type: 'rotation', field: 'heading' }],
     } as never,
     popupTemplate: {
       title: 'Yard block {blockId}',
-      content: 'Terminal: {terminalId}<br/>Fill: {fillPct}%<br/>Stacked tiers: {tiers}',
+      content: 'Terminal: {terminalId}<br/>Fill: {fillPct}%',
     } as never,
   });
 }
@@ -467,6 +481,95 @@ function gatePosition(t: Terminal, gateIndex: number): [number, number] {
   return withOverride(`gate3d:${gateId}`, place(lng, lat, alongM, 470)); // inland, access road
 }
 
+/**
+ * Resolve the CURRENT effective position of a movable asset by placement key —
+ * the override if one exists, else the DERIVED quay-frame position. Single source
+ * of the derive math for the transform panel (rotate/nudge need a base point for
+ * a first-time edit). Returns null for an unknown/unmatched pkey.
+ *
+ * pkey formats: `vessel:<T>` · `crane:<T>:<i>` · `yard:<T>:<i>` · `gate3d:<GATEID>`
+ * · `truckroute:<T>` · `rake:<siding>` · `tug` (the live-mover anchors).
+ */
+export function pkeyPosition(pkey: string, terminals: Terminal[]): [number, number] | null {
+  const override = placementStore.get(pkey);
+  if (override) return [override.lng, override.lat];
+  const [kind, a, b] = pkey.split(':');
+  const opTerminals = terminals.filter((t) => t.geom.type === 'Point');
+  const byId = new Map(opTerminals.map((t) => [t.terminalId, t] as const));
+  const centroid = (t: Terminal) => (t.geom as { coordinates: [number, number] }).coordinates;
+
+  // ---- live-mover anchors (must match sceneAnim.ts default anchors exactly) ----
+  if (kind === 'truckroute') {
+    const t = byId.get(a ?? '');
+    if (!t) return null;
+    const [lng, lat] = centroid(t);
+    return place(lng, lat, 0, 620); // gate-approach point
+  }
+  if (kind === 'rake') {
+    const t1 = opTerminals[0];
+    if (!t1) return null;
+    const [lng, lat] = centroid(t1);
+    return place(lng, lat, 400, 700); // rail line inland
+  }
+  if (kind === 'tug') {
+    const t = opTerminals.find((x) => x.status === 'OPERATING') ?? opTerminals[0];
+    if (!t) return null;
+    const [lng, lat] = centroid(t);
+    return place(lng, lat, 0, -520); // out in the channel
+  }
+
+  if (kind === 'vessel') {
+    const t = byId.get(a ?? '');
+    if (!t) return null;
+    const [lng, lat] = centroid(t);
+    const quay = t.quayLengthM ?? 800;
+    const alongShift = (rand01(t.terminalId, 'berth') - 0.5) * quay * 0.25;
+    return place(lng, lat, alongShift, -230);
+  }
+  if (kind === 'crane') {
+    const t = byId.get(a ?? '');
+    if (!t) return null;
+    const [lng, lat] = centroid(t);
+    const quay = t.quayLengthM ?? 800;
+    const n = Math.max(3, Math.min(9, Math.round(quay / 200)));
+    const i = Number(b) || 0;
+    const alongM = ((i + 0.5) / n - 0.5) * quay;
+    return place(lng, lat, alongM, 30);
+  }
+  if (kind === 'yard') {
+    const t = byId.get(a ?? '');
+    if (!t) return null;
+    const [lng, lat] = centroid(t);
+    const quay = t.quayLengthM ?? 800;
+    const i = Number(b) || 0;
+    const r = Math.floor(i / YARD_COLS);
+    const c = i % YARD_COLS;
+    const alongM = (c - (YARD_COLS - 1) / 2) * (quay / YARD_COLS);
+    const offsetM = 230 + r * 70;
+    return place(lng, lat, alongM, offsetM);
+  }
+  if (kind === 'gate3d') {
+    const gateId = pkey.slice('gate3d:'.length);
+    for (const t of terminals) {
+      if (t.geom.type !== 'Point') continue;
+      const gi = t.gates.indexOf(gateId);
+      if (gi >= 0) return gatePosition(t, gi);
+    }
+  }
+  return null;
+}
+
+/** Current heading (deg) for a movable pkey — the override's, else the quay default. */
+export function pkeyHeading(pkey: string): number {
+  const o = placementStore.get(pkey);
+  if (o?.heading != null) return o.heading;
+  // Vessels default to quay bearing + 90 (hull along the quay).
+  if (pkey.startsWith('vessel:')) return (QUAY_HEADING + 90) % 360;
+  // Live-mover anchors (route / rake / tug) run along the raw quay BEARING.
+  if (pkey.startsWith('truckroute:') || pkey.startsWith('rake:') || pkey === 'tug') return QUAY_BEARING_DEG;
+  return QUAY_HEADING;
+}
+
 function gate3dGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
   const byTerminal = new Map(terminals.map((t) => [t.terminalId, t] as const));
   const gateToPos = new Map<string, [number, number]>();
@@ -487,6 +590,9 @@ function gate3dGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[]
           terminalId: g.terminalId,
           queueLength: g.queueLength,
           avgTxnTimeMin: g.avgTxnTimeMin,
+          // Rotation DELTA from the composite gate's default orientation, so a
+          // rotation override spins both the boom and canopy together. 0 = default.
+          headingDelta: (placementStore.get(`gate3d:${g.gateId}`)?.heading ?? QUAY_HEADING) - QUAY_HEADING,
         },
       });
     });
@@ -506,18 +612,26 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
       { name: 'terminalId', type: 'string' },
       { name: 'queueLength', type: 'integer' },
       { name: 'avgTxnTimeMin', type: 'double' },
+      { name: 'headingDelta', type: 'double' },
     ],
     elevationInfo: { mode: 'on-the-ground' },
     renderer: {
       type: 'simple',
+      // Composite gate-house that matches the reference cockpit's gate: a wide flat
+      // CANOPY roof spanning the lanes on two support POSTS, with a red BOOM barrier
+      // model across the road. Multiple symbolLayers render as one gate; the boom
+      // GLB makes it read instantly as a checkpoint. Canopy is queue-coloured below.
       symbol: {
         type: 'point-3d',
         symbolLayers: [
-          { type: 'object', resource: { href: `${MODELS}/gate.glb` }, heading: QUAY_HEADING + 90, height: 12, anchor: 'bottom' },
+          // Red boom barrier across the road (real GLB) — the recognisable gate.
+          { type: 'object', resource: { href: `${MODELS}/gate-boom.glb` }, heading: QUAY_HEADING + 90, height: 6, anchor: 'bottom' },
+          // Canopy roof slab over the lanes.
+          { type: 'object', resource: { primitive: 'cube' }, width: 34, depth: 9, height: 1.6, material: { color: [230, 233, 235] }, anchor: 'bottom', heading: QUAY_HEADING },
         ],
       },
-      // Colour the gate frame by live queue length (green→amber→red).
       visualVariables: [
+        // The canopy reddens with the live gate queue (green→amber→red).
         {
           type: 'color',
           field: 'queueLength',
@@ -527,6 +641,8 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
             { value: 16, color: tokens.congestion.RED },
           ],
         },
+        // Rotate the whole gate (boom + canopy) by the override delta.
+        { type: 'rotation', field: 'headingDelta' },
       ],
     } as never,
     popupTemplate: {
@@ -566,7 +682,7 @@ function truckGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] 
           attributes: {
             objectId: stableOid(`truck:${g.gateId}:${k}`),
             gateId: g.gateId,
-            model: k % 3 === 0 ? 'delivery' : 'truck',
+            model: k % 3 === 0 ? 'pickup-realistic' : 'truck-realistic',
           },
         }),
       );
@@ -591,17 +707,97 @@ export function truckLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
     renderer: {
       type: 'unique-value',
       field: 'model',
-      uniqueValueInfos: ['truck', 'delivery'].map((m) => ({
-        value: m,
+      uniqueValueInfos: [
+        { model: 'truck-realistic', h: 8 },
+        { model: 'pickup-realistic', h: 5 },
+      ].map(({ model, h }) => ({
+        value: model,
         symbol: {
           type: 'point-3d',
+          // Realistic Quaternius models: turned to face along the access road
+          // (QUAY_HEADING + 180 — a 90° turn from the previous +90 orientation).
           symbolLayers: [
-            { type: 'object', resource: { href: `${MODELS}/${m}.glb` }, heading: QUAY_HEADING, height: 4.5, anchor: 'bottom' },
+            { type: 'object', resource: { href: `${MODELS}/${model}.glb` }, heading: (QUAY_HEADING + 180) % 360, height: h, anchor: 'bottom' },
           ],
         },
       })),
     } as never,
     popupTemplate: { title: 'Truck at {gateId}', content: 'Waiting in the gate queue.' } as never,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Congestion heatmap — a translucent apron patch over each gate's access road
+// that reddens and rises as the live gate queue grows (the flat-map "congestion
+// heatmap" made legible in 3D). Purely a colour/height read on live queue data.
+// ---------------------------------------------------------------------------
+
+function congestionGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
+  const tById = new Map(terminals.map((t) => [t.terminalId, t] as const));
+  const out: Graphic[] = [];
+  for (const g of gateOps) {
+    const t = tById.get(g.terminalId);
+    if (!t || t.geom.type !== 'Point') continue;
+    const gi = t.gates.indexOf(g.gateId);
+    if (gi < 0) continue;
+    const [glng, glat] = gatePosition(t, gi);
+    // A ~120 m × 60 m patch on the road just inland of the gate, where trucks
+    // queue. Build its ring by offsetting the gate point in the quay frame.
+    const c0 = offsetFrom(glng, glat, -60, -25);
+    const ring = [c0, offsetFrom(glng, glat, 60, -25), offsetFrom(glng, glat, 60, 90), offsetFrom(glng, glat, -60, 90), c0];
+    out.push(
+      new Graphic({
+        geometry: new Polygon({ rings: [ring], spatialReference: { wkid: 4326 } }),
+        attributes: {
+          objectId: stableOid(`cong:${g.gateId}`),
+          gateId: g.gateId,
+          terminalId: g.terminalId,
+          queueLength: g.queueLength,
+        },
+      }),
+    );
+  }
+  return out;
+}
+
+export function congestionLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): FeatureLayer {
+  return new FeatureLayer({
+    title: '3D · Congestion heatmap',
+    source: congestionGraphics(gateOps, terminals) as unknown as Graphic[],
+    objectIdField: 'objectId',
+    geometryType: 'polygon',
+    spatialReference: { wkid: 4326 },
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'gateId', type: 'string' },
+      { name: 'terminalId', type: 'string' },
+      { name: 'queueLength', type: 'integer' },
+    ],
+    elevationInfo: { mode: 'on-the-ground' },
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'polygon-3d',
+        symbolLayers: [{ type: 'extrude', size: 2, material: { color: [45, 187, 106, 0.25] } }],
+      },
+      visualVariables: [
+        // Reddens with queue…
+        {
+          type: 'color',
+          field: 'queueLength',
+          stops: [
+            { value: 2, color: [45, 187, 106, 0.18] },
+            { value: 9, color: [242, 169, 59, 0.32] },
+            { value: 16, color: [224, 69, 69, 0.45] },
+          ],
+        },
+        // …and rises so a congested gate is visible even from a shallow angle.
+        { type: 'size', field: 'queueLength', axis: 'height', valueUnit: 'meters', stops: [
+          { value: 2, size: 1 }, { value: 16, size: 10 },
+        ] },
+      ],
+    } as never,
+    popupTemplate: { title: 'Gate congestion {gateId}', content: 'Queue: {queueLength} trucks' } as never,
   });
 }
 
@@ -662,11 +858,24 @@ export function asset3dPosition(facilities: Facility[], terminals: Terminal[]): 
   for (const f of facilities) {
     if (f.geom.type === 'Point') pos.set(f.facilityId, (f.geom as { coordinates: [number, number] }).coordinates);
   }
-  for (const t of terminals) {
-    if (t.geom.type !== 'Point') continue;
+  const opTerminals = terminals.filter((t) => t.geom.type === 'Point');
+  for (const t of opTerminals) {
     const c = (t.geom as { coordinates: [number, number] }).coordinates;
     pos.set(t.terminalId, c);
     t.gates.forEach((g, i) => pos.set(g, gatePosition(t, i)));
+    // Live-mover anchors, so the tree can focus the camera on them.
+    const rt = pkeyPosition(`truckroute:${t.terminalId}`, terminals);
+    if (rt) pos.set(`route:${t.terminalId}`, rt);
+  }
+  // Rail rake + tug anchors + the approach-channel midpoint (reference focus).
+  const rake = pkeyPosition('rake:T1', terminals);
+  if (rake) pos.set('rake:T1', rake);
+  const tug = pkeyPosition('tug', terminals);
+  if (tug) pos.set('tug', tug);
+  const t0 = opTerminals[0];
+  if (t0) {
+    const c = (t0.geom as { coordinates: [number, number] }).coordinates;
+    pos.set('channel', place(c[0], c[1], 0, -600)); // channel line, seaward
   }
   return pos;
 }
@@ -753,4 +962,5 @@ export const graphicsFor3d = {
   gates: gate3dGraphics,
   trucks: truckGraphics,
   channel: channelGraphics,
+  congestion: congestionGraphics,
 };

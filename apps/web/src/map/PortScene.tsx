@@ -30,6 +30,7 @@ import {
   gate3dLayer,
   truckLayer,
   channelLayer,
+  congestionLayer,
   spotlight3dLayer,
   spotlight3dGraphics,
   selectionLayer,
@@ -37,8 +38,13 @@ import {
   asset3dPosition,
   graphicsFor3d,
 } from './scene3d.js';
+import { buildSceneAnim, type SceneAnim } from './sceneAnim.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
+
+/** Respect the OS "reduce motion" setting — freeze the animation clock if set. */
+const REDUCED_MOTION =
+  typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 interface PortSceneProps {
   facilities: Facility[];
@@ -57,12 +63,24 @@ interface PortSceneProps {
   onPlacementsChanged?: () => void;
 }
 
+/** Named cinematic camera viewpoints (the template's OVERVIEW/CHANNEL/… presets). */
+export type CameraPreset = 'overview' | 'channel' | 'gate' | 'rail' | 'crane';
+
+/** Time-of-day lighting for the scene ("day" sun vs low golden "dusk"). */
+export type Lighting = 'day' | 'dusk';
+
 /** Imperative handle the AssetExplorer uses to fly the 3D camera to an asset. */
 export interface PortSceneHandle {
   focus: (assetId: string) => void;
   clearSelection: () => void;
   /** Rebuild the operational layers from current data + placement overrides. */
   rebuild: () => void;
+  /** Rebuild ONLY the layer(s) for one asset — instant per-asset move/rotate. */
+  rebuildOne: (pkey: string) => void;
+  /** Fly the camera to a named cinematic viewpoint. */
+  goToPreset: (preset: CameraPreset) => void;
+  /** Switch scene lighting between bright day and golden dusk. */
+  setLighting: (mode: Lighting) => void;
 }
 
 /** Live value resolver so the spotlight label shows the exact driven number. */
@@ -89,9 +107,16 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     gates: FeatureLayer;
     trucks: FeatureLayer;
     channel: FeatureLayer;
+    congestion: FeatureLayer;
   } | null>(null);
   const spotlightRef = useRef<FeatureLayer | null>(null);
   const selectionRef = useRef<GraphicsLayer | null>(null);
+  const mapRef = useRef<Map | null>(null);
+  const animRef = useRef<SceneAnim | null>(null);
+  const animRebuildPending = useRef<boolean>(false);
+  const rafRef = useRef<number | null>(null);
+  const animClockRef = useRef<number>(0);
+  const lastFrameRef = useRef<number>(0);
   const lastZoomKey = useRef<string>('');
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -115,6 +140,67 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     void applyGraphics(layers.vessels, graphicsFor3d.vessels(p.terminals));
     void applyGraphics(layers.gates, graphicsFor3d.gates(p.gateOps, p.terminals));
     void applyGraphics(layers.trucks, graphicsFor3d.trucks(p.gateOps, p.terminals));
+    void applyGraphics(layers.congestion, graphicsFor3d.congestion(p.gateOps, p.terminals));
+    rebuildAnim();
+  }
+
+  // Rebuild ONLY the layer(s) affected by a single asset's placement change, so a
+  // rotate/nudge shows on the map INSTANTLY without re-applying all 8 layers +
+  // the whole animation. Called on every control tick from the transform panel.
+  function rebuildOne(pkey: string) {
+    const layers = layersRef.current;
+    const p = propsRef.current;
+    if (!layers) return;
+    const kind = pkey.split(':')[0];
+    switch (kind) {
+      case 'vessel':
+        void applyGraphics(layers.vessels, graphicsFor3d.vessels(p.terminals));
+        break;
+      case 'crane':
+        void applyGraphics(layers.cranes, graphicsFor3d.cranes(p.terminals));
+        break;
+      case 'yard':
+        void applyGraphics(layers.yards, graphicsFor3d.yards(p.terminals, p.pendency));
+        break;
+      case 'gate3d':
+        // A gate move drags its truck queue + congestion patch with it.
+        void applyGraphics(layers.gates, graphicsFor3d.gates(p.gateOps, p.terminals));
+        void applyGraphics(layers.trucks, graphicsFor3d.trucks(p.gateOps, p.terminals));
+        void applyGraphics(layers.congestion, graphicsFor3d.congestion(p.gateOps, p.terminals));
+        break;
+      case 'truckroute':
+      case 'rake':
+      case 'tug':
+        // Live movers bake their anchor at build time → rebuild the anim only.
+        rebuildAnim();
+        break;
+      default:
+        rebuildLayers();
+    }
+  }
+
+  // Rebuild the live-motion layers (trucks/rake/tug) so moving a route/rake/tug
+  // ANCHOR (truckroute:<T> / rake:T1 / tug placement override) takes effect — the
+  // anim bakes overrides in at build time, so we tear it down and rebuild it.
+  // Coalesced to one rebuild per frame so a fast slider drag on a mover anchor
+  // doesn't tear down + rebuild the whole animation dozens of times a second.
+  function rebuildAnim() {
+    if (animRebuildPending.current) return;
+    animRebuildPending.current = true;
+    requestAnimationFrame(() => {
+      animRebuildPending.current = false;
+      const map = mapRef.current;
+      const p = propsRef.current;
+      if (!map) return;
+      const old = animRef.current;
+      if (old) {
+        map.removeMany(old.layers);
+        old.destroy();
+      }
+      const next = buildSceneAnim(p.terminals, p.gateOps);
+      animRef.current = next;
+      map.addMany(next.layers);
+    });
   }
 
   // ---- imperative camera focus, shared by explorer clicks + internal picks ----
@@ -141,10 +227,62 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       });
   }
 
+  // ---- cinematic camera presets (the template's OVERVIEW/CHANNEL/…) ----------
+  // Each preset is a camera pose (position + heading/tilt) computed from real
+  // terminal geography, so "GATE" actually frames the gates, "RAIL" the sidings,
+  // etc. — not arbitrary coordinates.
+  function goToPreset(preset: CameraPreset) {
+    const view = viewRef.current;
+    if (!view) return;
+    const terms = propsRef.current.terminals.filter((t) => t.geom.type === 'Point');
+    if (terms.length === 0) return;
+    const coords = terms.map((t) => (t.geom as { coordinates: [number, number] }).coordinates);
+    const cx = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+    const cy = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+    // Poses tuned to the ~208° quay bearing (water SW, land NE).
+    const POSES: Record<CameraPreset, { dLng: number; dLat: number; z: number; heading: number; tilt: number }> = {
+      overview: { dLng: -0.012, dLat: -0.010, z: 1300, heading: 42, tilt: 68 },
+      channel: { dLng: -0.020, dLat: -0.014, z: 700, heading: 32, tilt: 78 }, // low over the water looking up-channel
+      gate: { dLng: 0.006, dLat: 0.004, z: 500, heading: 220, tilt: 74 }, // inland, looking seaward across the gates
+      rail: { dLng: 0.010, dLat: 0.002, z: 550, heading: 250, tilt: 76 }, // over the sidings
+      crane: { dLng: -0.006, dLat: -0.004, z: 420, heading: 50, tilt: 82 }, // tight on the crane line
+    };
+    const p = POSES[preset];
+    void view
+      .goTo(
+        { position: { longitude: cx + p.dLng, latitude: cy + p.dLat, z: p.z }, heading: p.heading, tilt: p.tilt } as never,
+        { duration: 1100, easing: 'ease-in-out' },
+      )
+      .catch(() => {
+        /* interrupted — fine */
+      });
+  }
+
+  function setLighting(mode: Lighting) {
+    const view = viewRef.current;
+    if (!view) return;
+    const env = view.environment as unknown as {
+      lighting?: { type?: string; date?: Date; directShadowsEnabled?: boolean };
+      atmosphere?: { quality?: string };
+      atmosphereEnabled?: boolean;
+    };
+    // Day = midday sun; dusk = low golden light. Fixed dates keep it deterministic
+    // (no Date.now()); ArcGIS positions the sun from date+scene location.
+    const when = mode === 'dusk' ? new Date('2026-06-16T12:45:00Z') /* ~18:15 IST */ : new Date('2026-06-16T06:30:00Z') /* ~12:00 IST */;
+    if (env.lighting) {
+      env.lighting.type = 'sun';
+      env.lighting.date = when;
+      env.lighting.directShadowsEnabled = true;
+    }
+  }
+
   useImperativeHandle(ref, () => ({
     focus: focusAsset,
     clearSelection: () => selectionRef.current?.removeAll(),
     rebuild: rebuildLayers,
+    rebuildOne,
+    goToPreset,
+    setLighting,
   }), []);
 
   // ---- init: build the scene view + 3D layers + widgets ONCE ----
@@ -160,6 +298,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       basemap: initialBasemap(),
       ...(offline ? {} : { ground: 'world-elevation' }),
     });
+    mapRef.current = map;
 
     // Build 3D layers once; the data effect edits features in place thereafter.
     const layers = {
@@ -170,10 +309,12 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       vessels: vesselLayer(p0.terminals),
       gates: gate3dLayer(p0.gateOps, p0.terminals),
       trucks: truckLayer(p0.gateOps, p0.terminals),
+      congestion: congestionLayer(p0.gateOps, p0.terminals),
     };
     layersRef.current = layers;
-    // Order matters for readability: channel + decks under stacks/cranes/ships.
-    map.addMany([layers.channel, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks]);
+    // Order matters for readability: channel + congestion + decks under
+    // stacks/cranes/ships (the heatmap is a ground wash, drawn early).
+    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks]);
 
     const spotlight = spotlight3dLayer(p0.highlights ?? [], p0.facilities, p0.terminals);
     spotlightRef.current = spotlight;
@@ -182,6 +323,13 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     const selection = selectionLayer();
     selectionRef.current = selection;
     map.add(selection);
+
+    // Live-motion layers (moving trucks, shunting rake, crane hoists). These are
+    // GraphicsLayers mutated per-frame — NOT part of the in-place-diff data path
+    // and carry no pkey, so the placement editor and sim overlay never touch them.
+    const anim = buildSceneAnim(p0.terminals, p0.gateOps);
+    animRef.current = anim;
+    map.addMany(anim.layers);
 
     const view = new SceneView({
       container: containerRef.current,
@@ -194,8 +342,11 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       qualityProfile: 'high',
       environment: {
         atmosphereEnabled: true,
-        lighting: { type: 'sun', directShadowsEnabled: true },
-      },
+        // Fixed midday sun (deterministic — no Date.now); the day/dusk toggle
+        // swaps this date to reposition the sun. directShadows give the models
+        // depth so cranes/ships read as solid 3D, not flat symbols.
+        lighting: { type: 'sun', date: new Date('2026-06-16T06:30:00Z'), directShadowsEnabled: true },
+      } as never,
       ui: { components: ['zoom', 'compass', 'navigation-toggle', 'attribution'] },
     });
     viewRef.current = view;
@@ -212,6 +363,28 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
         new Expand({ view, content: new LayerList({ view }), expanded: false, expandTooltip: 'Show layers' }),
         'top-right',
       );
+
+      // ---- animation loop: advance the live movers each frame ----
+      // Skips work while the tab/document is hidden or the container is not laid
+      // out (3D toggle off), and freezes when the OS asks to reduce motion.
+      const step = (now: number) => {
+        rafRef.current = requestAnimationFrame(step);
+        const prev = lastFrameRef.current || now;
+        lastFrameRef.current = now;
+        const dt = Math.min(0.1, (now - prev) / 1000); // clamp big gaps (tab switch)
+        const container = containerRef.current;
+        const visible =
+          !REDUCED_MOTION &&
+          typeof document !== 'undefined' &&
+          document.visibilityState === 'visible' &&
+          !!container &&
+          container.clientWidth > 0;
+        if (visible) {
+          animClockRef.current += dt;
+          animRef.current?.tick(animClockRef.current, dt);
+        }
+      };
+      rafRef.current = requestAnimationFrame(step);
     });
 
     // Click behaviour depends on mode:
@@ -228,7 +401,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
         if (mp && typeof mp.longitude === 'number' && typeof mp.latitude === 'number') {
           const prev = placementStore.get(pkey);
           placementStore.set(pkey, { lng: mp.longitude, lat: mp.latitude, heading: prev?.heading });
-          rebuildLayers();
+          rebuildOne(pkey); // instant, targeted — just the placed asset's layer
           propsRef.current.onPlacementsChanged?.();
         }
         return;
@@ -265,11 +438,17 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     });
 
     return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      lastFrameRef.current = 0;
+      animRef.current?.destroy();
+      animRef.current = null;
       teardownFallback();
       clickHandle.remove();
       moveHandle.remove();
       view.destroy();
       viewRef.current = null;
+      mapRef.current = null;
       layersRef.current = null;
       spotlightRef.current = null;
       selectionRef.current = null;
@@ -288,6 +467,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     void applyGraphics(layers.vessels, graphicsFor3d.vessels(props.terminals));
     void applyGraphics(layers.gates, graphicsFor3d.gates(props.gateOps, props.terminals));
     void applyGraphics(layers.trucks, graphicsFor3d.trucks(props.gateOps, props.terminals));
+    void applyGraphics(layers.congestion, graphicsFor3d.congestion(props.gateOps, props.terminals));
+    // Feed live queue lengths to the moving trucks so they visibly slow at a
+    // congested gate (the animation reads congestion, it doesn't fake it).
+    animRef.current?.setGateQueues(props.gateOps);
   }, [props.terminals, props.pendency, props.gateOps]);
 
   // ---- spotlight halos edited in place + camera reframes on spotlight change ----

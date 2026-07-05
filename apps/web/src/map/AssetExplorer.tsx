@@ -31,7 +31,7 @@ interface AssetExplorerProps {
   onSelect: (assetId: string, pkey?: string) => void;
 }
 
-type AssetKind = 'terminal' | 'vessel' | 'crane' | 'gate' | 'yard' | 'facility';
+type AssetKind = 'terminal' | 'vessel' | 'crane' | 'gate' | 'yard' | 'facility' | 'route' | 'rake' | 'tug' | 'channel';
 
 interface AssetNode {
   id: string;
@@ -49,6 +49,10 @@ const KIND_ICON: Record<AssetKind, string> = {
   gate: 'car',
   yard: 'grid',
   facility: 'pin',
+  route: 'car', // truck route
+  rake: 'train', // rail rake
+  tug: 'ship',
+  channel: 'line',
 };
 
 export function AssetExplorer(props: AssetExplorerProps) {
@@ -124,6 +128,10 @@ function kindLabel(k: AssetKind): string {
     case 'gate': return 'Truck gate';
     case 'yard': return 'Container yard block';
     case 'facility': return 'Facility';
+    case 'route': return 'Truck route (live)';
+    case 'rake': return 'Rail rake (live)';
+    case 'tug': return 'Harbour tug (live)';
+    case 'channel': return 'Approach channel';
   }
 }
 
@@ -155,6 +163,7 @@ function buildGroups(
   const cranes: AssetNode[] = [];
   const gates: AssetNode[] = [];
   const yards: AssetNode[] = [];
+  const routes: AssetNode[] = [];
   const termNodes: AssetNode[] = [];
 
   let vesselSeq = 0;
@@ -169,6 +178,8 @@ function buildGroups(
     if (t.status === 'OPERATING') {
       vesselSeq += 1;
       vessels.push({ id: t.terminalId, label: `MV-JNPA-${vesselSeq}`, kind: 'vessel', meta: `berthed · ${t.terminalId}`, pkey: `vessel:${t.terminalId}` });
+      // Live truck route (the driving trucks' loop). id → asset3dPosition('route:<T>').
+      routes.push({ id: `route:${t.terminalId}`, label: `${t.terminalId} truck route`, kind: 'route', meta: `${t.terminalId} · live`, pkey: `truckroute:${t.terminalId}` });
     }
     // STS cranes — count/pkey MUST match craneLayer's rule (quay/200, clamped 3..9).
     const quay = t.quayLengthM ?? 800;
@@ -191,13 +202,27 @@ function buildGroups(
     .filter((f) => f.type !== 'TERMINAL' && f.geom.type === 'Point')
     .map((f) => ({ id: f.facilityId, label: f.name, kind: 'facility', meta: `${f.type} · ${f.currentPendency} pend` }));
 
+  // Live movers (the animated assets): the rail rake, the harbour tug, plus the
+  // per-terminal truck routes built above. Each carries an anchor pkey so it's
+  // selectable, focus-able and movable/rotatable via the transform panel.
+  const rakeNodes: AssetNode[] = [
+    { id: 'rake:T1', label: 'Rail rake (loco + wagons)', kind: 'rake', meta: 'siding T1 · live', pkey: 'rake:T1' },
+  ];
+  const referenceNodes: AssetNode[] = [
+    { id: 'tug', label: 'Harbour tug', kind: 'tug', meta: 'channel · live', pkey: 'tug' },
+    { id: 'channel', label: 'Approach channel', kind: 'channel', meta: 'Thane Creek' },
+  ];
+
   // Movable 3D-asset sections first (that's what edit mode acts on), then the
   // reference sections (terminals, off-port facilities).
   const groups: AssetGroup[] = [
     { title: `Vessels (${vessels.length})`, movable: true, nodes: vessels },
     { title: `STS Cranes (${cranes.length})`, movable: true, nodes: cranes },
     { title: `Truck Gates (${gates.length})`, movable: true, nodes: gates },
+    { title: `Truck Routes (${routes.length})`, movable: true, nodes: routes },
+    { title: `Rail Rake (${rakeNodes.length})`, movable: true, nodes: rakeNodes },
     { title: `Yard Blocks (${yards.length})`, movable: true, nodes: yards },
+    { title: `Reference (${referenceNodes.length})`, movable: true, nodes: referenceNodes },
     { title: `Terminals (${termNodes.length})`, movable: false, nodes: termNodes },
   ];
   if (facNodes.length) groups.push({ title: `Off-Port Facilities (${facNodes.length})`, movable: false, nodes: facNodes });

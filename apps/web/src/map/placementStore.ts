@@ -7,16 +7,14 @@
  * derived quay-frame position — so an operator can nudge each ship, crane, gate
  * or yard block onto its exact real-world spot.
  *
- * Persistence model (chosen by the user): NOT auto-saved. Edits live in memory
- * for the session; the "Export placements" button downloads a positions.json
- * that can be committed to the repo (or handed back) and loaded via `loadJSON`.
- * A tiny pub/sub lets the scene re-render as drags land.
- *
- * Seed baseline: `data/positions.json` (hand-corrected real-world placements
- * exported from the editor) is imported at build time and loaded as the default
- * overrides, so the 3D scene opens with assets already on their real spots. The
- * editor still layers on top (drag to further nudge); "Reset" reverts to these
- * seeded defaults rather than wiping to the derived quay-frame positions.
+ * Persistence model (source of truth = the committed JSON file, NOT the browser):
+ * `data/positions.json` is imported at BUILD TIME as the seed, so the 3D scene
+ * opens with every asset already on its real spot. Edits (drag / rotate / nudge)
+ * live in memory for the session; the "Export" button downloads the updated
+ * positions.json, and the "Import" button uploads one back to preview it live.
+ * To make an edit permanent you commit the exported file to `data/positions.json`
+ * — then it's "in code" and every build/user gets it. "Reset" reverts to the
+ * seeded file. No localStorage: nothing hidden persists in the browser.
  */
 import seededPlacements from '../../../../data/positions.json';
 
@@ -45,8 +43,7 @@ class PlacementStore {
   private readonly seed: Record<string, Placement>;
 
   constructor() {
-    // Load the committed real-world placements as the baseline. loadInto() is a
-    // pure fill (no emit) since there are no subscribers yet at construction.
+    // Baseline = committed real-world placements from data/positions.json.
     this.seed = readPlacementFile(seededPlacements as unknown);
     for (const [k, v] of Object.entries(this.seed)) this.map.set(k, v);
   }
@@ -79,16 +76,59 @@ class PlacementStore {
     this.emit();
   }
 
+  /**
+   * Set an asset's heading (deg), preserving its position. Needs the asset's
+   * CURRENT effective position (`base`) so a first-time rotation (no existing
+   * override) still pins the asset where it already is. Called by the rotate dial.
+   */
+  setHeading(key: string, heading: number, base: [number, number]): void {
+    const cur = this.map.get(key);
+    const lng = cur?.lng ?? base[0];
+    const lat = cur?.lat ?? base[1];
+    this.set(key, { lng, lat, heading: ((heading % 360) + 360) % 360 });
+  }
+
+  /**
+   * Nudge an asset by `metres` toward a compass `dir` (N/S/E/W) from its CURRENT
+   * effective position (`base`), preserving heading. A metre step is converted to
+   * a lng/lat delta at JNPA's latitude. Called by the N/S/E/W arrow buttons.
+   */
+  nudge(key: string, dir: 'N' | 'S' | 'E' | 'W', metres: number, base: [number, number]): void {
+    const cur = this.map.get(key);
+    const lng = cur?.lng ?? base[0];
+    const lat = cur?.lat ?? base[1];
+    const dLat = metres / 110_574;
+    const dLng = metres / (111_320 * Math.cos((lat * Math.PI) / 180));
+    const next = {
+      N: { lng, lat: lat + dLat },
+      S: { lng, lat: lat - dLat },
+      E: { lng: lng + dLng, lat },
+      W: { lng: lng - dLng, lat },
+    }[dir];
+    this.set(key, { ...next, ...(cur?.heading != null ? { heading: cur.heading } : {}) });
+  }
+
   /** Remove one override (revert that asset to its derived position). */
   remove(key: string): void {
     if (this.map.delete(key)) this.emit();
   }
 
   /**
+   * Reset ONE asset to its seeded default (data/positions.json) if it has one,
+   * else drop the override so it reverts to the derived quay-frame position. The
+   * per-asset counterpart of {@link clear}.
+   */
+  resetKey(key: string): void {
+    const s = this.seed[key];
+    if (s) this.map.set(key, { ...s });
+    else this.map.delete(key);
+    this.emit();
+  }
+
+  /**
    * Reset to the seeded defaults (data/positions.json) — the "Reset" button.
-   * This reverts user drags back to the committed real-world placements, NOT to
-   * the derived quay-frame positions (an empty store). Always emits so the scene
-   * rebuilds even when only values changed.
+   * Reverts user edits back to the committed real-world placements. Always emits
+   * so the scene rebuilds even when only values changed.
    */
   clear(): void {
     this.map = new Map(Object.entries(this.seed).map(([k, v]) => [k, { ...v }]));
@@ -140,6 +180,39 @@ function readPlacementFile(file: unknown): Record<string, Placement> {
 
 /** Singleton shared by the scene builders and the edit UI. */
 export const placementStore = new PlacementStore();
+
+/**
+ * Prompt the user to pick a positions.json and load it into the store (so an
+ * exported/hand-edited file can be previewed live before committing it to
+ * data/positions.json). Resolves with the number of placements loaded, or
+ * rejects on a malformed file. Uses a transient <input type=file>.
+ */
+export function importPlacements(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return reject(new Error('No file selected'));
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result)) as PlacementFile;
+          const n = Object.keys(readPlacementFile(parsed)).length;
+          if (n === 0) return reject(new Error('No valid placements in file'));
+          placementStore.loadJSON(parsed);
+          resolve(n);
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('Invalid JSON'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.readAsText(file);
+    };
+    input.click();
+  });
+}
 
 /** Trigger a browser download of the current placements as positions.json. */
 export function downloadPlacements(note?: string): void {

@@ -160,31 +160,6 @@
       "lng": 72.951817,
       "lat": 18.929099,
       "heading": 225
-    },
-    "truckroute:NSICT": {
-      "lng": 72.953205,
-      "lat": 18.948736,
-      "heading": 130
-    },
-    "truckroute:NSIGT": {
-      "lng": 72.95023,
-      "lat": 18.943421,
-      "heading": 211
-    },
-    "truckroute:GTI": {
-      "lng": 72.951011,
-      "lat": 18.938405,
-      "heading": 225
-    },
-    "truckroute:BMCT": {
-      "lng": 72.950312,
-      "lat": 18.948859,
-      "heading": 238
-    },
-    "truckroute:JNPCT": {
-      "lng": 72.95571,
-      "lat": 18.951862,
-      "heading": 305
     }
   }
 }
