@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "note": "JNPA 3D asset placements",
+  "placements": {
+    "vessel:NSICT": {
+      "lng": 72.945013,
+      "lat": 18.959685
+    },
+    "vessel:NSIGT": {
+      "lng": 72.940072,
+      "lat": 18.949435
+    },
+    "vessel:GTI": {
+      "lng": 72.93816,
+      "lat": 18.946855
+    },
+    "vessel:JNPCT": {
+      "lng": 72.948485,
+      "lat": 18.961732
+    },
+    "crane:NSICT:1": {
+      "lng": 72.949707,
+      "lat": 18.961306
+    },
+    "crane:NSIGT:0": {
+      "lng": 72.947728,
+      "lat": 18.95705
+    },
+    "crane:NSICT:0": {
+      "lng": 72.951439,
+      "lat": 18.964655
+    },
+    "crane:NSICT:2": {
+      "lng": 72.948577,
+      "lat": 18.958953
+    },
+    "crane:NSIGT:1": {
+      "lng": 72.946831,
+      "lat": 18.95523
+    },
+    "crane:NSIGT:2": {
+      "lng": 72.946099,
+      "lat": 18.953536
+    },
+    "crane:GTI:0": {
+      "lng": 72.94326,
+      "lat": 18.950323
+    },
+    "crane:GTI:1": {
+      "lng": 72.941561,
+      "lat": 18.948395
+    },
+    "crane:GTI:2": {
+      "lng": 72.940863,
+      "lat": 18.947575
+    },
+    "crane:GTI:3": {
+      "lng": 72.940181,
+      "lat": 18.946844
+    },
+    "crane:BMCT:0": {
+      "lng": 72.938557,
+      "lat": 18.945129
+    },
+    "crane:BMCT:1": {
+      "lng": 72.935065,
+      "lat": 18.942779
+    },
+    "crane:BMCT:2": {
+      "lng": 72.938764,
+      "lat": 18.941331
+    },
+    "crane:BMCT:3": {
+      "lng": 72.938083,
+      "lat": 18.940588
+    },
+    "crane:BMCT:4": {
+      "lng": 72.934942,
+      "lat": 18.937226
+    },
+    "crane:BMCT:5": {
+      "lng": 72.934335,
+      "lat": 18.936578
+    },
+    "crane:BMCT:6": {
+      "lng": 72.933883,
+      "lat": 18.936077
+    },
+    "crane:BMCT:7": {
+      "lng": 72.931841,
+      "lat": 18.933824
+    },
+    "crane:BMCT:8": {
+      "lng": 72.931494,
+      "lat": 18.933493
+    },
+    "crane:JNPCT:0": {
+      "lng": 72.930072,
+      "lat": 18.931891
+    },
+    "crane:JNPCT:1": {
+      "lng": 72.929634,
+      "lat": 18.931472
+    },
+    "crane:JNPCT:2": {
+      "lng": 72.929037,
+      "lat": 18.930613
+    }
+  }
+}

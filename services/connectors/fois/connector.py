@@ -36,7 +36,7 @@ class FoisConnector(BaseConnector):
         evs = []
         for _ in range(n):
             ev = synth_cargo_event(self._rng, "FOIS", self._rng.choice(self.event_types))
-            ev["rakeId"] = f"RK-{self._rng.choice(['CONCOR', 'ADANI'])}-{self._rng.randint(100, 999)}"
+            ev["rakeId"] = f"RK-{self._rng.choice(['CTO-1', 'CTO-2'])}-{self._rng.randint(100, 999)}"
             ev["facilityId"] = self._rng.choice(["T1", "T2"])
             ev["payload"] = {"sidingId": ev["facilityId"]}
             evs.append(ev)

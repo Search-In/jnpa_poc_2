@@ -1,0 +1,60 @@
+{
+  "$comment": "JNPA real-world grounding pack (spec §2). Publicly-sourced facts used ONLY to calibrate the simulation so the twin is recognisably JNPA, not a generic port. Every entry carries a `source`. These are public figures used to shape synthetic behaviour — NOT live JNPA data and NOT claimed baselines. Surfaced in the in-app Methodology & Assumptions panel.",
+  "asOf": "2026-04-01",
+  "port": {
+    "name": "Jawaharlal Nehru Port (JNPT), operated by JNPA",
+    "totalTeuFy2425": { "value": 7.30, "unit": "M TEU", "source": "JNPA FY24-25 performance (public press releases)" }
+  },
+  "terminals": [
+    { "id": "NSFT", "aka": "ex-JNPCT", "teuFy2425": 0.59, "sharePct": 8.0, "operatorNote": "J M Baxi / CMA CGM consortium (oldest terminal)", "source": "JNPA terminal-wise throughput FY24-25 (public)" },
+    { "id": "NSICT", "teuFy2425": 1.21, "sharePct": 16.5, "operatorNote": "DP World; commissioned 2000; 600 m quay, 2 berths", "source": "JNPA / DP World public disclosures" },
+    { "id": "NSIGT", "teuFy2425": 1.13, "sharePct": 15.5, "operatorNote": "DP World", "source": "JNPA terminal-wise throughput FY24-25 (public)" },
+    { "id": "GTI", "aka": "APMT", "teuFy2425": 2.08, "sharePct": 28.5, "operatorNote": "APM Terminals; commissioned 2006", "source": "JNPA / APM Terminals public disclosures" },
+    { "id": "BMCT", "teuFy2425": 2.27, "sharePct": 31.0, "operatorNote": "PSA International; 2,000 m quay; 4.8 M TEU capacity; India's largest container terminal; ~5.5 km from the older terminal cluster", "source": "JNPA / PSA public disclosures" }
+  ],
+  "throughput": [
+    { "key": "teuPerDay", "value": 22000, "unit": "TEU/day handled", "source": "JNPA public performance figures (approx.)" },
+    { "key": "teuPerDayRoad", "value": 20000, "unit": "TEU/day by road", "source": "JNPA modal-split (approx.)" },
+    { "key": "teuPerDayRail", "value": 2000, "unit": "TEU/day by rail", "source": "JNPA modal-split (approx.)" },
+    { "key": "rakesPerMonth", "value": 625, "unit": "rakes/month (~100k TEU/month by rail)", "source": "JNPA rail evacuation figures (approx.)" },
+    { "key": "vesselCallsPerDay", "value": 11, "unit": "vessel calls/day", "source": "JNPA public figures (approx.)" },
+    { "key": "yardStorageCapacity", "value": 176000, "unit": "TEU yard storage capacity", "source": "JNPA public figures (approx.)" }
+  ],
+  "landside": {
+    "cfsCount": { "value": 30, "unit": "CFSs in the Nhava Sheva/Uran/Panvel belt (approx.)", "modelled": "8 synthetic-but-plausible CFS agents", "source": "public CFS ecosystem estimate" },
+    "icdCount": { "value": 50, "unit": "ICDs connected nationally (approx.)", "modelled": "5 synthetic hinterland ICD nodes", "source": "public ICD network estimate" },
+    "cpp": {
+      "name": "Centralized Parking Plaza (CPP)",
+      "areaHa": 45,
+      "trailerCapacity": 2832,
+      "weighbridgeGates": 8,
+      "reeferPlugs": 130,
+      "note": "single-window customs documentation for DPE self-sealed export containers; modelled as a first-class node (buffer → documentation → gate release).",
+      "source": "JNPA CPP public description"
+    }
+  },
+  "routing": {
+    "$note": "DPD/DPE/CFS/ICD routing splits are adjustable assumption sliders; defaults below. Labelled as assumptions.",
+    "import": { "DPD": 0.55, "CFS": 0.35, "ICD": 0.10, "source": "ASSUMED (DPD savings ₹8,000–20,000 & days vs CFS routing, public)" },
+    "export": { "DPE": 0.49, "CFS": 0.38, "ICD": 0.13, "source": "ASSUMED (DPE ~48–50% share, public)" }
+  },
+  "itrho": {
+    "sinceAug2019": true,
+    "note": "Inter-Terminal Rail Handling Operation: mixed trains for multiple terminals are handled at one terminal's rail yard and road-transferred (ITT trailers) across the ~5.5 km BMCT gap. Heart of the Mixed Train Optimization KPI.",
+    "source": "JNPA ITRHO public description (operational since Aug 2019)"
+  },
+  "rail": {
+    "sidings": "T1 and T2 rail sidings + terminal rail yards (BMCT has its own RMG rail yard, 4 RMGCs).",
+    "dfc": "JNPA is the terminus of the Western Dedicated Freight Corridor (WDFC).",
+    "source": "public rail infrastructure descriptions"
+  },
+  "customsArtifacts": {
+    "list": ["e-seal + universal e-seal readers", "eForm 13", "LEO (Let Export Order)", "scanner flagging via EDI", "CODECO gate-in/gate-out (UN/EDIFACT)", "IAL/EAL from shipping lines", "D/O (delivery order)", "empty-pool inventory from ECDs"],
+    "source": "GeM tender GEM/2026/B/7297343 Appendix C + corrigenda (mandatory artifacts)"
+  },
+  "recentEvent": {
+    "name": "May-2026 trailer-driver shortage congestion event",
+    "note": "CFS-bound import pendency spiked; containers stranded >15 days went ~2,500 → 450 only after emergency measures (extra rail evacuation, CFS→DPD conversion, ITRHO charge waivers, green-channel CFS evacuation). Reconstructed as scenario class S5 inside the twin.",
+    "source": "recent industry-wide event class (illustrative reconstruction)"
+  }
+}

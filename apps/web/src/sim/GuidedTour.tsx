@@ -368,6 +368,22 @@ export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
           ))}
         </div>
 
+        {/* Framing discipline (Integrity Rule §1-2): every number in a What-If
+            step is a simulation result under stated assumptions — never a
+            claimed JNPA baseline improvement. This caption is always visible
+            while a scenario runs so the room can never mistake it. */}
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            margin: '8px 12px 0', padding: '4px 8px',
+            background: 'rgba(242,169,59,0.12)', border: '1px solid #f2a93b55',
+            borderRadius: 8, fontSize: 11, color: tokens.color.textMuted,
+          }}
+        >
+          <CalciteIcon icon="information" scale="s" />
+          <span>SIMULATED — modelled targets under stated assumptions; not claimed JNPA baselines.</span>
+        </div>
+
         {/* Body */}
         <div style={{ padding: '10px 12px 2px' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: tokens.color.text }}>{step.title}</div>

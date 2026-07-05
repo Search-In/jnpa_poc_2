@@ -87,7 +87,7 @@ export type RakeDirection = 'INBOUND' | 'OUTBOUND';
 
 export interface Rake {
   rakeId: string;
-  /** Container Train Operator (CONCOR / private CTO). */
+  /** Container Train Operator (synthetic CTO code, e.g. CTO-1). */
   ctoOperator: string;
   trainNo: string;
   /** FOIS reference for the rake. */

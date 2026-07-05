@@ -11,7 +11,14 @@
  * for the session; the "Export placements" button downloads a positions.json
  * that can be committed to the repo (or handed back) and loaded via `loadJSON`.
  * A tiny pub/sub lets the scene re-render as drags land.
+ *
+ * Seed baseline: `data/positions.json` (hand-corrected real-world placements
+ * exported from the editor) is imported at build time and loaded as the default
+ * overrides, so the 3D scene opens with assets already on their real spots. The
+ * editor still layers on top (drag to further nudge); "Reset" reverts to these
+ * seeded defaults rather than wiping to the derived quay-frame positions.
  */
+import seededPlacements from '../../../../data/positions.json';
 
 export interface Placement {
   /** EPSG:4326 longitude the asset was dragged to. */
@@ -34,8 +41,17 @@ type Listener = () => void;
 class PlacementStore {
   private map = new Map<string, Placement>();
   private listeners = new Set<Listener>();
+  /** The seeded default overrides (from data/positions.json) — the Reset target. */
+  private readonly seed: Record<string, Placement>;
 
-  /** Current override for a placement key, if the user moved that asset. */
+  constructor() {
+    // Load the committed real-world placements as the baseline. loadInto() is a
+    // pure fill (no emit) since there are no subscribers yet at construction.
+    this.seed = readPlacementFile(seededPlacements as unknown);
+    for (const [k, v] of Object.entries(this.seed)) this.map.set(k, v);
+  }
+
+  /** Current override for a placement key, if seeded or the user moved that asset. */
   get(key: string): Placement | undefined {
     return this.map.get(key);
   }
@@ -68,22 +84,21 @@ class PlacementStore {
     if (this.map.delete(key)) this.emit();
   }
 
-  /** Clear every override. */
+  /**
+   * Reset to the seeded defaults (data/positions.json) — the "Reset" button.
+   * This reverts user drags back to the committed real-world placements, NOT to
+   * the derived quay-frame positions (an empty store). Always emits so the scene
+   * rebuilds even when only values changed.
+   */
   clear(): void {
-    if (this.map.size) {
-      this.map.clear();
-      this.emit();
-    }
+    this.map = new Map(Object.entries(this.seed).map(([k, v]) => [k, { ...v }]));
+    this.emit();
   }
 
   /** Load overrides from a parsed positions.json (merges over current). */
   loadJSON(file: PlacementFile): void {
-    if (!file || file.version !== 1 || typeof file.placements !== 'object') return;
-    for (const [k, v] of Object.entries(file.placements)) {
-      if (v && typeof v.lng === 'number' && typeof v.lat === 'number') {
-        this.map.set(k, { lng: round(v.lng), lat: round(v.lat), ...(v.heading != null ? { heading: v.heading } : {}) });
-      }
-    }
+    const placements = readPlacementFile(file);
+    for (const [k, v] of Object.entries(placements)) this.map.set(k, v);
     this.emit();
   }
 
@@ -104,6 +119,23 @@ class PlacementStore {
 
 function round(v: number): number {
   return Math.round(v * 1e6) / 1e6; // ~0.1 m precision
+}
+
+/**
+ * Validate + normalise a parsed positions.json into a rounded placement map.
+ * Tolerant: a malformed file / entry is skipped, not thrown — the scene falls
+ * back to derived positions for any key it can't read.
+ */
+function readPlacementFile(file: unknown): Record<string, Placement> {
+  const out: Record<string, Placement> = {};
+  const f = file as Partial<PlacementFile> | null;
+  if (!f || f.version !== 1 || typeof f.placements !== 'object' || f.placements == null) return out;
+  for (const [k, v] of Object.entries(f.placements)) {
+    if (v && typeof v.lng === 'number' && typeof v.lat === 'number') {
+      out[k] = { lng: round(v.lng), lat: round(v.lat), ...(v.heading != null ? { heading: round(v.heading) } : {}) };
+    }
+  }
+  return out;
 }
 
 /** Singleton shared by the scene builders and the edit UI. */

@@ -15,7 +15,30 @@
  * Simulator page set target values that the tick eases toward.
  */
 
-import { getScript, type StepPatch } from './scenarioPlayer.js';
+import { getScript, type StepPatch, type ScenarioStep } from './scenarioPlayer.js';
+import { workflowStore } from '../workflow/workflowStore.js';
+
+/**
+ * Maps a scenario step's automated-action kind (the "so the system did X" badge)
+ * to the §8.3 workflow rule it fires. When the tour reaches a step with an
+ * `action`, the matching rule is minted onto the Workflow Runs ledger — so the
+ * "reactive nature / automated workflows" scored criterion FIRES VISIBLY as the
+ * scenario plays, not just as static copy. Steps whose kind has no rule (pure
+ * FORECAST_RERUN etc.) still fire a generic run so the ledger reflects every act.
+ */
+const ACTION_RULE: Record<string, string> = {
+  NOTIFICATION: 'WF-PENDENCY',
+  RECOMMENDATION: 'WF-PENDENCY',
+  LANE_ASSIGNMENT: 'WF-GATE-QUEUE',
+  FORECAST_RERUN: 'WF-GATE-QUEUE',
+  CROSS_TWIN_PUSH: 'WF-GATE-QUEUE',
+  OPTIMISATION: 'WF-RAKE-ETA',
+};
+
+/** First real map asset id in a step's spotlight (for the ledger's location pulse). */
+function stepLocation(step: ScenarioStep): string | undefined {
+  return step.spotlight[0];
+}
 
 export type Faction = 'gates' | 'rail' | 'pendency' | 'movements' | 'scan' | 'empty';
 
@@ -141,6 +164,8 @@ class SimStore {
   private stamp = 0;
   /** Set when an update arrives from another tab, to avoid echo loops. */
   private applyingRemote = false;
+  /** (scenarioId:stepIndex) keys already fired, so revisiting a step never re-spams the ledger. */
+  private firedSteps = new Set<string>();
 
   constructor() {
     // Hydrate from localStorage so a newly-opened tab sees current sim state.
@@ -218,19 +243,23 @@ class SimStore {
   startScenario = (scenarioId: string, autoAdvance = true) => {
     const script = getScript(scenarioId);
     if (!script || script.steps.length === 0) return;
+    // Fresh tour → reset the fired-workflow dedup so this run's steps fire again.
+    this.firedSteps.clear();
     this.set((s) => {
       const fresh = baseState();
       // Keep the clock/speed the operator already set; reset only the overrides.
+      // Canonicalise the id (legacy CGO/LANE deep-links resolve via getScript).
       const seeded: SimState = {
         ...fresh,
         running: s.running,
         speed: s.speed,
         clockMs: s.clockMs,
         tick: s.tick,
-        tour: { scenarioId, stepIndex: 0, autoAdvance, stepStartedAt: ++this.stamp },
+        tour: { scenarioId: script.id, stepIndex: 0, autoAdvance, stepStartedAt: ++this.stamp },
       };
-      return this.applyStep(seeded, scenarioId, 0);
+      return this.applyStep(seeded, script.id, 0);
     });
+    this.fireStepWorkflow(script.id, 0);
     this.armTourTimer();
   };
 
@@ -247,6 +276,8 @@ class SimStore {
       };
       return this.applyStep(stepped, script.id, i);
     });
+    const { scenarioId, stepIndex } = this.state.tour;
+    if (scenarioId) this.fireStepWorkflow(scenarioId, stepIndex);
     this.armTourTimer();
   };
 
@@ -266,6 +297,7 @@ class SimStore {
   /** End the tour and clear every override the scenario applied. */
   stopScenario = () => {
     this.clearTourTimer();
+    this.firedSteps.clear();
     this.set((s) => ({ ...baseState(), running: s.running, speed: s.speed, clockMs: s.clockMs, tick: s.tick }));
   };
 
@@ -295,6 +327,29 @@ class SimStore {
     const step = script.steps[index];
     acc.highlights = step ? [...step.spotlight] : [];
     return acc;
+  }
+
+  /**
+   * Fire the destination step's automated action onto the Workflow Runs ledger
+   * (§8.3 — workflows must fire visibly). Runs once per (scenario, step) per tour
+   * so navigating back and forth never double-fires; the set is cleared on
+   * start/stop. Firing goes through the same workflowStore the console uses, so
+   * the ledger, cross-tab sync and AUTO/ADVISORY gate all apply uniformly.
+   */
+  private fireStepWorkflow(scenarioId: string, index: number) {
+    const script = getScript(scenarioId);
+    const step = script?.steps[index];
+    if (!step?.action) return;
+    const key = `${script!.id}:${index}`;
+    if (this.firedSteps.has(key)) return;
+    this.firedSteps.add(key);
+    const ruleId = ACTION_RULE[step.action.kind] ?? 'WF-PENDENCY';
+    workflowStore.fireRule(ruleId, {
+      trigger: step.action.detail,
+      actions: [step.action.detail],
+      scenarioId: script!.id,
+      location: stepLocation(step),
+    });
   }
 
   private armTourTimer() {

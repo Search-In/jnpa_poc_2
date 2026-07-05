@@ -1,6 +1,6 @@
 /**
- * scenarioPlayer — turns each What-If scenario (§12: CGO-1/2/3 + lane-assign)
- * into a *guided, timed playback* that drives the live board instead of a
+ * scenarioPlayer — turns each What-If scenario (§8.2: S1–S6) into a
+ * *guided, timed playback* that drives the live board instead of a
  * static before/after card. Running a scenario:
  *   1. seeds simStore levers to a clean baseline for the scenario,
  *   2. steps through a short storyline; each step pushes real sim overrides
@@ -17,7 +17,8 @@
 /** Which dashboard tab a step is about (matches Dashboard TABS ids). */
 export type TabId =
   | 'movements' | 'rail' | 'gate' | 'pendency'
-  | 'scan' | 'empty' | 'scenarios' | 'health' | 'notifications';
+  | 'scan' | 'empty' | 'scenarios' | 'health' | 'notifications'
+  | 'models' | 'methodology' | 'workflows';
 
 /** A single human-readable metric change surfaced in the coach-mark. */
 export interface MetricChange {
@@ -90,67 +91,85 @@ export interface ScenarioScript {
 }
 
 // Real asset ids from config/terminals.json + the mock facilities, so the map
-// spotlights land exactly on drawn markers.
+// spotlights land exactly on drawn markers. (Sidings T1/T2 are RAIL_SIDING
+// facilities with Point geoms — highlightGraphics resolves them like any CFS.)
 const G_NSICT = 'NSICT-G1';
-const G_GTI = 'GTI-G2';
-const CFS = 'CFS-PUNE';
+const CFS_DRONAGIRI = 'CFS-DRONAGIRI-1';
+const CFS_URAN = 'CFS-URAN-1';
+const CFS_PANVEL = 'CFS-PANVEL-1';
 
 /**
- * The four §8.4.5 scenarios as guided storylines. Numbers are illustrative but
- * directionally faithful to scenarios-mock.ts (the same KPI levers move).
+ * The six §8.2 named scenarios (S1–S6) as guided storylines. Numbers are
+ * illustrative, deterministic and directionally faithful to the twin-vs-shadow
+ * A/B parameter sets in scenarios-mock.ts (the same KPI levers move). Every
+ * improvement shown is *within simulation* — a modelled target under stated
+ * assumptions, never a claimed JNPA baseline.
  */
 export const SCENARIO_SCRIPTS: ScenarioScript[] = [
+  // ── S1 · Rake Delay Cascade ────────────────────────────────────────────────
   {
-    id: 'CGO-1',
-    title: 'CFS Pendency Spike',
-    blurb: 'A container yard fills up faster than it clears — watch the backlog ripple to the rail side.',
-    icon: 'exclamation-mark-triangle',
+    id: 'S1',
+    title: 'Rake Delay Cascade',
+    blurb: 'One inbound rake runs 6 hours late — watch the delay cascade through siding slots to an export cut-off, and how the twin re-routes around it.',
+    icon: 'clock-forward',
     steps: [
       {
-        title: 'A backlog starts building at the CFS',
+        title: 'An inbound rake slips 6 hours',
         explain:
-          'Containers are arriving at the Pune CFS faster than they are being cleared. The pile of waiting containers ("pendency") begins to climb.',
-        tab: 'pendency',
-        spotlight: [CFS],
-        valueTargets: [{ kind: 'asset', id: CFS }],
-        metrics: [{ label: 'CFS Pune backlog', from: 60, to: 150, unit: 'containers', tone: 'worse' }],
-        patch: { pendency: { [CFS]: 150 } },
-      },
-      {
-        title: 'The system raises an alert',
-        explain:
-          'The backlog crosses the safe threshold (50). The twin automatically alerts the Terminal Operations team — no one had to be watching the screen.',
-        tab: 'notifications',
-        spotlight: [CFS],
-        metrics: [{ label: 'Backlog vs. threshold', from: '150 / 50', to: 'ALERT', tone: 'worse' }],
-        patch: { pendency: { [CFS]: 168 } },
-        action: { kind: 'NOTIFICATION', detail: 'Alert raised to TERMINAL_OPS — CFS Pune pendency over threshold' },
-      },
-      {
-        title: 'Rail departures feel the strain',
-        explain:
-          'Because the yard is congested, rakes take longer to load and turn around. You can see rake turnaround time tick up in the KPI strip.',
+          'A loaded import rake headed for siding T1 reports a 6-hour delay en route. On its own that sounds small — but the siding slot it was booked into is now dead time, and everything behind it starts to shuffle.',
         tab: 'rail',
-        spotlight: [CFS],
+        spotlight: ['T1'],
         valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }],
-        metrics: [{ label: 'Rake turnaround time', from: 18, to: 20, unit: 'hrs', tone: 'worse' }],
-        patch: { pendency: { [CFS]: 168 }, rail: { T1: { inboundQueue: 4 } } },
+        metrics: [{ label: 'Inbound rake ETA', from: 'on time', to: '+6 h', tone: 'worse' }],
+        patch: { rail: { T1: { inboundQueue: 3 } } },
       },
       {
-        title: 'Recommendation: re-sequence loading',
+        title: 'Siding slots start to conflict',
         explain:
-          'The twin recommends re-sequencing rake loading to drain the CFS buffer before the next departure. Apply it and the backlog starts to ease.',
-        tab: 'pendency',
-        spotlight: [CFS],
-        valueTargets: [{ kind: 'asset', id: CFS }],
-        metrics: [{ label: 'CFS Pune backlog', from: 168, to: 95, unit: 'containers', tone: 'better' }],
-        patch: { pendency: { [CFS]: 95 }, rail: { T1: { inboundQueue: 1 } } },
-        action: { kind: 'RECOMMENDATION', detail: 'Re-sequence rake loading to drain the CFS buffer first' },
+          'The late rake now lands in the same window as the next two scheduled placements at T1. Rakes queue outside the siding, and simulated rake turnaround climbs from 18 to 21 hours.',
+        tab: 'rail',
+        spotlight: ['T1'],
+        valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }],
+        metrics: [
+          { label: 'T1 inbound rake queue', from: 2, to: 5, unit: 'rakes', tone: 'worse' },
+          { label: 'Rake turnaround (simulated)', from: 18, to: 21, unit: 'hrs', tone: 'worse' },
+        ],
+        patch: { rail: { T1: { inboundQueue: 5, placed: 1 } } },
+      },
+      {
+        title: 'Export boxes risk missing their vessel',
+        explain:
+          'Among the shuffled rakes is an export load for a GTI vessel with a fixed cut-off. In this simulation about 180 boxes would miss the ship if nothing changes — mixed-train loading efficiency drops too, because connections break.',
+        tab: 'rail',
+        spotlight: ['GTI', 'T1'],
+        valueTargets: [{ kind: 'kpi', key: 'mixedTrainOptimization' }],
+        metrics: [
+          { label: 'Export boxes at cut-off risk (simulated)', from: 0, to: 180, unit: 'boxes', tone: 'worse' },
+          { label: 'Mixed-train optimisation (simulated)', from: 72, to: 66, unit: '%', tone: 'worse' },
+        ],
+        patch: { rail: { T1: { inboundQueue: 5, placed: 1 } }, movementRate: 0.85 },
+      },
+      {
+        title: 'The twin re-routes: ITRHO + priority placement',
+        explain:
+          'The twin recommends moving the at-risk export boxes by ITRHO road shuttle to GTI and giving the late rake priority placement at T2 instead of waiting for T1. In this simulation rake turnaround recovers from 21 to 19 hours and cut-off exposure drops to ~25 boxes — a modelled outcome under the stated assumptions, not a claimed JNPA baseline.',
+        tab: 'rail',
+        spotlight: ['GTI', 'T2'],
+        valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }, { kind: 'kpi', key: 'mixedTrainOptimization' }],
+        metrics: [
+          { label: 'Rake turnaround (simulated)', from: 21, to: 19, unit: 'hrs', tone: 'better' },
+          { label: 'Export boxes at cut-off risk (simulated)', from: 180, to: 25, unit: 'boxes', tone: 'better' },
+          { label: 'Mixed-train optimisation (simulated)', from: 66, to: 71, unit: '%', tone: 'better' },
+        ],
+        patch: { rail: { T1: { inboundQueue: 2, placed: 3 }, T2: { inboundQueue: 2, placed: 2 } }, movementRate: 1.15 },
+        action: { kind: 'OPTIMISATION', detail: 'Simulated: ITRHO re-route of at-risk exports to GTI + priority placement of the delayed rake at T2' },
       },
     ],
   },
+
+  // ── S2 · Customs Flag Surge → UC-3 (ports CGO-2 verbatim in meaning) ──────
   {
-    id: 'CGO-2',
+    id: 'S2',
     title: 'Customs Flag Surge → UC-3',
     blurb: 'A spike in customs-flagged boxes jams the scanner and gate — the twin defers trucks via the UC-3 app.',
     icon: 'security',
@@ -192,101 +211,311 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
       {
         title: 'Cross-twin: defer trucks via UC-3',
         explain:
-          'The twin pushes a "deferred-arrival window" to the UC-3 Trucking App, telling drivers to arrive later. Fewer trucks show up early, so the gate queue eases.',
+          'The twin pushes a "deferred-arrival window" to the UC-3 Trucking App, telling drivers to arrive later. Fewer trucks show up early, so the gate queue eases — a simulated recovery under the stated assumptions.',
         tab: 'gate',
         spotlight: [G_NSICT],
         valueTargets: [{ kind: 'asset', id: G_NSICT }, { kind: 'kpi', key: 'gateTransactionTime' }],
-        metrics: [{ label: 'Gate NSICT-G1 queue', from: 24, to: 11, unit: 'trucks', tone: 'better' }],
+        metrics: [{ label: 'Gate NSICT-G1 queue (simulated)', from: 24, to: 11, unit: 'trucks', tone: 'better' }],
         patch: { scanQueue: 30, gates: { [G_NSICT]: { queueLength: 11, avgTxnTimeMin: 4.2 } } },
         action: { kind: 'CROSS_TWIN_PUSH', detail: 'Deferred-arrival window pushed to the UC-3 Trucking App' },
       },
     ],
   },
+
+  // ── S3 · Mixed-Train Optimisation ─────────────────────────────────────────
   {
-    id: 'CGO-3',
-    title: 'Inter-Terminal Optimisation',
-    blurb: 'Smart routing of empties between T1 and T2 cuts empty-rake time and improves mixed-train loading.',
+    id: 'S3',
+    title: 'Mixed-Train Optimisation',
+    blurb: 'One 90-wagon rake carries boxes for three terminals — compare a naive terminal-by-terminal split with the twin\'s batched ITRHO plan.',
     icon: 'route-from',
     steps: [
       {
-        title: 'Empties are scattered across terminals',
+        title: 'A 90-wagon mixed rake arrives',
         explain:
-          'Empty containers needed at T2 are sitting at T1 (and vice-versa). Moving them inefficiently wastes rake time.',
+          'A single inbound rake carries containers for three different terminals: 40 wagons for GTI, 30 for NSICT and 20 for BMCT. Somehow those boxes have to be split across the port — the question is how.',
         tab: 'rail',
-        spotlight: ['GTI', 'BMCT'],
-        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }],
-        metrics: [{ label: 'Inter-terminal transfer TAT', from: 6.0, to: 6.0, unit: 'hrs', tone: 'neutral' }],
-        patch: { rail: { T1: { inboundQueue: 5 }, T2: { inboundQueue: 4 } } },
-      },
-      {
-        title: 'The twin re-routes the empties',
-        explain:
-          'The optimiser consolidates empty moves between T1 and T2. This trims empty-rake turnaround by 8–12%.',
-        tab: 'rail',
-        spotlight: ['GTI', 'BMCT'],
-        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }, { kind: 'kpi', key: 'rakeTurnaroundTime' }],
-        metrics: [{ label: 'Empty-rake TAT', from: 6.0, to: 5.4, unit: 'hrs', tone: 'better' }],
-        patch: { rail: { T1: { inboundQueue: 2 }, T2: { inboundQueue: 2 } }, movementRate: 1.3 },
-        action: { kind: 'OPTIMISATION', detail: 'ITRHO re-routing yields ~10% empty-rake-TAT reduction' },
-      },
-      {
-        title: 'Mixed-train loading improves',
-        explain:
-          'With empties where they\'re needed, more containers share each outbound rake — the Mixed-Train Optimization KPI climbs.',
-        tab: 'movements',
-        spotlight: ['GTI', 'BMCT'],
+        spotlight: ['GTI', 'NSICT', 'BMCT'],
         valueTargets: [{ kind: 'kpi', key: 'mixedTrainOptimization' }],
-        metrics: [{ label: 'Mixed-train optimisation', from: 72, to: 79, unit: '%', tone: 'better' }],
-        patch: { rail: { T1: { inboundQueue: 1 }, T2: { inboundQueue: 1 } }, movementRate: 1.5 },
-        action: { kind: 'RECOMMENDATION', detail: 'Consolidate mixed-terminal containers onto shared outbound rakes' },
+        metrics: [{ label: 'Wagons on mixed rake', from: '—', to: '90 (40 / 30 / 20)', tone: 'neutral' }],
+        patch: { rail: { T1: { inboundQueue: 3 } } },
+      },
+      {
+        title: 'The naive plan: three separate shunt cycles',
+        explain:
+          'Handled naively, the rake is shunted and worked once per terminal, in sequence. Each cycle blocks the siding, so in this simulation inter-terminal transfer time stretches from 6.0 to 6.9 hours and the rake sits 10% longer overall.',
+        tab: 'rail',
+        spotlight: ['T1'],
+        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }, { kind: 'kpi', key: 'rakeTurnaroundTime' }],
+        metrics: [
+          { label: 'Inter-terminal transfer TAT (naive, simulated)', from: 6.0, to: 6.9, unit: 'hrs', tone: 'worse' },
+          { label: 'Rake turnaround (naive, simulated)', from: 18.0, to: 19.8, unit: 'hrs', tone: 'worse' },
+        ],
+        patch: { rail: { T1: { inboundQueue: 5, placed: 1 } }, movementRate: 0.9 },
+      },
+      {
+        title: 'The twin computes an optimised split plan',
+        explain:
+          'The optimiser batches the split: the largest block (GTI) is worked at the siding while NSICT and BMCT boxes move in parallel by ITRHO shuttle, sequenced to reuse the same trailer loops. Simulated transfer time comes back to 5.2 hours — a modelled result under the stated assumptions, not a claimed JNPA baseline.',
+        tab: 'movements',
+        spotlight: ['GTI', 'NSICT', 'BMCT'],
+        valueTargets: [{ kind: 'kpi', key: 'interTerminalTransferTat' }],
+        metrics: [{ label: 'Inter-terminal transfer TAT (simulated)', from: 6.9, to: 5.2, unit: 'hrs', tone: 'better' }],
+        patch: { rail: { T1: { inboundQueue: 2, placed: 3 } }, movementRate: 1.3 },
+        action: { kind: 'OPTIMISATION', detail: 'Simulated: batched split plan — GTI block at siding, NSICT + BMCT blocks via parallel ITRHO shuttle loops' },
+      },
+      {
+        title: 'Turnaround and mixed-train KPIs respond',
+        explain:
+          'With the batched plan, the whole rake clears sooner and more of each outbound rake is usefully filled. Within simulation, rake turnaround moves 19.8 → 17.6 hours and the Mixed-Train Optimization KPI 72% → 80% — modelled targets under stated assumptions.',
+        tab: 'movements',
+        spotlight: ['GTI', 'NSICT', 'BMCT'],
+        valueTargets: [
+          { kind: 'kpi', key: 'rakeTurnaroundTime' },
+          { kind: 'kpi', key: 'interTerminalTransferTat' },
+          { kind: 'kpi', key: 'mixedTrainOptimization' },
+        ],
+        metrics: [
+          { label: 'Rake turnaround (simulated)', from: 19.8, to: 17.6, unit: 'hrs', tone: 'better' },
+          { label: 'Mixed-train optimisation (simulated)', from: 72, to: 80, unit: '%', tone: 'better' },
+        ],
+        patch: { rail: { T1: { inboundQueue: 1, placed: 4 } }, movementRate: 1.4 },
+        action: { kind: 'RECOMMENDATION', detail: 'Adopt batched mixed-rake split plans as the default for 3-terminal rakes' },
       },
     ],
   },
+
+  // ── S4 · Gate Closure / Congestion → Dynamic Lane (supersedes LANE-ASSIGN) ─
   {
-    id: 'LANE-ASSIGN',
-    title: 'Dynamic Lane Assignment',
-    blurb: 'Road congestion at a gate triggers a live lane re-assignment that cuts transaction time.',
+    id: 'S4',
+    title: 'Gate Closure → Dynamic Lane Assignment',
+    blurb: 'NSICT\'s gate loses 3 of 6 lanes for 4 hours — the twin re-balances lanes and throttles CPP releases to absorb the hit.',
     icon: 'car',
     steps: [
       {
-        title: 'A gate gets congested',
+        title: 'Half the gate goes dark',
         explain:
-          'Traffic builds up at gate GTI-G2. The queue grows and each truck takes longer to process.',
+          'A maintenance fault closes 3 of the 6 lanes at gate NSICT-G1 for the next 4 hours. The same truck flow now has to squeeze through half the capacity.',
         tab: 'gate',
-        spotlight: [G_GTI],
-        valueTargets: [{ kind: 'asset', id: G_GTI }, { kind: 'kpi', key: 'gateTransactionTime' }],
+        spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }],
         metrics: [
-          { label: 'Gate GTI-G2 queue', from: 7, to: 20, unit: 'trucks', tone: 'worse' },
-          { label: 'Gate txn time', from: 4.2, to: 5.1, unit: 'min', tone: 'worse' },
+          { label: 'Open lanes at NSICT-G1', from: 6, to: 3, tone: 'worse' },
+          { label: 'Gate NSICT-G1 queue', from: 6, to: 14, unit: 'trucks', tone: 'worse' },
         ],
-        patch: { gates: { [G_GTI]: { queueLength: 20, avgTxnTimeMin: 5.1 } } },
+        patch: { gates: { [G_NSICT]: { queueLength: 14, avgTxnTimeMin: 4.6 } } },
       },
       {
-        title: 'The twin reassigns lanes',
+        title: 'The queue peaks',
         explain:
-          'Two lanes are diverted from the busy gate to the adjacent one and trucks are rerouted — balancing the load in real time.',
+          'Within the hour the queue more than doubles and each truck takes longer to process. Left alone, this backs up onto the approach road.',
         tab: 'gate',
-        spotlight: [G_GTI],
-        valueTargets: [{ kind: 'asset', id: G_GTI }],
-        metrics: [{ label: 'Gate GTI-G2 queue', from: 20, to: 12, unit: 'trucks', tone: 'better' }],
-        patch: { gates: { [G_GTI]: { queueLength: 12, avgTxnTimeMin: 4.4 } } },
-        action: { kind: 'LANE_ASSIGNMENT', detail: 'Divert 2 lanes from GTI-G2 to the adjacent gate; reroute trailers' },
+        spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }, { kind: 'kpi', key: 'gateTransactionTime' }],
+        metrics: [
+          { label: 'Gate NSICT-G1 queue', from: 14, to: 28, unit: 'trucks', tone: 'worse' },
+          { label: 'Gate txn time (simulated)', from: 4.6, to: 5.8, unit: 'min', tone: 'worse' },
+        ],
+        patch: { gates: { [G_NSICT]: { queueLength: 28, avgTxnTimeMin: 5.8 } } },
       },
       {
-        title: 'Transaction time drops ~18%',
+        title: 'The twin acts: re-assign lanes, throttle releases',
         explain:
-          'With the load spread out, the average gate transaction time falls by about 18%. Watch the gate KPI recover.',
+          'Two moves at once: exit lanes are dynamically re-assigned to entry duty at NSICT-G1, and CPP container releases feeding this gate are throttled so fewer trucks are dispatched into the jam. The queue starts to drain.',
         tab: 'gate',
-        spotlight: [G_GTI],
-        valueTargets: [{ kind: 'asset', id: G_GTI }, { kind: 'kpi', key: 'gateTransactionTime' }],
-        metrics: [{ label: 'Gate txn time', from: 5.1, to: 4.2, unit: 'min', tone: 'better' }],
-        patch: { gates: { [G_GTI]: { queueLength: 9, avgTxnTimeMin: 4.2 } } },
-        action: { kind: 'RECOMMENDATION', detail: 'Dynamic lane reassignment cuts avg gate transaction time ~18%' },
+        spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }],
+        metrics: [
+          { label: 'Gate NSICT-G1 queue (simulated)', from: 28, to: 16, unit: 'trucks', tone: 'better' },
+        ],
+        patch: { gates: { [G_NSICT]: { queueLength: 16, avgTxnTimeMin: 4.9 } } },
+        action: { kind: 'LANE_ASSIGNMENT', detail: 'Re-assign 2 exit lanes to entry at NSICT-G1 + throttle CPP releases feeding the gate for 4 h' },
+      },
+      {
+        title: 'Simulated transaction time recovers',
+        explain:
+          'With lanes re-balanced and arrivals throttled, simulated gate transaction time moves 5.8 → 4.3 min within simulation — a modelled result under the stated assumptions, not a claimed JNPA baseline. The lane outage is still there; the twin just spent the capacity smarter.',
+        tab: 'gate',
+        spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }, { kind: 'kpi', key: 'gateTransactionTime' }],
+        metrics: [
+          { label: 'Gate txn time (simulated)', from: 5.8, to: 4.3, unit: 'min', tone: 'better' },
+          { label: 'Gate NSICT-G1 queue (simulated)', from: 16, to: 9, unit: 'trucks', tone: 'better' },
+        ],
+        patch: { gates: { [G_NSICT]: { queueLength: 9, avgTxnTimeMin: 4.3 } } },
+        action: { kind: 'RECOMMENDATION', detail: 'Simulated: dynamic lane re-assignment + CPP throttling → gate txn time 5.8 → 4.3 min within simulation' },
+      },
+    ],
+  },
+
+  // ── S5 · Trailer-Driver Shortage — the showpiece (absorbs CGO-1) ──────────
+  {
+    id: 'S5',
+    title: 'Trailer-Driver Shortage',
+    blurb: 'A 30% trailer-driver shortage for 10 days — a reconstruction of a recent industry-wide event class within the twin, and the intervention bundle that bends the pendency curve.',
+    icon: 'users',
+    steps: [
+      {
+        title: 'Day 1: a third of the trailer fleet stops moving',
+        explain:
+          'Trailer-driver availability drops 30% across the CFS fleet and stays there for 10 simulated days. This mirrors a recent industry-wide event class, reconstructed inside the twin — every number here is simulated, not a recorded JNPA figure. Evacuation from the CFSs immediately slows.',
+        tab: 'pendency',
+        spotlight: [CFS_DRONAGIRI, CFS_URAN, CFS_PANVEL],
+        valueTargets: [{ kind: 'kpi', key: 'bufferPendency' }],
+        metrics: [
+          { label: 'Trailer-driver availability (simulated)', from: 100, to: 70, unit: '%', tone: 'worse' },
+          { label: 'CFS Dronagiri-1 backlog (simulated)', from: 60, to: 120, unit: 'containers', tone: 'worse' },
+        ],
+        patch: {
+          pendency: { [CFS_DRONAGIRI]: 120, [CFS_URAN]: 95, [CFS_PANVEL]: 88 },
+          movementRate: 0.7,
+        },
+      },
+      {
+        title: 'Day 4: the backlog starts to age',
+        explain:
+          'Boxes that would normally clear in days now sit still. The dangerous number isn\'t total pendency — it\'s the ageing bucket: containers stuck more than 15 days, which attract detention and clog every yard slot behind them. In this simulation that bucket goes from essentially zero to ~800 boxes.',
+        tab: 'pendency',
+        spotlight: [CFS_DRONAGIRI, CFS_URAN],
+        valueTargets: [{ kind: 'asset', id: CFS_DRONAGIRI }, { kind: 'kpi', key: 'bufferPendency' }],
+        metrics: [
+          { label: '>15-day pendency bucket (simulated)', from: '~0', to: '~800', unit: 'boxes', tone: 'worse' },
+          { label: 'CFS Dronagiri-1 backlog (simulated)', from: 120, to: 170, unit: 'containers', tone: 'worse' },
+        ],
+        patch: {
+          pendency: { [CFS_DRONAGIRI]: 170, [CFS_URAN]: 140, [CFS_PANVEL]: 120 },
+          movementRate: 0.65,
+        },
+      },
+      {
+        title: 'Day 7: peak — the shortage reaches the rail side',
+        explain:
+          'At the peak, the simulated >15-day bucket hits ~2,500 boxes across the CFS network. And the pain spreads: with trailers scarce, rakes wait for loads that can\'t be positioned, so rake turnaround stretches from 18 to 22 hours within simulation.',
+        tab: 'rail',
+        spotlight: ['T1', 'T2'],
+        valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }, { kind: 'kpi', key: 'bufferPendency' }],
+        metrics: [
+          { label: '>15-day bucket (simulated)', from: '~800', to: '~2,500', unit: 'boxes', tone: 'worse' },
+          { label: 'Rake turnaround (simulated)', from: 18, to: 22, unit: 'hrs', tone: 'worse' },
+        ],
+        patch: {
+          pendency: { [CFS_DRONAGIRI]: 195, [CFS_URAN]: 160, [CFS_PANVEL]: 140 },
+          rail: { T1: { inboundQueue: 6, placed: 1 }, T2: { inboundQueue: 5, placed: 1 } },
+          movementRate: 0.6,
+        },
+      },
+      {
+        title: 'The twin proposes an intervention bundle',
+        explain:
+          'No single lever fixes a fleet-wide shortage, so the twin stacks four: convert eligible CFS boxes to Direct Port Delivery (skipping the CFS leg entirely), add extra rail evacuation rakes, waive ITRHO restrictions so any available trailer can serve any terminal, and green-channel the oldest boxes for priority evacuation.',
+        tab: 'rail',
+        spotlight: ['T1', 'T2', CFS_DRONAGIRI],
+        valueTargets: [{ kind: 'kpi', key: 'rakeTurnaroundTime' }],
+        metrics: [
+          { label: 'Extra evacuation rakes/day (simulated)', from: 0, to: 3, tone: 'better' },
+          { label: 'Rake turnaround (simulated)', from: 22, to: 19.5, unit: 'hrs', tone: 'better' },
+        ],
+        patch: {
+          pendency: { [CFS_DRONAGIRI]: 150, [CFS_URAN]: 120, [CFS_PANVEL]: 100 },
+          rail: { T1: { inboundQueue: 3, placed: 3 }, T2: { inboundQueue: 3, placed: 2 } },
+          movementRate: 0.95,
+        },
+        action: { kind: 'RECOMMENDATION', detail: 'Intervention bundle: CFS→DPD conversion + 3 extra evacuation rakes/day + ITRHO waiver + green-channel for >15-day boxes' },
+      },
+      {
+        title: 'Day 10: the ageing curve bends',
+        explain:
+          'With the bundle applied, the simulated >15-day bucket falls from ~2,500 to ~450 boxes by day 10 — the curve bends instead of compounding. All of this is a modelled reconstruction under stated assumptions (30% driver shortage, 10 days, four interventions) — not a claimed JNPA baseline. The point is that the twin lets you rehearse this playbook before the next real shortage.',
+        tab: 'pendency',
+        spotlight: [CFS_DRONAGIRI, CFS_URAN, CFS_PANVEL],
+        valueTargets: [{ kind: 'kpi', key: 'bufferPendency' }, { kind: 'asset', id: CFS_DRONAGIRI }],
+        metrics: [
+          { label: '>15-day bucket (simulated)', from: '~2,500', to: '~450', unit: 'boxes', tone: 'better' },
+          { label: 'CFS Dronagiri-1 backlog (simulated)', from: 150, to: 85, unit: 'containers', tone: 'better' },
+        ],
+        patch: {
+          pendency: { [CFS_DRONAGIRI]: 85, [CFS_URAN]: 70, [CFS_PANVEL]: 62 },
+          rail: { T1: { inboundQueue: 2, placed: 3 }, T2: { inboundQueue: 2, placed: 2 } },
+          movementRate: 1.05,
+        },
+      },
+    ],
+  },
+
+  // ── S6 · Reefer Surge ──────────────────────────────────────────────────────
+  {
+    id: 'S6',
+    title: 'Reefer Surge',
+    blurb: 'A reefer discharge spike lands just as part of the plug bank fails — the twin re-allocates plugs and prioritises evacuation, targeting zero simulated cargo-risk hours.',
+    icon: 'snow',
+    steps: [
+      {
+        title: 'A reefer-heavy vessel discharges',
+        explain:
+          'A vessel at BMCT discharges an unusually reefer-heavy exchange: about 140 refrigerated boxes this shift, more than triple the norm. Every one of them needs a powered plug point within hours of landing.',
+        tab: 'movements',
+        spotlight: ['BMCT', 'NSIGT'],
+        metrics: [{ label: 'Reefers landed this shift (simulated)', from: 40, to: 140, unit: 'boxes', tone: 'worse' }],
+        patch: { pendency: { [CFS_URAN]: 110 }, movementRate: 1.15 },
+      },
+      {
+        title: 'Part of the plug bank is down',
+        explain:
+          'Bad timing: 18 of the 96 CPP reefer plugs are out of service. Reefers start queuing unpowered — in this simulation 34 boxes are waiting for a plug, accruing ~46 cargo-risk hours (hours a temperature-controlled box sits unpowered).',
+        tab: 'pendency',
+        spotlight: ['BMCT', CFS_URAN],
+        valueTargets: [{ kind: 'kpi', key: 'containerPendency' }],
+        metrics: [
+          { label: 'Working reefer plugs', from: 96, to: 78, tone: 'worse' },
+          { label: 'Reefers awaiting plug (simulated)', from: 0, to: 34, unit: 'boxes', tone: 'worse' },
+          { label: 'Cargo-risk hours (simulated)', from: 0, to: '~46', unit: 'hrs', tone: 'worse' },
+        ],
+        patch: { pendency: { [CFS_URAN]: 140 }, movementRate: 1.0 },
+      },
+      {
+        title: 'The twin re-allocates plugs and fast-tracks evacuation',
+        explain:
+          'The optimiser treats every plug across BMCT, NSIGT and the reefer-capable CFS as one pool: boxes are re-assigned to free plugs by remaining transit tolerance, and DPD-eligible reefers jump the evacuation queue so they free plugs fastest.',
+        tab: 'movements',
+        spotlight: ['BMCT', 'NSIGT', CFS_URAN],
+        valueTargets: [{ kind: 'kpi', key: 'transshipmentTrailerTat' }],
+        metrics: [
+          { label: 'Reefers awaiting plug (simulated)', from: 34, to: 6, unit: 'boxes', tone: 'better' },
+        ],
+        patch: { pendency: { [CFS_URAN]: 90 }, movementRate: 1.3 },
+        action: { kind: 'OPTIMISATION', detail: 'Simulated: cross-terminal plug re-allocation + priority evacuation of DPD-eligible reefers' },
+      },
+      {
+        title: 'Target: zero simulated cargo-risk hours',
+        explain:
+          'By end of shift the simulation shows the queue cleared and cargo-risk hours driven to zero — a modelled target under the stated assumptions (surge size, plug outage, pooled allocation), not a claimed JNPA baseline. The plug bank is still 18 short; the twin covered the gap by allocation, not by magic.',
+        tab: 'pendency',
+        spotlight: ['BMCT', CFS_URAN],
+        valueTargets: [{ kind: 'kpi', key: 'containerPendency' }],
+        metrics: [
+          { label: 'Cargo-risk hours (simulated)', from: '~46', to: 0, unit: 'hrs', tone: 'better' },
+          { label: 'Reefers awaiting plug (simulated)', from: 6, to: 0, unit: 'boxes', tone: 'better' },
+        ],
+        patch: { pendency: { [CFS_URAN]: 65 }, movementRate: 1.1 },
       },
     ],
   },
 ];
 
+/**
+ * Old §12 ids → §8.2 ids. Legacy deep-links (`?scenario=CGO-2` → Dashboard.tsx
+ * → getScript) and any stored tour state resolve through HERE — the adapter-side
+ * alias map in scenarios-mock.ts cannot cover them (different package, different
+ * call path). Kept in sync with LEGACY_SCENARIO_IDS in scenarios-mock.ts and the
+ * causal-graph remap in whatif/ReactiveGuide.tsx.
+ */
+export const LEGACY_SCRIPT_IDS: Record<string, string> = {
+  'CGO-1': 'S5',
+  'CGO-2': 'S2',
+  'CGO-3': 'S3',
+  'LANE-ASSIGN': 'S4',
+};
+
 export function getScript(id: string): ScenarioScript | undefined {
-  return SCENARIO_SCRIPTS.find((s) => s.id === id);
+  const canonical = LEGACY_SCRIPT_IDS[id] ?? id;
+  return SCENARIO_SCRIPTS.find((s) => s.id === canonical);
 }

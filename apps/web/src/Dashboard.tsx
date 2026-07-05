@@ -32,12 +32,19 @@ import { EmptyPool } from './panels/EmptyPool.js';
 import { HealthCards } from './panels/HealthCards.js';
 import { Notifications } from './panels/Notifications.js';
 import { Scenarios } from './panels/Scenarios.js';
+import { MethodologyPanel } from './panels/MethodologyPanel.js';
+import { ModelCards } from './panels/ModelCards.js';
+import { WorkflowRuns } from './workflow/WorkflowRuns.js';
+import { ReactiveGuide } from './whatif/ReactiveGuide.js';
 import { useSimStore, hasSimOverrides, useSimDep } from './sim/useSimStore.js';
 import { applyFlows } from './sim/applySim.js';
 import { navigate } from './sim/useHashRoute.js';
 import { GuidedTour } from './sim/GuidedTour.js';
 import { simStore } from './sim/simStore.js';
 import { getScript, type TabId } from './sim/scenarioPlayer.js';
+import { IntegrationConsole } from './console/IntegrationConsole.js';
+import { faultStore } from './console/faultStore.js';
+import { useFaultStore } from './console/useFaultStore.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
@@ -52,9 +59,12 @@ const TABS = [
   { id: 'pendency', label: 'Pendency' },
   { id: 'scan', label: 'Scan' },
   { id: 'empty', label: 'Empty' },
-  { id: 'scenarios', label: 'Scenarios' },
-  { id: 'health', label: 'Health' },
+  { id: 'scenarios', label: 'What-If' },
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'models', label: 'AI Models' },
+  { id: 'health', label: 'Integration' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'methodology', label: 'Methodology' },
 ] as const;
 
 export function Dashboard() {
@@ -66,6 +76,9 @@ export function Dashboard() {
   // simDep changes on every tick AND on every manual lever change (even while
   // paused), so the map's gate/pendency data refetches through the SimAdapter.
   const simDep = useSimDep();
+  // Any injected integration fault → the DATA_MODE chip flips to a degraded look.
+  const faults = useFaultStore();
+  const faulted = faultStore.anyFaulted(faults);
   // In live mode, panels must not fetch before the JWT lands → key on authReady.
   const facilities = useAsync<Facility[]>(() => adapter.getFacilities(role), [adapter, role, authReady]);
   const terminals = useAsync<Terminal[]>(() => adapter.getTerminals(), [adapter, authReady]);
@@ -112,7 +125,8 @@ export function Dashboard() {
   const sceneRef = useRef<PortSceneHandle | null>(null);
   // Placement edit mode: pick an asset in the tree, then click the map to place it.
   const [editingPlacement, setEditingPlacement] = useState(false);
-  const [placementCount, setPlacementCount] = useState(0);
+  // Seeded from data/positions.json, so Export/Reset are live from first render.
+  const [placementCount, setPlacementCount] = useState(() => placementStore.count());
 
   // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause, &step=N to jump to
   // a step) auto-starts a guided What-If tour on load, so a single link can open
@@ -146,12 +160,19 @@ export function Dashboard() {
           <CalciteButton appearance="outline" iconStart="play" scale="s" onClick={() => navigate('/simulator')}>
             Simulator
           </CalciteButton>
+          {/* DATA_MODE pre-flight gate (Integrity Rule §1): an always-visible chip
+              stating the global data mode. Default demo = SIMULATED (no viewer
+              can mistake it for live JNPA data). Clicking it opens the
+              Integration Simulator Console (per-source LIVE/DEGRADED/OFFLINE). */}
           <CalciteChip
             value={adapter.mode}
-            kind={adapter.mode === 'live' ? 'brand' : 'neutral'}
-            icon={adapter.mode === 'live' ? 'lightning' : 'play'}
+            kind={adapter.mode === 'live' ? 'brand' : faulted ? 'inverse' : 'neutral'}
+            icon={adapter.mode === 'live' ? 'lightning' : faulted ? 'exclamation-mark-triangle' : 'play'}
+            style={{ cursor: 'pointer' }}
+            title="Data mode — click to open the Integration Simulator Console"
+            onClick={() => faultStore.setOpen(true)}
           >
-            {adapter.mode === 'live' ? 'LIVE' : 'MOCK / OFFLINE'}
+            {adapter.mode === 'live' ? 'LIVE' : faulted ? 'SIMULATED · DEGRADED' : 'SIMULATED'}
           </CalciteChip>
           <CalciteLabel layout="inline">
             {t('role', lang)}
@@ -176,7 +197,20 @@ export function Dashboard() {
           MapView and the georeferenced 3D SceneView sea-port. In 3D mode an
           asset-explorer tree rides alongside so operators can pick berths,
           cranes, gates and yard blocks and fly the camera to them. */}
-      <CalciteShellPanel slot="panel-start" widthScale="l" resizable>
+      {/* Map panel. Calcite caps the drag range of the panel-start ↔ KPI
+          splitter via --calcite-shell-panel-max-width (default ~40vw for scale
+          "l"); raise it to 90vw so the map can be dragged out to fill most of
+          the window, and set a sensible starting/min width. */}
+      <CalciteShellPanel
+        slot="panel-start"
+        widthScale="l"
+        resizable
+        style={{
+          '--calcite-shell-panel-min-width': '320px',
+          '--calcite-shell-panel-width': '40vw',
+          '--calcite-shell-panel-max-width': '90vw',
+        } as React.CSSProperties}
+      >
         <CalcitePanel heading={mapMode === '3d' ? `${t('panel_map', lang)} · 3D` : t('panel_map', lang)}>
           <div slot="header-actions-end" style={{ display: 'flex', gap: 8, alignItems: 'center', paddingInline: 8 }}>
             {/* Placement editor (3D only): toggle edit mode, then drag assets to
@@ -213,8 +247,8 @@ export function Dashboard() {
                     appearance="outline"
                     kind="danger"
                     iconStart="reset"
-                    onClick={() => { placementStore.clear(); sceneRef.current?.rebuild(); setPlacementCount(0); }}
-                    title="Discard all placement edits"
+                    onClick={() => { placementStore.clear(); sceneRef.current?.rebuild(); setPlacementCount(placementStore.count()); }}
+                    title="Revert to the seeded placements (data/positions.json)"
                   >
                     Reset
                   </CalciteButton>
@@ -319,8 +353,11 @@ export function Dashboard() {
               <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>
               <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>
               <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>
+              <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>
+              <CalciteTab tab="models" selected={activeTab === 'models'}><div data-tour-tab="models"><ModelCards /></div></CalciteTab>
               <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health"><HealthCards /></div></CalciteTab>
               <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>
+              <CalciteTab tab="methodology" selected={activeTab === 'methodology'}><div data-tour-tab="methodology"><MethodologyPanel /></div></CalciteTab>
             </CalciteTabs>
           </div>
         )}
@@ -329,6 +366,13 @@ export function Dashboard() {
     {/* Guided What-If tour overlay — narrates a scenario as it drives the board.
         Switches the active tab per step so the spotlight lands on the right panel. */}
     <GuidedTour onTab={(tab: TabId) => setActiveTab(tab)} />
+    {/* Reactive Guide (§8.1, crit 5) — the causal WHICH/WHERE/HOW/WHY panel that
+        rides alongside a running scenario; hovering a WHERE node re-rings its
+        geography on the map via setHighlights. */}
+    <ReactiveGuide onSpotlight={(ids) => simStore.setHighlights(ids)} />
+    {/* Integration Simulator Console (§6) — slide-over opened by the DATA_MODE
+        chip; injects per-source faults the whole board reacts to. */}
+    <IntegrationConsole />
     </>
   );
 }

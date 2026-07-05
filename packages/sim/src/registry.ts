@@ -1,8 +1,8 @@
 /**
  * Demo-console registry (Addendum B.3): "one console, three registries". Each
  * use-case registers its injectors + scenario triggers; the shared console UI
- * renders whatever is registered. UC2 registers the cargo injectors + CGO-1/2/3
- * + congestion/lane sim. UC1/UC3 register their own against the same interface.
+ * renders whatever is registered. UC2 registers the cargo injectors + the §8.2
+ * S1–S6 scenarios. UC1/UC3 register their own against the same interface.
  */
 export interface InjectorButton {
   id: string;
@@ -33,7 +33,7 @@ export interface UseCaseRegistry {
   runbooks: DemoRunbook[];
 }
 
-/** UC2 registry (cargo injectors + CGO-1/2/3 + congestion/lane). */
+/** UC2 registry (cargo injectors + §8.2 scenarios S1–S6). */
 export const UC2_REGISTRY: UseCaseRegistry = {
   useCase: 'UC2',
   feeds: [
@@ -54,26 +54,36 @@ export const UC2_REGISTRY: UseCaseRegistry = {
     { id: 'rakeArrival', label: 'Rake Arrival', group: 'event', shortcut: 'r' },
     { id: 'itrhoOut', label: 'ITRHO Out', group: 'event' },
     { id: 'itrhoIn', label: 'ITRHO In', group: 'event' },
+    // §8.2 named scenarios S1–S6 (superseding the old CGO-1/2/3 + LANE-ASSIGN).
     {
-      id: 'CGO-1', label: 'CGO-1 · CFS Pendency Spike', group: 'scenario', shortcut: '1',
-      params: [
-        { key: 'facilityId', label: 'CFS', type: 'select', options: ['CFS-PUNE', 'CFS-DRONAGIRI', 'CFS-PANVEL'], default: 'CFS-PUNE' },
-        { key: 'threshold', label: 'Pendency threshold', type: 'number', default: 50 },
-      ],
+      id: 'S1', label: 'S1 · Rake Delay Cascade', group: 'scenario', shortcut: '1',
+      params: [{ key: 'sidingId', label: 'Siding', type: 'select', options: ['T1', 'T2'], default: 'T1' }],
     },
     {
-      id: 'CGO-2', label: 'CGO-2 · Customs Surge → UC3', group: 'scenario', shortcut: '2',
+      id: 'S2', label: 'S2 · Customs Flag Surge → UC3', group: 'scenario', shortcut: '2',
       params: [
         { key: 'gateId', label: 'Gate', type: 'select', options: ['NSICT-G1', 'GTI-G2', 'BMCT-G1'], default: 'NSICT-G1' },
         { key: 'surgeCount', label: 'Surge count', type: 'number', default: 40 },
       ],
     },
     {
-      id: 'CGO-3', label: 'CGO-3 · ITRHO Optimisation', group: 'scenario', shortcut: '3',
+      id: 'S3', label: 'S3 · Mixed-Train Optimisation', group: 'scenario', shortcut: '3',
     },
     {
-      id: 'LANE-ASSIGN', label: 'Congestion → Lane Assignment', group: 'scenario', shortcut: '4',
-      params: [{ key: 'gateId', label: 'Congested gate', type: 'select', options: ['GTI-G2', 'NSICT-G1', 'BMCT-G2'], default: 'GTI-G2' }],
+      id: 'S4', label: 'S4 · Gate Closure → Dynamic Lane', group: 'scenario', shortcut: '4',
+      params: [{ key: 'gateId', label: 'Congested gate', type: 'select', options: ['NSICT-G1', 'GTI-G2', 'BMCT-G2'], default: 'NSICT-G1' }],
+    },
+    {
+      id: 'S5', label: 'S5 · Trailer-Driver Shortage', group: 'scenario', shortcut: '5',
+      params: [
+        { key: 'facilityId', label: 'CFS', type: 'select', options: ['CFS-DRONAGIRI-1', 'CFS-URAN-1', 'CFS-PANVEL-1'], default: 'CFS-DRONAGIRI-1' },
+        { key: 'shortagePct', label: 'Driver shortage %', type: 'number', default: 30 },
+        { key: 'days', label: 'Duration (sim days)', type: 'number', default: 10 },
+      ],
+    },
+    {
+      id: 'S6', label: 'S6 · Reefer Surge', group: 'scenario', shortcut: '6',
+      params: [{ key: 'failedPlugs', label: 'Failed CPP plugs', type: 'number', default: 18 }],
     },
     { id: 'crossTwinPush', label: 'Emit UC2→UC3 deferred-arrival', group: 'cross-twin' },
     { id: 'arrivalRate', label: 'Arrival rate', group: 'load', params: [{ key: 'rate', label: 'arrivals/hr', type: 'number', default: 20 }] },
@@ -84,9 +94,9 @@ export const UC2_REGISTRY: UseCaseRegistry = {
       steps: [
         { injectorId: 'gateIn', afterMs: 0 },
         { injectorId: 'scanFlag', afterMs: 30000 },
-        { injectorId: 'CGO-2', afterMs: 60000, params: { gateId: 'NSICT-G1', surgeCount: 40 } },
+        { injectorId: 'S2', afterMs: 60000, params: { gateId: 'NSICT-G1', surgeCount: 40 } },
         { injectorId: 'gateOutCodeco', afterMs: 120000 },
-        { injectorId: 'CGO-3', afterMs: 180000 },
+        { injectorId: 'S3', afterMs: 180000 },
       ],
     },
     {
@@ -95,12 +105,12 @@ export const UC2_REGISTRY: UseCaseRegistry = {
         { injectorId: 'rakeArrival', afterMs: 0 },
         { injectorId: 'gateIn', afterMs: 30000 },
         { injectorId: 'damage', afterMs: 90000 },
-        { injectorId: 'CGO-1', afterMs: 180000, params: { facilityId: 'CFS-PUNE', threshold: 50 } },
+        { injectorId: 'S5', afterMs: 180000, params: { facilityId: 'CFS-DRONAGIRI-1', shortagePct: 30, days: 10 } },
         { injectorId: 'scanFlag', afterMs: 300000 },
-        { injectorId: 'CGO-2', afterMs: 360000 },
+        { injectorId: 'S2', afterMs: 360000 },
         { injectorId: 'esealBreak', afterMs: 480000 },
-        { injectorId: 'LANE-ASSIGN', afterMs: 600000 },
-        { injectorId: 'CGO-3', afterMs: 780000 },
+        { injectorId: 'S4', afterMs: 600000 },
+        { injectorId: 'S3', afterMs: 780000 },
       ],
     },
   ],

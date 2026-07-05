@@ -329,7 +329,8 @@ export function generateCargo(world: World, opts: CargoGenOptions): CargoDataset
     const wagonCount = rng.int(40, 45);
     const mixedFlag = rng.bool(0.35);
     const rakeId = simId(rng, 'RK');
-    const ctoOperator = rng.pick(['CONCOR', 'ADANI_LOGISTICS', 'GATEWAY_RAIL', 'PRISTINE']);
+    // Synthetic Container Train Operator codes (Guardrail §10: no real CTO brands).
+    const ctoOperator = rng.pick(['CTO-1', 'CTO-2', 'CTO-3', 'CTO-4']);
 
     rakes.push({
       rakeId, ctoOperator, trainNo: String(rng.int(10000, 99999)),

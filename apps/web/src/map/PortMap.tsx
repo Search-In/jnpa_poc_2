@@ -13,6 +13,7 @@ import LayerList from '@arcgis/core/widgets/LayerList';
 import Legend from '@arcgis/core/widgets/Legend';
 import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';
 import Expand from '@arcgis/core/widgets/Expand';
+import { initialBasemap, installBasemapFallback } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import {
@@ -82,7 +83,9 @@ export function PortMap(props: PortMapProps) {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new Map({ basemap: 'hybrid' });
+    // Basemap survives ArcGIS token death / no-Wi-Fi: online 'hybrid' normally,
+    // but auto-swaps to a bundled local offline base if tiles fail (spec §3).
+    const map = new Map({ basemap: initialBasemap() });
     mapRef.current = map;
 
     // Build the operational layers once; the data effect edits their features
@@ -117,6 +120,10 @@ export function PortMap(props: PortMapProps) {
     });
     viewRef.current = view;
 
+    // Auto-swap to the bundled offline basemap if the online tiles fail (token
+    // death / no Wi-Fi). The operational layers stay legible on a neutral canvas.
+    const teardownFallback = installBasemapFallback(view);
+
     view.when(() => {
       // Legend wrapped in an Expand so operators can minimise it — the
       // bottom-left box collapses to a single button and expands on click.
@@ -146,11 +153,16 @@ export function PortMap(props: PortMapProps) {
       );
       // Basemap toggle (A.2 map tools): switch between the satellite/imagery
       // default and the gray vector basemap. 'hybrid' keeps street/place labels
-      // over the imagery so operators can still read the port layout.
-      view.ui.add(new BasemapToggle({ view, nextBasemap: 'gray-vector' }), 'bottom-right');
+      // over the imagery so operators can still read the port layout. Skipped in
+      // offline mode (both online options need tiles the offline base can't serve).
+      const bm = view.map?.basemap;
+      if (!(bm && bm.id === 'jnpa-offline')) {
+        view.ui.add(new BasemapToggle({ view, nextBasemap: 'gray-vector' }), 'bottom-right');
+      }
     });
 
     return () => {
+      teardownFallback();
       view.destroy();
       viewRef.current = null;
       mapRef.current = null;

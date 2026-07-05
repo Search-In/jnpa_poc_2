@@ -99,8 +99,14 @@ function offsetFrom(lng: number, lat: number, alongM: number, offsetM: number): 
   return [lng + dLon(e), lat + dLat(n)];
 }
 
-/** Heading (deg) that aligns a model's long axis PARALLEL to the quay. */
-const QUAY_HEADING = QUAY_BEARING_DEG;
+/**
+ * Heading (deg) that aligns a model's long axis PARALLEL to the quay.
+ * `MODEL_ROTATION_DEG` spins every 3D model in place (positions unchanged): all
+ * item headings derive from QUAY_HEADING (+ per-model offset), so this one lever
+ * rotates the whole fleet uniformly. Set to 90 to turn every model a quarter turn.
+ */
+const MODEL_ROTATION_DEG = 90;
+const QUAY_HEADING = (QUAY_BEARING_DEG + MODEL_ROTATION_DEG) % 360;
 
 /** Deterministic 0..1 from a key — no Math.random (stable replays). */
 function rand01(key: string, salt = ''): number {
@@ -157,6 +163,9 @@ function terminalDeckGraphics(terminals: Terminal[]): Graphic[] {
 export function terminalDeckLayer(terminals: Terminal[]): FeatureLayer {
   return new FeatureLayer({
     title: '3D · Quay apron',
+    // Hidden by default (the terminal-footprint slab); still in the LayerList so
+    // it can be toggled back on during a demo.
+    visible: false,
     source: terminalDeckGraphics(terminals) as unknown as Graphic[],
     objectIdField: 'objectId',
     geometryType: 'polygon',

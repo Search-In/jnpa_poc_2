@@ -50,7 +50,8 @@
       "status": "OPERATING",
       "quayLengthM": 2000,
       "capacityTEU": 4800000,
-      "geom": { "type": "Point", "coordinates": [72.9360, 18.9350] },
+      "$geomNote": "BMCT sits ~5.5 km SW of the older NSICT/NSIGT/GTI cluster — this separation is the raison d'être of ITRHO (inter-terminal road transfer) and is modelled geometrically here. [72.9120, 18.9100] is ~5.46 km from NSICT [72.9435, 18.9490] (haversine). Approximate for demonstration; replace with surveyed polygon before production.",
+      "geom": { "type": "Point", "coordinates": [72.9120, 18.9100] },
       "gates": ["BMCT-G1", "BMCT-G2", "BMCT-G3"],
       "sidingMapping": { "rail": ["T2"] },
       "tos": { "mode": "REST" }
@@ -70,6 +71,6 @@
   ],
   "railSidings": [
     { "sidingId": "T1", "name": "Central Rail Yard Siding T1", "geom": { "type": "Point", "coordinates": [72.9505, 18.9435] } },
-    { "sidingId": "T2", "name": "Central Rail Yard Siding T2", "geom": { "type": "Point", "coordinates": [72.9498, 18.9425] } }
+    { "sidingId": "T2", "name": "BMCT Rail Yard Siding T2", "$geomNote": "T2 sits at the BMCT rail yard (~5.5 km SW). The ~5.5 km T1↔T2 gap is what ITT trailers shuttle across under ITRHO.", "geom": { "type": "Point", "coordinates": [72.9145, 18.9130] } }
   ]
 }

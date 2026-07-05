@@ -18,6 +18,7 @@ import type GraphicsLayer from '@arcgis/core/layers/GraphicsLayer';
 import LayerList from '@arcgis/core/widgets/LayerList';
 import Legend from '@arcgis/core/widgets/Legend';
 import Expand from '@arcgis/core/widgets/Expand';
+import { initialBasemap, installBasemapFallback, isOfflineRequested } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { applyGraphics } from './layers.js';
@@ -151,7 +152,14 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     if (!containerRef.current) return;
     const p0 = propsRef.current;
 
-    const map = new Map({ basemap: 'hybrid', ground: 'world-elevation' });
+    // Basemap + ground survive ArcGIS token death / no-Wi-Fi (spec §3): online
+    // 'hybrid' + world-elevation normally, but offline uses the bundled local
+    // base and flat ground (both online sources fetch tiles that need a token).
+    const offline = isOfflineRequested();
+    const map = new Map({
+      basemap: initialBasemap(),
+      ...(offline ? {} : { ground: 'world-elevation' }),
+    });
 
     // Build 3D layers once; the data effect edits features in place thereafter.
     const layers = {
@@ -191,6 +199,9 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       ui: { components: ['zoom', 'compass', 'navigation-toggle', 'attribution'] },
     });
     viewRef.current = view;
+
+    // Auto-swap to the bundled offline basemap if the online tiles fail.
+    const teardownFallback = installBasemapFallback(view);
 
     view.when(() => {
       view.ui.add(
@@ -254,6 +265,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     });
 
     return () => {
+      teardownFallback();
       clickHandle.remove();
       moveHandle.remove();
       view.destroy();

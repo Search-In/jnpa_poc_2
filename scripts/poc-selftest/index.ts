@@ -78,12 +78,12 @@ add('Appendix C', 'C5', 'Feed data to terminal TOS — gate-automation decision'
 });
 add('Appendix C', 'C6', 'Congestion / gate-op sim → dynamic lane assignment', () => {
   const engine = new ScenarioEngine({ terminalsConfig, baselines });
-  const r = engine.run('LANE-ASSIGN', { gateId: 'GTI-G2' });
+  const r = engine.run('S4', { gateId: 'NSICT-G1' });
   return r.actions.some((a) => a.kind === 'LANE_ASSIGNMENT');
 });
 add('Appendix C', 'C7', 'Simulations for road-congestion / gate-op status', () => {
   const engine = new ScenarioEngine({ terminalsConfig, baselines });
-  const r = engine.run('CGO-1', {});
+  const r = engine.run('S5', {});
   return r.after.length === 10 && r.before.length === 10;
 });
 
@@ -137,12 +137,12 @@ add('D.2', 'D4', 'Security/RBAC — role scoping enforced + JWT auth at gateway'
   const facilities = scoped.body as Array<{ type: string }>;
   return noAuth.status === 401 && scoped.status === 200 && facilities.every((f) => f.type === 'CFS');
 });
-add('D.2', 'D5', 'Cross-domain interdependency — CGO-2 pushes UC2→UC3 deferred-arrival', () => {
+add('D.2', 'D5', 'Cross-domain interdependency — S2 pushes UC2→UC3 deferred-arrival', () => {
   const bus = new InMemoryEventBus();
   let pushed = false;
   bus.subscribe(CROSS_TWIN_TOPIC, () => (pushed = true));
   const engine = new ScenarioEngine({ terminalsConfig, baselines, bus });
-  const r = engine.run('CGO-2', { gateId: 'NSICT-G1' });
+  const r = engine.run('S2', { gateId: 'NSICT-G1' });
   return pushed && r.crossTwinEvent?.target === 'UC3' && r.crossTwinEvent?.source === 'UC2';
 });
 
@@ -160,9 +160,9 @@ add('Addendum B.4', 'B1', 'Console can fire every event type', () => {
   Injectors.rakeArrival(ctx); Injectors.itrhoOut(ctx); Injectors.itrhoIn(ctx);
   return (bus.counts()[TOPICS.cargoEvents] ?? 0) === 9;
 });
-add('Addendum B.4', 'B2', 'Each CGO scenario produces a visible KPI delta + action', () => {
+add('Addendum B.4', 'B2', 'Each §8.2 scenario (S1–S6) produces a visible A/B KPI delta + action', () => {
   const engine = new ScenarioEngine({ terminalsConfig, baselines });
-  return ['CGO-1', 'CGO-2', 'CGO-3'].every((id) => {
+  return ['S1', 'S2', 'S3', 'S4', 'S5', 'S6'].every((id) => {
     const r = engine.run(id);
     const changed = r.after.some((k, i) => k.value !== r.before[i]!.value);
     return changed && r.actions.length > 0;

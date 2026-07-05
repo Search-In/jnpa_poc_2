@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JNPA Digital Twin — PoC Cockpit (UC1 · UC2)</title>
+<style>
+:root{
+  --ink:#0a141c; --panel:rgba(7,16,22,.88); --panel2:#0c1c26; --line:#1d3947;
+  --txt:#cfe6ea; --dim:#6f93a0; --grn:#46d19a; --amb:#e8a13c; --red:#e05252; --blu:#6ea8ff;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--ink);font-family:var(--mono);color:var(--txt);overflow:hidden}
+
+/* ============ header / tabs ============ */
+header{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:14px;
+  padding:0 14px;background:var(--panel2);border-bottom:1px solid var(--line);z-index:40}
+.brand b{font-size:12px;letter-spacing:.2em;display:block}
+.brand span{font-size:9px;letter-spacing:.16em;color:var(--dim)}
+nav{display:flex;gap:2px;margin-left:10px;overflow-x:auto}
+nav button{background:none;border:1px solid transparent;color:var(--dim);font-family:var(--mono);
+  font-size:10px;letter-spacing:.12em;padding:7px 11px;cursor:pointer;border-radius:3px;white-space:nowrap}
+nav button:hover{color:var(--txt)}
+nav button.on{color:var(--grn);border-color:var(--line);background:rgba(70,209,154,.06)}
+.right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.live{display:flex;align-items:center;gap:6px;font-size:10px;letter-spacing:.12em;color:var(--grn)}
+.live .dot{width:6px;height:6px;border-radius:50%;background:var(--grn);animation:bl 1.6s infinite}
+@keyframes bl{50%{opacity:.2}}
+#clock{font-size:10px;border:1px solid var(--line);padding:4px 8px;border-radius:3px}
+
+/* ============ pages ============ */
+.page{position:fixed;top:52px;left:0;right:0;bottom:0;display:none;overflow-y:auto;padding:14px}
+.page.on{display:block}
+#page-twin{padding:0;overflow:hidden}
+#scene{position:absolute;inset:0;cursor:grab}
+#scene:active{cursor:grabbing}
+
+h3.sec{font-size:10px;letter-spacing:.22em;color:var(--dim);margin:4px 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:12px;margin-bottom:12px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+.g23{grid-template-columns:2fr 1fr}
+@media(max-width:900px){.g2,.g3,.g23{grid-template-columns:1fr}}
+
+/* KPI cards */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px}
+.kpi .n{font-size:9px;letter-spacing:.1em;color:var(--dim);min-height:22px}
+.kpi .v{font-size:18px;font-weight:700;margin:3px 0}
+.kpi .b{font-size:9px;color:var(--dim)}
+.kpi .d{font-size:9px;padding:1px 5px;border-radius:2px;margin-left:5px}
+.d.up{color:var(--grn);border:1px solid rgba(70,209,154,.4)}
+.d.dn{color:var(--red);border:1px solid rgba(224,82,82,.4)}
+.d.sc{color:var(--amb);border:1px solid rgba(232,161,60,.4)}
+
+/* tables */
+table.tbl{width:100%;border-collapse:collapse;font-size:10.5px}
+.tbl th{text-align:left;color:var(--dim);letter-spacing:.1em;font-size:9px;padding:5px 7px;border-bottom:1px solid var(--line)}
+.tbl td{padding:5px 7px;border-bottom:1px solid rgba(29,57,71,.45)}
+.chip{font-size:9px;letter-spacing:.08em;padding:1px 6px;border-radius:2px;white-space:nowrap}
+.chip.g{color:var(--grn);border:1px solid rgba(70,209,154,.4)}
+.chip.a{color:var(--amb);border:1px solid rgba(232,161,60,.4)}
+.chip.r{color:var(--red);border:1px solid rgba(224,82,82,.4)}
+.chip.b{color:var(--blu);border:1px solid rgba(110,168,255,.4)}
+.chip.d{color:var(--dim);border:1px solid var(--line)}
+
+/* gantt */
+#gantt{position:relative;overflow-x:auto}
+.grow{display:flex;align-items:center;height:26px;position:relative;border-bottom:1px solid rgba(29,57,71,.35)}
+.grow .lbl{width:74px;flex:none;font-size:9px;color:var(--dim);letter-spacing:.06em}
+.gtrack{position:relative;flex:1;height:100%}
+.gbar{position:absolute;top:4px;height:18px;border-radius:2px;font-size:8.5px;line-height:18px;
+  padding:0 5px;overflow:hidden;white-space:nowrap;cursor:default;color:#08131a;font-weight:700}
+.gbar.al{background:var(--grn)}.gbar.pl{background:var(--blu)}.gbar.sh{background:var(--amb)}
+.gbar.out{background:repeating-linear-gradient(45deg,#5c2323,#5c2323 6px,#7a2e2e 6px,#7a2e2e 12px);color:#f1c9c9}
+.gaxis{display:flex;margin-left:74px;font-size:8.5px;color:var(--dim)}
+.gaxis span{flex:1;border-left:1px solid rgba(29,57,71,.5);padding-left:4px}
+
+/* bars */
+.pbar{height:8px;background:#12242e;border-radius:2px;overflow:hidden;margin-top:4px}
+.pbar i{display:block;height:100%;background:var(--blu)}
+.row{display:flex;justify-content:space-between;font-size:10px;padding:3px 0}
+.row b{font-size:10px}
+
+/* buttons */
+button.act{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:3px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;padding:7px 10px;cursor:pointer;text-align:left;width:100%}
+button.act:hover{border-color:var(--amb);color:var(--amb)}
+button.act.reset:hover{border-color:var(--grn);color:var(--grn)}
+button.mini{width:auto;padding:4px 8px;font-size:9px}
+button:focus-visible{outline:2px solid var(--grn);outline-offset:1px}
+
+/* feed */
+.feed{max-height:230px;overflow-y:auto;font-size:10px}
+.feed div{padding:4px 0;border-bottom:1px solid rgba(29,57,71,.35)}
+.feed .t{color:var(--dim);margin-right:6px}
+.feed .in{color:var(--grn)}.feed .out{color:var(--blu)}.feed .flag{color:var(--amb)}
+
+/* connectors */
+.conn{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.ccard{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:10px;font-size:10px}
+.ccard h4{font-size:11px;letter-spacing:.06em;margin-bottom:3px}
+.ccard .m{color:var(--dim);font-size:9px;margin:2px 0}
+.ccard .fb{color:var(--dim);font-size:9px;border-top:1px dashed var(--line);margin-top:6px;padding-top:6px}
+.ccard .btns{display:flex;gap:6px;margin-top:7px}
+
+/* workflows */
+.wf{border:1px solid var(--line);border-radius:4px;background:var(--panel);padding:10px;margin-bottom:8px}
+.wf .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wf b{font-size:11px}
+.wf .tr{font-size:10px;color:var(--amb);margin:4px 0}
+.wf .st{font-size:9.5px;color:var(--dim)}
+.wf .st span{color:var(--txt)}
+.wf .cnt{margin-left:auto;font-size:9px;color:var(--dim)}
+
+/* twin overlays */
+.ov{position:absolute;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+#vpanel{top:12px;left:12px;width:236px}
+#vpanel h2,#layers h2{font-size:9px;letter-spacing:.2em;color:var(--dim);padding:8px 10px;border-bottom:1px solid var(--line)}
+.vcard{padding:7px 10px;border-bottom:1px solid rgba(29,57,71,.5);cursor:pointer;font-size:10px}
+.vcard:hover{background:rgba(70,209,154,.06)}
+.vcard.sel{background:rgba(70,209,154,.1);box-shadow:inset 2px 0 0 var(--grn)}
+.vcard b{font-size:11px;display:block}
+.vcard .m{display:flex;justify-content:space-between;color:var(--dim);margin-top:2px}
+#layers{bottom:12px;left:12px;padding-bottom:6px}
+#layers label{display:flex;gap:7px;align-items:center;font-size:9.5px;letter-spacing:.08em;padding:4px 10px;cursor:pointer}
+#layers input{accent-color:var(--grn)}
+#cams{bottom:12px;right:12px;display:flex;flex-direction:column;gap:4px;z-index:5;position:absolute}
+#cams button{width:130px}
+#hint{position:absolute;top:12px;right:12px;font-size:8.5px;letter-spacing:.1em;color:var(--dim);z-index:5;text-align:right}
+#gatebar{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;display:flex;gap:6px}
+.gb{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:5px 9px;font-size:9.5px;display:flex;gap:6px;align-items:center}
+.st-dot{width:7px;height:7px;border-radius:50%}
+#infocard{display:none;position:absolute;z-index:8;background:var(--panel2);border:1px solid var(--grn);
+  border-radius:4px;padding:9px 11px;font-size:10px;max-width:230px;pointer-events:none}
+#infocard b{display:block;font-size:11px;margin-bottom:3px;color:var(--grn)}
+
+/* toasts */
+#toasts{position:fixed;right:14px;top:60px;z-index:60;display:flex;flex-direction:column;gap:6px;max-width:320px}
+.toast{background:var(--panel2);border:1px solid var(--amb);border-left:3px solid var(--amb);
+  border-radius:3px;padding:8px 10px;font-size:10px;animation:tin .25s ease}
+.toast b{color:var(--amb);display:block;font-size:10px;letter-spacing:.08em}
+@keyframes tin{from{transform:translateX(20px);opacity:0}}
+
+.note{font-size:9px;color:var(--dim);letter-spacing:.06em;margin-top:8px}
+.src{font-size:8.5px;color:var(--dim)}
+@media(max-width:720px){#vpanel{display:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>JNPA · NHAVA SHEVA</b><span>DIGITAL TWIN — PoC COCKPIT · GEM/2026/B/7297343</span></div>
+  <nav id="nav">
+    <button data-p="twin" class="on">3D TWIN</button>
+    <button data-p="uc1">UC1 · MARINE</button>
+    <button data-p="uc2">UC2 · CARGO</button>
+    <button data-p="conn">CONNECTORS</button>
+    <button data-p="wf">WORKFLOWS</button>
+    <button data-p="trace">TRACE</button>
+  </nav>
+  <div class="right">
+    <div class="live"><span class="dot"></span>LIVE SIM</div>
+    <div id="clock">--:--:-- IST</div>
+  </div>
+</header>
+
+<!-- ================= 3D TWIN ================= -->
+<div class="page on" id="page-twin">
+  <div id="scene"></div>
+  <div class="ov" id="vpanel">
+    <h2>VESSEL TRAFFIC — INNSA</h2>
+    <div id="vlist"></div>
+  </div>
+  <div class="ov" id="layers">
+    <h2>LAYERS</h2>
+    <label><input type="checkbox" data-l="vessels" checked>VESSELS &amp; CRAFT</label>
+    <label><input type="checkbox" data-l="trucks" checked>TRUCKS · GATE · CPP</label>
+    <label><input type="checkbox" data-l="rail" checked>RAIL T1/T2</label>
+    <label><input type="checkbox" data-l="heat" checked>CONGESTION HEATMAP</label>
+    <label><input type="checkbox" data-l="labels" checked>LABELS</label>
+  </div>
+  <div id="cams">
+    <button class="act" data-cam="over">◈ OVERVIEW</button>
+    <button class="act" data-cam="chan">◈ CHANNEL</button>
+    <button class="act" data-cam="gate">◈ GATE / CPP</button>
+    <button class="act" data-cam="rail">◈ RAIL T1/T2</button>
+    <button class="act" data-cam="crane">◈ CRANE LINE</button>
+    <button class="act" id="modeBtn">☾ DUSK MODE</button>
+  </div>
+  <div id="hint">DRAG — ORBIT · WHEEL/PINCH — ZOOM · CLICK — INSPECT</div>
+  <div id="gatebar">
+    <div class="gb"><span class="st-dot" id="gq-dot" style="background:var(--grn)"></span>GATE QUEUE <b id="gq-n">12</b></div>
+    <div class="gb">LANES <b id="gl-n">8/8</b></div>
+    <div class="gb">RAKES ON SIDING <b id="rk-n">1</b></div>
+  </div>
+  <div id="infocard"></div>
+</div>
+
+<!-- ================= UC1 MARINE ================= -->
+<div class="page" id="page-uc1">
+  <h3 class="sec">USE CASE I — VESSEL TRAFFIC MANAGEMENT &amp; OPTIMIZATION · MARINE KPIs (baseline vs twin-assisted)</h3>
+  <div class="kpis" id="kpi1"></div>
+
+  <div class="grid g23">
+    <div class="card">
+      <h3 class="sec">5-DAY BERTHING PLAN — ALL TERMINALS (UC1-R2 · R5) · click-free demo Gantt</h3>
+      <div id="gantt"></div>
+      <div class="gaxis" id="gaxis"></div>
+      <div class="note">BARS: <span class="chip g">ALONGSIDE</span> <span class="chip b">PLANNED</span> <span class="chip a">SHIFTED / HOLD</span> · Plan horizon ≥ 5 days as required for PoC.</div>
+    </div>
+    <div>
+      <div class="card">
+        <h3 class="sec">DUKC / RTUKC — MAIN CHANNEL (UC1-R7)</h3>
+        <canvas id="tide" width="520" height="130" style="width:100%"></canvas>
+        <div class="row"><span>Declared depth (CD)</span><b>15.0 m</b></div>
+        <div class="row"><span>Tide now</span><b id="tideNow">— m</b></div>
+        <div class="row"><span>Design vessel draft</span><b>12.5 m</b></div>
+        <div class="row"><span>Squat + safety margin</span><b>0.6 + 1.0 m</b></div>
+        <div class="row"><span>RTUKC (net)</span><b id="ukc">— m</b> </div>
+        <div class="row"><span>Transit window</span><b id="ukcWin" class="chip g">OPEN</b></div>
+        <div class="src">Sim of INCOIS tide + JNPA gauge · DUKC model placeholder</div>
+      </div>
+      <div class="card">
+        <h3 class="sec">MET-OCEAN (UC1-R2)</h3>
+        <div class="row"><span>Wind (MOSDAC)</span><b id="wind">14 kn · 245°</b></div>
+        <div class="row"><span>Wave Hs (INCOIS)</span><b>0.9 m</b></div>
+        <div class="row"><span>Visibility (IMD)</span><b>8 km</b></div>
+        <div class="row"><span>Squall alert</span><b id="squall" class="chip g">NIL</b></div>
+      </div>
+      <div class="card">
+        <h3 class="sec">PILOTAGE (UC1-R3 · R7)</h3>
+        <div id="pilots"></div>
+        <div class="row"><span>Avg boarding-to-berth</span><b>52 min</b></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g23">
+    <div class="card">
+      <h3 class="sec">VESSEL SCHEDULE — AIS + VTS FUSION (UC1-R1 · R4)</h3>
+      <table class="tbl"><thead><tr>
+        <th>VESSEL</th><th>LOA</th><th>DRAFT</th><th>BERTH</th><th>ETB</th><th>ETD</th><th>SOG</th><th>STATUS</th>
+      </tr></thead><tbody id="sched"></tbody></table>
+      <div class="src">AIS: aisstream.io (sim replay) · ETA model: gradient-boosted regressor on AIS track + tide (sim) — D.2-2 AI/ML</div>
+    </div>
+    <div class="card">
+      <h3 class="sec">WHAT-IF SCENARIOS — UC1 (D.2-5)</h3>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="act" id="sc-outage">▸ BERTH OUTAGE — NSICT-1 (8 h, fender damage)</button>
+        <button class="act" id="sc-squall">▸ MONSOON SQUALL — PILOTAGE HOLD 3 h</button>
+        <button class="act" id="sc-jit">▸ JIT SPEED ADVISORY → SEA PEARL VII (RTA)</button>
+        <button class="act reset" id="sc-reset1">↺ RESET TO BASELINE PLAN</button>
+      </div>
+      <div class="note" id="sc1-note">Assumptions: berth windows from JNPA plan; tide from INCOIS sim; pilot roster fixed. Scenario engine re-plans berths, recomputes KPIs and fires reactive workflows (see WORKFLOWS tab).</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= UC2 CARGO ================= -->
+<div class="page" id="page-uc2">
+  <h3 class="sec">USE CASE II — IMPROVED CARGO HANDLING &amp; LOGISTICS OPTIMIZATION · KPIs</h3>
+  <div class="kpis" id="kpi2"></div>
+
+  <div class="card">
+    <h3 class="sec">CONTAINER FLOW — IMPORT / EXPORT / TRANSSHIPMENT (UC2-R1)</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:10px" id="flow"></div>
+  </div>
+
+  <div class="grid g3">
+    <div class="card">
+      <h3 class="sec">GATE OPERATIONS — CODECO LIVE FEED (UC2-R2 · R3)</h3>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px" id="lanes"></div>
+      <div class="feed" id="gatefeed"></div>
+    </div>
+    <div class="card">
+      <h3 class="sec">RAIL SIDINGS T1 / T2 — RAKE BOARD (UC2-R5)</h3>
+      <table class="tbl"><thead><tr><th>RAKE</th><th>CTO</th><th>SDG</th><th>PLACE</th><th>REMOVE</th><th>STATUS</th></tr></thead>
+      <tbody id="rakes"></tbody></table>
+      <div class="row"><span>Next-24 h forecast (FOIS)</span><b id="rkfc">6 IN · 5 OUT</b></div>
+      <div class="src">FOIS/CTO API (sim) · wagon composition ingested</div>
+    </div>
+    <div class="card">
+      <h3 class="sec">ITRHO — INTER-TERMINAL TRANSFERS (UC2-R5)</h3>
+      <table class="tbl"><thead><tr><th>ROUTE</th><th>BOXES</th><th>STATUS</th><th>TAT</th></tr></thead>
+      <tbody id="itrho"></tbody></table>
+      <h3 class="sec" style="margin-top:10px">CUSTOMS SCANNER QUEUE (UC2-R3)</h3>
+      <div class="row"><span>Flagged in queue</span><b id="scq">4</b></div>
+      <div class="row"><span>Scanner units</span><b id="scu">SCN-1 ● SCN-2 ●</b></div>
+      <div class="row"><span>Avg scanner TAT</span><b id="sct">44 min</b></div>
+    </div>
+  </div>
+
+  <div class="grid g23">
+    <div class="card">
+      <h3 class="sec">PENDENCY &amp; EMPTIES — CFS / ICD / ECD (UC2-R2 · R4)</h3>
+      <div id="pend"></div>
+      <div class="row" style="margin-top:8px"><span>ECD Uran — 20GP / 40HC</span><b>640 / 410</b></div>
+      <div class="row"><span>ECD Kalamboli — 20GP / 40HC</span><b>380 / 295</b></div>
+      <div class="src">IAL/EAL + D/O from lines (EDI, sim) drive empty allotment suggestions</div>
+    </div>
+    <div class="card">
+      <h3 class="sec">WHAT-IF SCENARIOS — UC2 (D.2-5)</h3>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="act" id="sc-scan">▸ SCANNER SCN-2 OFFLINE (2 h)</button>
+        <button class="act" id="sc-rake">▸ RAKE R-1207 DELAYED 4 h (FOIS)</button>
+        <button class="act" id="sc-lane">▸ GATE LANES 5–6 CLOSED → DYNAMIC LANE ASSIGNMENT</button>
+        <button class="act reset" id="sc-reset2">↺ RESET UC2 BASELINE</button>
+      </div>
+      <div class="note" id="sc2-note">Assumptions: gate arrivals ~Poisson; TOS/CODECO feeds per terminal; rake windows from FOIS. Scenarios propagate to the 3D twin (queue, heatmap) and trigger automated workflows — demonstrating the reactive nature required by D.2-5.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CONNECTORS ================= -->
+<div class="page" id="page-conn">
+  <h3 class="sec">INTEGRATION REGISTRY — APIs / DATA &amp; FALLBACK MECHANISMS (D.2-3) · sources as suggested in Appendix C</h3>
+  <div class="conn" id="connlist"></div>
+  <div class="note">STATUS: <span class="chip g">LIVE-SIM</span> connected in sim replay · <span class="chip b">BATCH</span> scheduled pull · <span class="chip r">FALLBACK</span> outage → cache/synthetic replay engaged (WF-08). All connectors carry a documented fallback per the D.2 marking scheme.</div>
+</div>
+
+<!-- ================= WORKFLOWS ================= -->
+<div class="page" id="page-wf">
+  <div class="grid g23">
+    <div>
+      <h3 class="sec">AUTOMATED WORKFLOWS — REACTIVE TWIN (D.2-5 · UC1/UC2)</h3>
+      <div id="wflist"></div>
+    </div>
+    <div class="card">
+      <h3 class="sec">AUTOMATION LOG</h3>
+      <div class="feed" id="wflog" style="max-height:70vh"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TRACE ================= -->
+<div class="page" id="page-trace">
+  <h3 class="sec">TENDER TRACEABILITY — GEM/2026/B/7297343 · APPENDIX C → MODULES OF THIS PoC</h3>
+  <div class="card">
+    <table class="tbl"><thead><tr><th>REF</th><th>APPENDIX C REQUIREMENT</th><th>WHERE DEMONSTRATED IN THIS PoC</th></tr></thead>
+    <tbody id="tracebody"></tbody></table>
+    <div class="note">All identifiers, cargo figures and vessel names are synthetic simulation data. Baseline data references: jnport.gov.in reports · ULIP (goulip.in). This cockpit is a bidder-side concept demo, not a JNPA system.</div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+/* ======================================================
+   0. UTILITIES / GLOBAL SIM STATE / EVENT BUS
+====================================================== */
+const $=s=>document.querySelector(s);
+const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const SPD=reduced?0.35:1;
+const HOUR=3600e3, NOW=()=>Date.now();
+const fmtT=t=>new Date(t).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false});
+const fmtHM=t=>new Date(t).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false});
+
+const Bus={m:{},on(e,f){(this.m[e]=this.m[e]||[]).push(f)},emit(e,d){(this.m[e]||[]).forEach(f=>f(d))}};
+
+const S={
+  gateQueue:12, lanesOpen:8, lanesTotal:8, scannerQueue:4, scanners:2,
+  rakesOnSiding:1, squall:false, pilotHold:false
+};
+
+function toast(title,msg){
+  const d=document.createElement("div");d.className="toast";
+  d.innerHTML=`<b>${title}</b>${msg}`;
+  $("#toasts").appendChild(d);
+  setTimeout(()=>d.remove(),5200);
+}
+
+/* ======================================================
+   1. WORKFLOW ENGINE  (D.2-5 reactive automation)
+====================================================== */
+const WORKFLOWS=[
+ {id:"WF-01",uc:"UC1",name:"ETA-drift berth re-planning",trigger:"AIS/VTS fused ETA drifts > 2 h vs plan",
+  steps:["Re-optimize berth window (heuristic + ML ETA)","Update 5-day plan & notify agents/pilots","Publish revision to stakeholders (RBAC)"]},
+ {id:"WF-02",uc:"UC1",name:"UKC transit hold",trigger:"RTUKC < 1.0 m inside requested window",
+  steps:["Hold channel transit","Compute next safe tide window (DUKC)","Alert VTS & pilotage; re-slot plan"]},
+ {id:"WF-03",uc:"UC1",name:"JIT speed advisory (RTA)",trigger:"Berth not ready ≥ 4 h before AIS ETA",
+  steps:["Issue RTA to master via agent","Log bunker/CO₂ saving estimate","Track compliance on AIS"]},
+ {id:"WF-04",uc:"UC2",name:"Customs scanner routing",trigger:"CODECO gate-in with customs scan flag / e-seal alert",
+  steps:["Auto-assign scanner lane","Notify Customs & CFS (EDI event)","Track scanner TAT against KPI"]},
+ {id:"WF-05",uc:"UC2",name:"CFS pendency evacuation",trigger:"CFS/ICD pendency > threshold (350 TEU)",
+  steps:["Raise evacuation task to CFS","Advise lines on empty allotment (IAL/EAL)","Schedule bonded trucking window"]},
+ {id:"WF-06",uc:"UC2",name:"Rake delay re-sequencing",trigger:"FOIS rake ETA slip > 60 min",
+  steps:["Re-sequence yard moves in TOS advisory","Update ITRHO plan for mixed boxes","Notify CTO & terminal ops"]},
+ {id:"WF-07",uc:"UC2",name:"Dynamic lane assignment",trigger:"Gate queue > 15 trucks or lane outage",
+  steps:["Open flex/reversible lanes","Push SMS / app reroute to trailers","Refresh congestion heatmap layer"]},
+ {id:"WF-08",uc:"ALL",name:"Connector fallback",trigger:"Feed unavailable / stale beyond SLA",
+  steps:["Switch to cache + synthetic replay","Flag data-quality on affected KPIs","Auto-retry, alert integration SOC"]}
+];
+WORKFLOWS.forEach(w=>w.count=0);
+
+function fire(id,detail){
+  const w=WORKFLOWS.find(x=>x.id===id); if(!w)return;
+  w.count++;
+  const line=document.createElement("div");
+  line.innerHTML=`<span class="t">${fmtHM(NOW())}</span><span class="flag">${w.id}</span> ${w.name} — ${detail}`;
+  $("#wflog").prepend(line);
+  toast(w.id+" FIRED",detail);
+  renderWF();
+}
+function renderWF(){
+  $("#wflist").innerHTML=WORKFLOWS.map(w=>`
+   <div class="wf">
+     <div class="hd"><b>${w.id} · ${w.name}</b><span class="chip ${w.uc==="UC1"?"b":w.uc==="UC2"?"g":"d"}">${w.uc}</span>
+       <span class="cnt">fired × ${w.count}</span></div>
+     <div class="tr">TRIGGER — ${w.trigger}</div>
+     <div class="st">${w.steps.map((s,i)=>`<span>${i+1}. ${s}</span>`).join(" &nbsp;→&nbsp; ")}</div>
+   </div>`).join("");
+}
+renderWF();
+
+/* ======================================================
+   2. UC1 — MARINE: berthing plan, DUKC, pilots, KPIs
+====================================================== */
+const BERTHS=["BMCT-1","BMCT-2","GTI-1","GTI-2","NSFT-1","NSFT-2","NSICT-1","NSICT-2","NSIGT-1"];
+const T0=NOW();
+function mkPlan(){return [
+ {v:"KONKAN EXPRESS", loa:260,dr:11.2,berth:"BMCT-1", etb:T0-9*HOUR, etd:T0+13*HOUR, st:"ALONGSIDE"},
+ {v:"GODAVARI TRADER",loa:336,dr:13.0,berth:"GTI-2",  etb:T0-14*HOUR,etd:T0+9*HOUR,  st:"ALONGSIDE"},
+ {v:"SAHYADRI GLORY", loa:300,dr:12.1,berth:"NSICT-1",etb:T0-6*HOUR, etd:T0+18*HOUR, st:"ALONGSIDE"},
+ {v:"SEA PEARL VII",  loa:294,dr:12.5,berth:"NSIGT-1",etb:T0+5*HOUR, etd:T0+27*HOUR, st:"INBOUND"},
+ {v:"MALABAR SPIRIT", loa:274,dr:11.8,berth:"NSICT-1",etb:T0+22*HOUR,etd:T0+44*HOUR, st:"PLANNED"},
+ {v:"TUNGABHADRA",    loa:229,dr:10.4,berth:"NSFT-2", etb:T0+9*HOUR, etd:T0+30*HOUR, st:"PLANNED"},
+ {v:"VINDHYA CREST",  loa:318,dr:12.9,berth:"BMCT-2", etb:T0+15*HOUR,etd:T0+39*HOUR, st:"PLANNED"},
+ {v:"KAVERI QUEEN",   loa:255,dr:11.0,berth:"GTI-1",  etb:T0+31*HOUR,etd:T0+52*HOUR, st:"PLANNED"},
+ {v:"ARAVALI TRADER", loa:299,dr:12.2,berth:"NSICT-2",etb:T0+40*HOUR,etd:T0+66*HOUR, st:"PLANNED"},
+ {v:"SATPURA STAR",   loa:262,dr:11.5,berth:"NSFT-1", etb:T0+50*HOUR,etd:T0+72*HOUR, st:"PLANNED"},
+ {v:"PALGHAR PRIDE",  loa:245,dr:10.8,berth:"NSIGT-1",etb:T0+56*HOUR,etd:T0+80*HOUR, st:"PLANNED"},
+ {v:"BHIMA HORIZON",  loa:307,dr:12.6,berth:"BMCT-1", etb:T0+64*HOUR,etd:T0+92*HOUR, st:"PLANNED"},
+ {v:"NIRA NAVIGATOR", loa:280,dr:11.9,berth:"GTI-2",  etb:T0+78*HOUR,etd:T0+104*HOUR,st:"PLANNED"},
+ {v:"ULHAS UNITY",    loa:236,dr:10.2,berth:"NSFT-2", etb:T0+92*HOUR,etd:T0+114*HOUR,st:"PLANNED"}
+];}
+let PLAN=mkPlan(), OUTAGE=null;
+
+const KPI1_BASE=[
+ {n:"JUST-IN-TIME ARRIVALS",b:"62 %",v:78,u:" %",good:"up"},
+ {n:"PRE-SAILING DELAY",b:"3.1 h",v:2.2,u:" h",good:"dn"},
+ {n:"PRE-BERTHING DELAY",b:"4.8 h",v:3.1,u:" h",good:"dn"},
+ {n:"AVG VESSEL TAT",b:"26.4 h",v:21.9,u:" h",good:"dn"},
+ {n:"PORT CRAFT UTILISATION (PILOT/TUG/MOORING)",b:"61 %",v:74,u:" %",good:"up"},
+ {n:"ETA PREDICTION ACCURACY (ML)",b:"± 6.2 h",v:1.8,u:" h",good:"dn",pm:true}
+];
+let KPI1=JSON.parse(JSON.stringify(KPI1_BASE));
+
+function kpiCards(el,arr,scenario){
+  el.innerHTML=arr.map(k=>{
+    const better = k.good==="up" ? "▲ improved" : "▼ reduced";
+    return `<div class="kpi"><div class="n">${k.n}</div>
+     <div class="v">${k.pm?"± ":""}${k.v}${k.u}${scenario?'<span class="d sc">SCENARIO</span>':`<span class="d up">${better}</span>`}</div>
+     <div class="b">baseline ${k.b}</div></div>`;}).join("");
+}
+
+const G_START=T0-6*HOUR, G_SPAN=5*24*HOUR+6*HOUR;
+function renderGantt(){
+  const g=$("#gantt"); g.innerHTML="";
+  BERTHS.forEach(b=>{
+    const row=document.createElement("div");row.className="grow";
+    row.innerHTML=`<div class="lbl">${b}</div><div class="gtrack"></div>`;
+    const tr=row.querySelector(".gtrack");
+    if(OUTAGE && OUTAGE.berth===b){
+      const o=document.createElement("div");
+      o.className="gbar out";
+      o.style.left=((OUTAGE.from-G_START)/G_SPAN*100)+"%";
+      o.style.width=((OUTAGE.to-OUTAGE.from)/G_SPAN*100)+"%";
+      o.textContent="OUTAGE";
+      tr.appendChild(o);
+    }
+    PLAN.filter(c=>c.berth===b).forEach(c=>{
+      const d=document.createElement("div");
+      d.className="gbar "+(c.st==="ALONGSIDE"?"al":(c.st==="SHIFTED"||c.st==="HOLD")?"sh":"pl");
+      d.style.left=Math.max(0,(c.etb-G_START)/G_SPAN*100)+"%";
+      d.style.width=Math.max(1.5,(c.etd-c.etb)/G_SPAN*100)+"%";
+      d.textContent=c.v;
+      d.title=`${c.v} · ${c.loa} m · ETB ${fmtT(c.etb)} · ETD ${fmtT(c.etd)}`;
+      tr.appendChild(d);
+    });
+    g.appendChild(row);
+  });
+  const ax=$("#gaxis"); ax.innerHTML="";
+  for(let i=0;i<6;i++){
+    const s=document.createElement("span");
+    s.textContent=new Date(G_START+i*24*HOUR).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata",day:"2-digit",month:"short"});
+    ax.appendChild(s);
+  }
+}
+function renderSched(){
+  $("#sched").innerHTML=PLAN.slice(0,9).map(c=>{
+    const cls=c.st==="ALONGSIDE"?"g":c.st==="INBOUND"?"a":(c.st==="SHIFTED"||c.st==="HOLD")?"r":"b";
+    const sog=c.st==="INBOUND"?(S.jitApplied?"7.0 kn":"8.4 kn"):c.st==="ALONGSIDE"?"0.0 kn":"—";
+    return `<tr><td>${c.v}</td><td>${c.loa} m</td><td>${c.dr} m</td><td>${c.berth}</td>
+      <td>${fmtT(c.etb)}</td><td>${fmtT(c.etd)}</td><td>${sog}</td>
+      <td><span class="chip ${cls}">${c.st}</span></td></tr>`;
+  }).join("");
+}
+const PILOTS=[["P-01 CAPT. RANE","ONBOARD · SEA PEARL VII","a"],["P-02 CAPT. IYER","AVAILABLE","g"],
+ ["P-03 CAPT. DESHMUKH","AVAILABLE","g"],["P-04 CAPT. NAIR","REST (till 18:00)","d"],
+ ["P-05 CAPT. GILL","ONBOARD · OUTBOUND","a"],["P-06 CAPT. BORSE","AVAILABLE","g"]];
+$("#pilots").innerHTML=PILOTS.map(p=>`<div class="row"><span>${p[0]}</span><b class="chip ${p[2]}">${p[1]}</b></div>`).join("");
+
+/* tide + UKC */
+function tideAt(t){ return 2.5 + 2.1*Math.sin((t-T0)/ (12.42*HOUR) * Math.PI*2); }
+function drawTide(){
+  const cv=$("#tide"),ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle="#1d3947";ctx.beginPath();ctx.moveTo(0,H-18);ctx.lineTo(W,H-18);ctx.stroke();
+  ctx.beginPath();
+  for(let px=0;px<W;px++){
+    const t=T0+(px/W)*24*HOUR, h=tideAt(t);
+    const y=H-18-(h/5.2)*(H-30);
+    px?ctx.lineTo(px,y):ctx.moveTo(px,y);
+  }
+  ctx.strokeStyle="#46d19a";ctx.lineWidth=1.6;ctx.stroke();ctx.lineWidth=1;
+  /* UKC-safe band for 12.5m draft */
+  ctx.fillStyle="rgba(70,209,154,.08)";
+  for(let px=0;px<W;px++){
+    const t=T0+(px/W)*24*HOUR;
+    const ukc=15+tideAt(t)-12.5-0.6-1.0;
+    if(ukc>=1.0)ctx.fillRect(px,12,1,H-30);
+  }
+  const nowX=0;
+  ctx.strokeStyle="#e8a13c";ctx.beginPath();ctx.moveTo(nowX+1,10);ctx.lineTo(nowX+1,H-18);ctx.stroke();
+  ctx.fillStyle="#6f93a0";ctx.font="10px monospace";
+  ctx.fillText("next 24 h · green band = RTUKC ≥ 1.0 m (12.5 m draft)",6,10);
+}
+function updUKC(){
+  const tide=tideAt(NOW());
+  const ukc=15+tide-12.5-0.6-1.0;
+  $("#tideNow").textContent=tide.toFixed(1)+" m";
+  $("#ukc").textContent=ukc.toFixed(1)+" m";
+  const w=$("#ukcWin");
+  if(S.pilotHold){w.textContent="PILOTAGE HOLD";w.className="chip r";}
+  else if(ukc<1.0){w.textContent="CLOSED — WAIT TIDE";w.className="chip r";}
+  else{w.textContent="OPEN";w.className="chip g";}
+}
+
+/* UC1 scenarios */
+$("#sc-outage").onclick=()=>{
+  OUTAGE={berth:"NSICT-1",from:T0,to:T0+8*HOUR};
+  PLAN.forEach(c=>{
+    if(c.berth==="NSICT-1"&&c.etb<OUTAGE.to&&c.st!=="ALONGSIDE"){c.berth="NSIGT-1";c.etb+=2*HOUR;c.etd+=2*HOUR;c.st="SHIFTED";}
+    if(c.v==="SAHYADRI GLORY"){c.etd+=1.5*HOUR;}
+  });
+  KPI1=JSON.parse(JSON.stringify(KPI1_BASE));
+  KPI1[3].v=23.2; KPI1[0].v=73; KPI1[2].v=3.6;
+  kpiCards($("#kpi1"),KPI1,true);renderGantt();renderSched();
+  $("#sc1-note").textContent="SCENARIO ACTIVE — NSICT-1 out 8 h (fender damage). Twin re-planned 2 calls to NSIGT-1 (+2 h slip), extended SAHYADRI GLORY ETD. Interdependency shown: berth ↔ pilot roster ↔ TAT KPIs.";
+  fire("WF-01","NSICT-1 outage → 2 calls re-planned to NSIGT-1; agents & pilots notified");
+};
+$("#sc-squall").onclick=()=>{
+  S.squall=true;S.pilotHold=true;
+  $("#squall").textContent="SQUALL — HOLD";$("#squall").className="chip r";
+  $("#wind").textContent="34 kn · 260° GUSTS";
+  PLAN.forEach(c=>{if(c.st==="INBOUND"||( c.st==="PLANNED"&&c.etb<T0+6*HOUR)){c.etb+=3*HOUR;c.etd+=3*HOUR;c.st="HOLD";}});
+  KPI1=JSON.parse(JSON.stringify(KPI1_BASE));
+  KPI1[2].v=4.4;KPI1[0].v=69;
+  kpiCards($("#kpi1"),KPI1,true);renderGantt();renderSched();updUKC();
+  $("#sc1-note").textContent="SCENARIO ACTIVE — IMD squall alert: pilotage suspended 3 h. Inbound ETBs slipped +3 h, transits held; DUKC window flagged. Reactive workflow re-issued windows on clearance.";
+  fire("WF-02","Squall: pilotage hold 3 h → transits held, tide windows re-computed");
+};
+$("#sc-jit").onclick=()=>{
+  S.jitApplied=true;
+  KPI1=JSON.parse(JSON.stringify(KPI1_BASE));
+  KPI1[0].v=82;KPI1[2].v=2.6;
+  kpiCards($("#kpi1"),KPI1,true);renderSched();
+  $("#sc1-note").textContent="SCENARIO ACTIVE — RTA issued to SEA PEARL VII (slow to 7.0 kn, arrive when NSIGT-1 clear). Est. anchorage wait avoided: 2.1 h; bunker saving ≈ 4.8 t; CO₂ ≈ 15 t (sim).";
+  fire("WF-03","RTA to SEA PEARL VII — JIT arrival, anchorage wait −2.1 h, CO₂ −15 t (est.)");
+};
+$("#sc-reset1").onclick=()=>{
+  PLAN=mkPlan();OUTAGE=null;S.squall=false;S.pilotHold=false;S.jitApplied=false;
+  KPI1=JSON.parse(JSON.stringify(KPI1_BASE));
+  $("#squall").textContent="NIL";$("#squall").className="chip g";
+  $("#wind").textContent="14 kn · 245°";
+  kpiCards($("#kpi1"),KPI1,false);renderGantt();renderSched();updUKC();
+  $("#sc1-note").textContent="Baseline restored. Assumptions: berth windows from JNPA plan; tide from INCOIS sim; pilot roster fixed.";
+};
+
+kpiCards($("#kpi1"),KPI1,false);renderGantt();renderSched();drawTide();updUKC();
+setInterval(updUKC,5000);
+
+/* ======================================================
+   3. UC2 — CARGO: gate feed, rail, ITRHO, pendency, KPIs
+====================================================== */
+const KPI2_BASE=[
+ {n:"RAKE TURNAROUND TIME",b:"7.9 h",v:6.1,u:" h",good:"dn"},
+ {n:"INTER-TERMINAL (ITT) TAT",b:"5.2 h",v:3.9,u:" h",good:"dn"},
+ {n:"TRAILER TURNAROUND",b:"94 min",v:71,u:" min",good:"dn"},
+ {n:"SCANNER TAT",b:"62 min",v:44,u:" min",good:"dn"},
+ {n:"TRANSSHIPMENT TRAILER TAT",b:"58 min",v:43,u:" min",good:"dn"},
+ {n:"BUFFER PENDENCY",b:"412",v:286,u:" box",good:"dn"},
+ {n:"MIXED-TRAIN OPTIMIZATION",b:"—",v:14,u:" %",good:"up"}
+];
+let KPI2=JSON.parse(JSON.stringify(KPI2_BASE));
+kpiCards($("#kpi2"),KPI2,false);
+
+/* flow strip */
+const FLOW=[["VESSEL DISCH","1,842"],["QUAY→YARD","1,690"],["YARD STACK","9,412"],
+ ["GATE OUT (DPD)","486"],["CFS EVAC","624"],["RAIL LOAD (ICD)","318"],["ITRHO T/S","96"]];
+$("#flow").innerHTML=FLOW.map((f,i)=>`${i?'<span style="color:var(--dim)">▶</span>':""}
+  <span class="chip d" style="padding:6px 10px">${f[0]}<b style="display:block;font-size:13px;color:var(--txt)">${f[1]}</b></span>`).join("");
+
+/* lanes */
+function renderLanes(){
+  let h="";
+  for(let i=1;i<=S.lanesTotal;i++){
+    const closed=S.closedLanes&&S.closedLanes.includes(i);
+    h+=`<span class="chip ${closed?"r":"g"}">LN-${i}${closed?" ✕":""}</span>`;
+  }
+  if(S.flexOpen)h+=`<span class="chip a">FLEX-A OPEN</span><span class="chip a">FLEX-B OPEN</span>`;
+  $("#lanes").innerHTML=h;
+  $("#gl-n").textContent=(S.lanesOpen+(S.flexOpen?2:0))+"/"+S.lanesTotal;
+}
+renderLanes();
+
+/* gate CODECO feed generator */
+const PFX=["TCLU","MSKU","CMAU","ONEU","HLXU","TRHU","GESU"];
+function cid(){return PFX[(Math.random()*PFX.length)|0]+" "+String(100000+((Math.random()*899999)|0))+"-"+((Math.random()*9)|0);}
+function truck(){return "MH-46-"+String.fromCharCode(65+Math.random()*26|0)+String.fromCharCode(65+Math.random()*26|0)+"-"+(1000+((Math.random()*8999)|0));}
+function gateEvent(){
+  const dir=Math.random()<0.52?"GATE-IN":"GATE-OUT";
+  const flag=Math.random()<0.13;
+  let lane;
+  do{lane=1+((Math.random()*S.lanesTotal)|0);}while(S.closedLanes&&S.closedLanes.includes(lane));
+  const line=document.createElement("div");
+  line.innerHTML=`<span class="t">${fmtHM(NOW())}</span><span class="${dir==="GATE-IN"?"in":"out"}">${dir}</span>
+   ${cid()} · ${truck()} · LN-${lane}${flag?' <span class="flag">◆ CUSTOMS SCAN</span>':""}`;
+  const f=$("#gatefeed");f.prepend(line);
+  while(f.children.length>26)f.lastChild.remove();
+  if(flag){S.scannerQueue++;updScanner();fire("WF-04",`Flagged box routed to scanner (queue ${S.scannerQueue})`);}
+  /* queue dynamics */
+  S.gateQueue=Math.max(3,Math.min(30,S.gateQueue+(Math.random()<0.5?-1:1)+(S.closedLanes?1:0)-(S.flexOpen?1:0)));
+  updGatebar();
+}
+let feedTimer=setInterval(gateEvent,3600);
+function updScanner(){
+  $("#scq").textContent=S.scannerQueue;
+  $("#scu").innerHTML=S.scanners===2?"SCN-1 ● SCN-2 ●":"SCN-1 ● <span class='chip r'>SCN-2 OFFLINE</span>";
+  $("#sct").textContent=(S.scanners===2?44:71)+" min";
+}
+setInterval(()=>{if(S.scannerQueue>0&&Math.random()<0.6){S.scannerQueue--;updScanner();}},6000);
+
+/* rakes */
+function mkRakes(){return[
+ {id:"R-0988",cto:"CTO-GR",s:"T2",pl:fmtHM(T0-1*HOUR),rm:fmtHM(T0+3*HOUR),st:"PLACED",cls:"g"},
+ {id:"R-1207",cto:"CTO-CN",s:"T1",pl:fmtHM(T0+2*HOUR),rm:"—",st:"INBOUND",cls:"b"},
+ {id:"R-1215",cto:"CTO-AD",s:"T1",pl:fmtHM(T0+6*HOUR),rm:"—",st:"FORECAST",cls:"d"},
+ {id:"R-1219",cto:"CTO-GR",s:"T2",pl:fmtHM(T0+11*HOUR),rm:"—",st:"FORECAST",cls:"d"}
+];}
+let RAKES=mkRakes();
+function renderRakes(){
+  $("#rakes").innerHTML=RAKES.map(r=>`<tr><td>${r.id}</td><td>${r.cto}</td><td>${r.s}</td>
+   <td>${r.pl}</td><td>${r.rm}</td><td><span class="chip ${r.cls}">${r.st}</span></td></tr>`).join("");
+}
+renderRakes();
+
+/* ITRHO */
+function mkIT(){return[
+ {r:"NSICT → BMCT",b:24,st:"IN-TRANSIT",cls:"a",tat:"ETA 22 min"},
+ {r:"GTI → NSIGT",b:8,st:"LOADING",cls:"b",tat:"—"},
+ {r:"BMCT → NSFT",b:16,st:"DONE",cls:"g",tat:"3.4 h"},
+ {r:"NSIGT → GTI",b:12,st:"DONE",cls:"g",tat:"3.7 h"}
+];}
+let ITR=mkIT();
+function renderIT(){
+  $("#itrho").innerHTML=ITR.map(x=>`<tr><td>${x.r}</td><td>${x.b}</td>
+   <td><span class="chip ${x.cls}">${x.st}</span></td><td>${x.tat}</td></tr>`).join("");
+}
+renderIT();
+
+/* pendency */
+const PEND=[["CFS DRONAGIRI-A",342,500],["CFS PANVEL-B",128,400],["ICD PUNE",264,450],
+ ["ICD NAGPUR",97,300],["DPD STACK (CPP)",188,350]];
+$("#pend").innerHTML=PEND.map(p=>{
+  const pct=Math.round(p[1]/p[2]*100);
+  const warn=pct>68;
+  return `<div class="row"><span>${p[0]}</span><b>${p[1]} TEU · ${pct}%</b></div>
+   <div class="pbar"><i style="width:${pct}%;background:${warn?"var(--amb)":"var(--blu)"}"></i></div>`;
+}).join("");
+/* pendency threshold workflow demo (fires once) */
+setTimeout(()=>fire("WF-05","CFS DRONAGIRI-A pendency 68% of cap → evacuation task raised, lines advised"),9000);
+
+/* UC2 scenarios */
+$("#sc-scan").onclick=()=>{
+  S.scanners=1;S.scannerQueue+=5;updScanner();
+  KPI2=JSON.parse(JSON.stringify(KPI2_BASE));KPI2[3].v=71;
+  kpiCards($("#kpi2"),KPI2,true);
+  $("#sc2-note").textContent="SCENARIO ACTIVE — SCN-2 offline 2 h. All flagged boxes auto-routed to SCN-1; Customs notified; scanner TAT KPI degraded and tracked. Interdependency: scanner ↔ gate queue ↔ trailer TAT.";
+  fire("WF-04","SCN-2 offline → all scan traffic re-routed to SCN-1; Customs notified");
+};
+$("#sc-rake").onclick=()=>{
+  RAKES=mkRakes();
+  RAKES[1]={...RAKES[1],pl:fmtHM(T0+6*HOUR),st:"DELAYED +4 h",cls:"r"};
+  renderRakes();
+  $("#rkfc").textContent="5 IN · 5 OUT (revised)";
+  ITR=mkIT();ITR[0]={...ITR[0],st:"RE-PLANNED",cls:"a",tat:"ETA 40 min"};renderIT();
+  KPI2=JSON.parse(JSON.stringify(KPI2_BASE));KPI2[0].v=6.9;
+  kpiCards($("#kpi2"),KPI2,true);
+  $("#sc2-note").textContent="SCENARIO ACTIVE — FOIS: R-1207 slipped +4 h. Yard moves re-sequenced (advisory to TOS), ITRHO mixed-box plan updated, CTO & terminal notified. Rake TAT impact quantified.";
+  fire("WF-06","R-1207 +4 h (FOIS) → yard re-sequenced, ITRHO plan updated, CTO notified");
+};
+$("#sc-lane").onclick=()=>{
+  S.closedLanes=[5,6];S.lanesOpen=6;renderLanes();
+  S.gateQueue=22;updGatebar();
+  KPI2=JSON.parse(JSON.stringify(KPI2_BASE));KPI2[2].v=86;
+  kpiCards($("#kpi2"),KPI2,true);
+  $("#sc2-note").textContent="SCENARIO ACTIVE — Lanes 5–6 closed. Queue spiked to 22; twin opened flex lanes + pushed SMS reroute; watch heatmap turn red then recover on the 3D TWIN tab.";
+  fire("WF-07","Lanes 5–6 closed, queue 22 → flex lanes opened, SMS reroute pushed");
+  setTimeout(()=>{S.flexOpen=true;renderLanes();toast("WF-07 STEP 2","Flex lanes A/B open — queue draining");},6000);
+};
+$("#sc-reset2").onclick=()=>{
+  S.closedLanes=null;S.flexOpen=false;S.lanesOpen=8;S.scanners=2;S.scannerQueue=4;S.gateQueue=12;
+  RAKES=mkRakes();ITR=mkIT();renderRakes();renderIT();renderLanes();updScanner();updGatebar();
+  $("#rkfc").textContent="6 IN · 5 OUT";
+  KPI2=JSON.parse(JSON.stringify(KPI2_BASE));kpiCards($("#kpi2"),KPI2,false);
+  $("#sc2-note").textContent="Baseline restored. Assumptions: gate arrivals ~Poisson; TOS/CODECO feeds per terminal; rake windows from FOIS.";
+};
+
+function updGatebar(){
+  $("#gq-n").textContent=S.gateQueue;
+  $("#gq-dot").style.background=S.gateQueue>15?"var(--red)":S.gateQueue>10?"var(--amb)":"var(--grn)";
+  $("#rk-n").textContent=S.rakesOnSiding;
+}
+updGatebar();
+/* natural queue decay when flex open */
+setInterval(()=>{if(S.flexOpen&&S.gateQueue>10){S.gateQueue-=2;updGatebar();}},4000);
+
+/* ======================================================
+   4. CONNECTORS (D.2-3) — registry + fallback drills
+====================================================== */
+const CONNECTORS=[
+ /* UC1 vessel */
+ {g:"UC1 · VESSEL",n:"AISStream.io",p:"WSS stream · 2 s",st:"LIVE-SIM",fb:"Cache last-known + synthetic AIS replay (this demo)"},
+ {g:"UC1 · VESSEL",n:"AISHub",p:"REST · 60 s poll",st:"LIVE-SIM",fb:"Secondary AIS source; auto-promote on primary loss"},
+ {g:"UC1 · VESSEL",n:"MarineTraffic API",p:"REST · commercial",st:"BATCH",fb:"Fall back to AISStream/AISHub free tier"},
+ {g:"UC1 · VESSEL",n:"VesselFinder API",p:"REST",st:"BATCH",fb:"Global visibility backup for pre-arrival tracking"},
+ {g:"UC1 · VESSEL",n:"AISdb (AISViz)",p:"Batch · historical",st:"BATCH",fb:"Local parquet store for ML training/replay"},
+ {g:"UC1 · VESSEL",n:"JNPA VTS + Pilotage",p:"Site API · Phase-1",st:"LIVE-SIM",fb:"AIS-only fusion with degraded-confidence flag"},
+ /* UC1 met-ocean */
+ {g:"UC1 · MET-OCEAN",n:"INCOIS",p:"REST · 15 min",st:"LIVE-SIM",fb:"Harmonic tide prediction (local constituents)"},
+ {g:"UC1 · MET-OCEAN",n:"IMD Mausam APIs",p:"REST · hourly",st:"LIVE-SIM",fb:"Cached forecast + on-site AWS sensor"},
+ {g:"UC1 · MET-OCEAN",n:"MOSDAC (ISRO)",p:"REST · winds",st:"BATCH",fb:"IMD synoptic winds"},
+ {g:"UC1 · MET-OCEAN",n:"Copernicus Coastal SDB",p:"Batch · bathymetry",st:"BATCH",fb:"Last hydrographic survey grid (JNPA)"},
+ {g:"UC1 · MET-OCEAN",n:"BHOONIDHI (NRSC)",p:"Batch · imagery",st:"BATCH",fb:"Cached basemap tiles (Bhuvan)"},
+ /* UC2 */
+ {g:"UC2 · CARGO",n:"Terminal TOS ×5 (NSFT/NSICT/NSIGT/GTI/BMCT)",p:"API + EDIFACT CODECO/COARRI",st:"LIVE-SIM",fb:"EDI file drop (SFTP) reconciliation, 15-min batch"},
+ {g:"UC2 · CARGO",n:"ICEGATE (Customs)",p:"EDI/API",st:"LIVE-SIM",fb:"Manual doc upload + OCR pipeline; flags cached"},
+ {g:"UC2 · CARGO",n:"ULIP / NLP Marine (goulip.in)",p:"REST APIs",st:"LIVE-SIM",fb:"Direct source APIs (FOIS, Vahan) as secondary path"},
+ {g:"UC2 · CARGO",n:"FOIS / CTO systems",p:"API / SFTP",st:"LIVE-SIM",fb:"Rake plan email-parser + manual board entry"},
+ {g:"UC2 · CARGO",n:"CFS / ICD / ECD systems",p:"REST · webhooks",st:"BATCH",fb:"Daily pendency CSV ingest"},
+ {g:"UC2 · CARGO",n:"Customs e-seal readers",p:"MQTT",st:"LIVE-SIM",fb:"Gate OCR + manual verification queue"},
+ {g:"UC2 · CARGO",n:"Weighbridges",p:"OPC-UA",st:"LIVE-SIM",fb:"Ticket import; anomaly flag on KPI"},
+ {g:"UC2 · CARGO",n:"Shipping lines (IAL/EAL · D/O · empty pool)",p:"EDI",st:"BATCH",fb:"Portal scrape/manual upload with checksum"},
+ /* cross */
+ {g:"CROSS-CUTTING",n:"GIS base (QGIS/Bhuvan per UC1-R8)",p:"XYZ/WMS tiles",st:"LIVE-SIM",fb:"Offline MBTiles package"},
+ {g:"CROSS-CUTTING",n:"SSO · RBAC (DPDP-compliant)",p:"OIDC",st:"LIVE-SIM",fb:"Break-glass local auth, full audit trail"},
+ {g:"CROSS-CUTTING",n:"SIEM / SOC log stream",p:"Syslog/OTel",st:"LIVE-SIM",fb:"Local buffer 72 h, replay on reconnect"}
+];
+function renderConn(){
+  $("#connlist").innerHTML=CONNECTORS.map((c,i)=>{
+    const cls=c.st==="LIVE-SIM"?"g":c.st==="BATCH"?"b":"r";
+    return `<div class="ccard">
+      <div style="display:flex;gap:6px;align-items:center"><h4 style="flex:1">${c.n}</h4>
+        <span class="chip ${cls}" id="cst-${i}">${c.st}</span></div>
+      <div class="m">${c.g} · ${c.p}</div>
+      <div class="fb">FALLBACK — ${c.fb}</div>
+      <div class="btns">
+        <button class="act mini" data-test="${i}">TEST</button>
+        <button class="act mini" data-out="${i}">SIMULATE OUTAGE</button>
+      </div></div>`;
+  }).join("");
+}
+renderConn();
+document.addEventListener("click",e=>{
+  const t=e.target;
+  if(t.dataset.test!==undefined){
+    const i=+t.dataset.test;
+    toast("CONNECTOR TEST",CONNECTORS[i].n+" — handshake OK · schema valid · latency 142 ms (sim)");
+  }
+  if(t.dataset.out!==undefined){
+    const i=+t.dataset.out,el=$("#cst-"+i),prev=CONNECTORS[i].st;
+    el.textContent="FALLBACK";el.className="chip r";
+    fire("WF-08",CONNECTORS[i].n+" unavailable → cache/synthetic replay engaged; KPIs flagged");
+    setTimeout(()=>{el.textContent=prev;el.className="chip "+(prev==="LIVE-SIM"?"g":"b");
+      toast("CONNECTOR RESTORED",CONNECTORS[i].n+" — auto-retry succeeded, backfill complete");},12000);
+  }
+});
+
+/* ======================================================
+   5. TRACE — Appendix C mapping
+====================================================== */
+const TRACE=[
+ ["D.2-1","Solution approach / methodology, assumptions","Scenario panels state assumptions inline (UC1/UC2 tabs); architecture = GIS twin + sim engine + workflow automation"],
+ ["D.2-2","Usage of AI/ML tools","ML ETA predictor (AIS+tide features), congestion heatmap from AI video-analytics pipeline (sim), pendency threshold prediction"],
+ ["D.2-3","API/data integration plan + fallback on unavailability","CONNECTORS tab — every feed has protocol, cadence, documented fallback + live outage drill (WF-08)"],
+ ["D.2-4","Dashboard view & KPI monitoring","UC1/UC2 KPI cards show real-time value vs pre-twin baseline benchmarks"],
+ ["D.2-5","What-if scenarios + automated reactive workflows","6 scenario buttons across UC1/UC2 mutate plan, KPIs, 3D layer; 8 workflows fire automatically (WORKFLOWS tab)"],
+ ["UC1-R1","AIS + VTS + pilotage fusion, open APIs for PoC","Vessel schedule table (AIS sim replay per aisstream.io schema); connector cards for all 6 suggested AIS sources"],
+ ["UC1-R2","Weather, tidal, channel-depth integration","MET-OCEAN + DUKC panels (INCOIS/IMD/MOSDAC/Copernicus connectors)"],
+ ["UC1-R3","Marine KPI reports (berthing plan, arrivals/departures)","5-day Gantt + schedule table + KPI strip"],
+ ["UC1-R4","Real-time tracking dashboard w/ berth status & approach traffic","3D TWIN tab — live vessels, berth strip, channel, anchorage"],
+ ["UC1-R5","Berthing-plan integration, ≥5-day horizon for PoC","Gantt spans 5 days from JNPA-plan sim"],
+ ["UC1-R6","Marine KPIs real-time + historical baseline","KPI cards: current vs baseline pre-twin"],
+ ["UC1-R7","Pilot availability & performance, DUKC & RTUKC display","PILOTAGE + DUKC/RTUKC panels with transit-window logic"],
+ ["UC1-R8","Ingest into GIS platform (ArcGIS/QGIS/Bhuvan)","GIS base connector (Bhuvan/QGIS tiles); 3D layers are GIS-registered in production build"],
+ ["UC2-R1","Visibility across Import/Export/T-S: CFS, DPE, CPP, DPD, rail","Container flow strip + pendency board + 3D CPP/gate/rail entities"],
+ ["UC2-R2","Ingest TOS, CFS, ECD, ICEGATE, NLP Marine APIs","Gate CODECO feed + pendency + empties; connector registry"],
+ ["UC2-R3","e-seal, customs scan flags, real-time status","Feed flags ◆ CUSTOMS SCAN → WF-04 scanner routing; scanner queue panel"],
+ ["UC2-R4","Shipping-line IAL/EAL, D/O, empty pool → stakeholder visibility","ECD stock + empty allotment advisories (WF-05)"],
+ ["UC2-R5","CTO/FOIS rake data; ITRHO visibility; reduce rake TAT","Rake board T1/T2 + 24 h forecast + ITRHO tracker + WF-06"],
+ ["UC2-R6","Simulations: road congestion, gate status, dynamic lanes","Lane-closure scenario → flex lanes + heatmap on 3D twin (WF-07)"],
+ ["UC2-R7","Data/feed to terminals for 100% gate automation via TOS","CODECO event stream published back to TOS connectors (sim)"]
+];
+$("#tracebody").innerHTML=TRACE.map(r=>`<tr><td><span class="chip d">${r[0]}</span></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("");
+
+/* ======================================================
+   6. TABS + CLOCK
+====================================================== */
+let activePage="twin";
+$("#nav").addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  document.querySelectorAll("#nav button").forEach(x=>x.classList.toggle("on",x===b));
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("on"));
+  activePage=b.dataset.p;
+  $("#page-"+activePage).classList.add("on");
+  if(activePage==="twin")resize3D();
+});
+function tickClock(){$("#clock").textContent=new Date().toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false})+" IST";}
+setInterval(tickClock,1000);tickClock();
+
+/* ======================================================
+   7. THREE.JS — HIGH-FIDELITY PORT SCENE · DAY / DUSK
+   Coords: x = along quay SW→NE, z<0 water, z>0 land
+====================================================== */
+const wrap=$("#scene");
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputEncoding=THREE.sRGBEncoding;
+wrap.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(50,1,1,16000);
+
+const hemi=new THREE.HemisphereLight(0xcfe4f0,0x9a8a6f,1.0);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff1d6,1.15);sun.position.set(600,1000,300);scene.add(sun);
+const fillL=new THREE.DirectionalLight(0x9fc3d8,0.25);fillL.position.set(-600,400,-800);scene.add(fillL);
+
+/* ---------- procedural textures ---------- */
+const hx=c=>"#"+c.toString(16).padStart(6,"0");
+function tex(w,h,fn,rx,ry){const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+ fn(cv.getContext("2d"),w,h);const t=new THREE.CanvasTexture(cv);
+ t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx||1,ry||1);t.anisotropy=4;return t;}
+function corrTex(hex){return tex(128,128,(g,w,h)=>{g.fillStyle=hex;g.fillRect(0,0,w,h);
+ for(let x=0;x<w;x+=8){g.fillStyle="rgba(0,0,0,.20)";g.fillRect(x,0,3,h);
+  g.fillStyle="rgba(255,255,255,.10)";g.fillRect(x+3,0,2,h);}
+ g.fillStyle="rgba(0,0,0,.28)";g.fillRect(0,0,w,5);g.fillRect(0,h-5,w,5);});}
+function winTex(base,rows,cols){return tex(256,256,(g,w,h)=>{g.fillStyle=base;g.fillRect(0,0,w,h);
+ const cw=w/cols,ch=h/rows;g.fillStyle="#23343f";
+ for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)g.fillRect(c*cw+cw*.2,r*ch+ch*.28,cw*.6,ch*.36);});}
+function concTex(){return tex(256,256,(g,w,h)=>{g.fillStyle="#8d9295";g.fillRect(0,0,w,h);
+ for(let i=0;i<500;i++){g.fillStyle="rgba(0,0,0,.05)";g.fillRect(Math.random()*w,Math.random()*h,2,2);}
+ g.strokeStyle="rgba(0,0,0,.16)";
+ for(let x=0;x<=w;x+=64){g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();}
+ for(let y=0;y<=h;y+=64){g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke();}},6,2);}
+function asphaltTex(dash,rx){return tex(256,256,(g,w,h)=>{g.fillStyle="#3a4045";g.fillRect(0,0,w,h);
+ for(let i=0;i<380;i++){const v=110+Math.random()*50|0;
+  g.fillStyle=`rgba(${v},${v},${v},.07)`;g.fillRect(Math.random()*w,Math.random()*h,2,2);}
+ if(dash){g.fillStyle="#cfd3cf";for(let x=0;x<w;x+=64)g.fillRect(x,h/2-3,34,6);}},rx||1,1);}
+function yardTex(){return tex(256,256,(g,w,h)=>{g.fillStyle="#41484e";g.fillRect(0,0,w,h);
+ g.strokeStyle="rgba(224,190,70,.45)";g.lineWidth=3;g.strokeRect(6,6,w-12,h-12);},22,6);}
+function ribTex(){return tex(128,128,(g,w,h)=>{g.fillStyle="#c9d2d6";g.fillRect(0,0,w,h);
+ for(let x=0;x<w;x+=10){g.fillStyle="rgba(0,0,0,.12)";g.fillRect(x,0,4,h);}},6,1);}
+function parkTex(){return tex(256,256,(g,w,h)=>{g.fillStyle="#3a4045";g.fillRect(0,0,w,h);
+ g.strokeStyle="rgba(230,230,230,.55)";g.lineWidth=3;
+ for(let x=0;x<w;x+=42){g.beginPath();g.moveTo(x,20);g.lineTo(x,h-20);g.stroke();}},4,2);}
+
+/* ---------- materials ---------- */
+const M={
+ water:new THREE.MeshPhongMaterial({color:0x3c7a72,shininess:140,specular:0x9adfd4}),
+ quay:new THREE.MeshLambertMaterial({map:concTex()}),
+ yard:new THREE.MeshLambertMaterial({map:yardTex()}),
+ roadX:new THREE.MeshLambertMaterial({map:asphaltTex(true,26)}),
+ road:new THREE.MeshLambertMaterial({map:asphaltTex(false,4)}),
+ park:new THREE.MeshLambertMaterial({map:parkTex()}),
+ land:new THREE.MeshLambertMaterial({color:0x51663f}),
+ far:new THREE.MeshLambertMaterial({color:0x5c7052}),
+ white:new THREE.MeshLambertMaterial({color:0xe9edef}),
+ acc:new THREE.MeshLambertMaterial({map:winTex("#e8ecef",7,9)}),
+ deck:new THREE.MeshLambertMaterial({color:0x5a636b}),
+ dark:new THREE.MeshLambertMaterial({color:0x22282d}),
+ steel:new THREE.MeshLambertMaterial({color:0x8b9298}),
+ rail:new THREE.MeshLambertMaterial({color:0x4a4f55}),
+ cabY:new THREE.MeshLambertMaterial({color:0xd9a441}),
+ cabW:new THREE.MeshLambertMaterial({color:0xc9ced3}),
+ cabB:new THREE.MeshLambertMaterial({color:0x3a6ea5}),
+ loco:new THREE.MeshLambertMaterial({color:0x8a3b2e}),
+ orange:new THREE.MeshLambertMaterial({color:0xe07b30}),
+ funnel:new THREE.MeshLambertMaterial({color:0x9c2f28}),
+ tyre:new THREE.MeshLambertMaterial({color:0x1c1f22}),
+ grnL:new THREE.MeshBasicMaterial({color:0x2fae7f}),
+ redL:new THREE.MeshBasicMaterial({color:0xd84a4a}),
+ shed:new THREE.MeshLambertMaterial({map:ribTex()})
+};
+const lampOnMat=new THREE.MeshBasicMaterial({color:0xffc478});
+const lampOffMat=new THREE.MeshLambertMaterial({color:0x9aa0a4});
+const boxCols=[0x2c5f8a,0xb3822d,0x7a3b3f,0x3c6e4f,0x565b63];
+const boxMats=boxCols.map(c=>new THREE.MeshLambertMaterial({map:corrTex(hx(c))}));
+/* terminal operator liveries for STS cranes */
+const TERMS=[
+ {n:"BMCT", x:-1350,col:0xdfe3e6},  /* PSA — light grey/white */
+ {n:"GTI",  x:-680, col:0x7fa8c9},  /* APM — light blue */
+ {n:"NSFT", x:0,    col:0x4f8f7a},  /* CMA/JMB — teal */
+ {n:"NSICT",x:680,  col:0xb03a30},  /* DP World — red */
+ {n:"NSIGT",x:1350, col:0xb03a30}
+];
+
+const G={vessels:new THREE.Group(),trucks:new THREE.Group(),rail:new THREE.Group(),
+         heat:new THREE.Group(),labels:new THREE.Group(),infra:new THREE.Group()};
+Object.values(G).forEach(g=>scene.add(g));
+document.querySelectorAll("#layers input").forEach(cb=>{
+  cb.addEventListener("change",()=>{G[cb.dataset.l].visible=cb.checked;});
+});
+const pickables=[];
+function pickable(obj,title,lines){obj.userData.info={title,lines};pickables.push(obj);}
+
+/* ---------- water ---------- */
+const wGeo=new THREE.PlaneGeometry(10000,8000,90,70);
+wGeo.rotateX(-Math.PI/2);
+const water=new THREE.Mesh(wGeo,M.water);
+water.position.set(0,-0.5,-1500);scene.add(water);
+const wPos=wGeo.attributes.position,wBase=wPos.array.slice();
+
+/* ---------- clouds ---------- */
+const clouds=[];
+{
+ const ct=tex(256,128,(g,w,h)=>{const gr=g.createRadialGradient(w/2,h/2,10,w/2,h/2,w/2);
+  gr.addColorStop(0,"rgba(255,255,255,.92)");gr.addColorStop(1,"rgba(255,255,255,0)");
+  g.fillStyle=gr;g.fillRect(0,0,w,h);});
+ for(let i=0;i<9;i++){
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:ct,transparent:true,opacity:.85,depthWrite:false}));
+  sp.scale.set(900+Math.random()*700,260+Math.random()*160,1);
+  sp.position.set(-3200+Math.random()*6400,760+Math.random()*260,-2800+Math.random()*2800);
+  scene.add(sp);clouds.push(sp);
+ }
+}
+
+/* ---------- land / infra ---------- */
+function slab(w,h,d,x,y,z,mat,grp){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(x,y,z);(grp||G.infra).add(m);return m;
+}
+slab(4000,8,200,50,3.5,100,M.quay);
+slab(4000,6,320,50,2.5,360,M.yard);
+slab(5200,10,1400,150,4,1240,M.land);
+slab(6500,26,700,-900,8,-3350,M.far);
+const hill=new THREE.Mesh(new THREE.ConeGeometry(280,140,7),M.far);
+hill.position.set(-1700,20,-3050);G.infra.add(hill);
+for(let i=0;i<6;i++)slab(120,26+((i*37)%40),90,-300+i*180,18,1500,M.shed);
+/* warehouses / CFS sheds with arched roofs */
+[[-900],[-200],[520]].forEach(a=>{
+  const x=a[0];
+  slab(260,20,110,x,16,950,M.shed);
+  const roof=new THREE.Mesh(new THREE.CylinderGeometry(56,56,260,14,1,false,0,Math.PI),M.white);
+  roof.rotation.z=Math.PI/2;roof.position.set(x,26,950);G.infra.add(roof);
+});
+/* admin tower near gate */
+{
+  const t=new THREE.Mesh(new THREE.BoxGeometry(60,92,42),M.acc);
+  t.position.set(1900,52,900);G.infra.add(t);
+  slab(70,4,50,1900,100,900,M.white);
+}
+/* roads */
+slab(4300,1,44,150,6.2,520,M.roadX);
+slab(44,1,320,2050,6.2,350,M.road);
+slab(900,1,44,2500,6.2,520,M.roadX);
+slab(4000,1,30,50,6.2,180,M.road);
+/* zebra before gate */
+for(let i=0;i<6;i++)slab(4,0.4,40,1990+i*9,6.9,520,M.white);
+
+/* quay lamps (switchable) */
+const lamps=[];
+for(let x=-1750;x<=1850;x+=180){
+  const p=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,26,5),M.steel);
+  p.position.set(x,20,14);G.infra.add(p);
+  const l=new THREE.Mesh(new THREE.SphereGeometry(2.4,8,6),lampOffMat);
+  l.position.set(x,33,14);G.infra.add(l);lamps.push(l);
+}
+/* bollards + fenders along berth line */
+{
+  const bg=new THREE.CylinderGeometry(1.1,1.5,2.6,8);
+  const N=Math.floor(3500/45);
+  const im=new THREE.InstancedMesh(bg,M.dark,N);
+  const d=new THREE.Object3D();let i=0;
+  for(let x=-1720;x<1780;x+=45){d.position.set(x,8.8,3);d.updateMatrix();im.setMatrixAt(i++,d.matrix);}
+  G.infra.add(im);
+  const fg=new THREE.BoxGeometry(1.8,6,4.4);
+  const fN=Math.floor(3500/30);
+  const fm=new THREE.InstancedMesh(fg,M.tyre,fN);let j=0;
+  for(let x=-1735;x<1765;x+=30){d.position.set(x,4,0.6);d.updateMatrix();fm.setMatrixAt(j++,d.matrix);}
+  G.infra.add(fm);
+}
+
+/* ---------- labels (outlined for day sky) ---------- */
+function label(text,x,y,z,scl){
+  const cv=document.createElement("canvas");cv.width=512;cv.height=128;
+  const g=cv.getContext("2d");
+  g.font="700 54px 'SF Mono',Menlo,monospace";g.textAlign="center";g.textBaseline="middle";
+  g.lineWidth=9;g.strokeStyle="rgba(10,20,28,.85)";g.strokeText(text,256,64);
+  g.fillStyle="rgba(255,255,255,.95)";g.fillText(text,256,64);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false}));
+  sp.scale.set(scl,scl/4,1);sp.position.set(x,y,z);G.labels.add(sp);
+}
+TERMS.forEach(t=>label(t.n,t.x,110,240,320));
+label("LIQUID BERTH",2150,80,-120,300);
+label("PORT GATE · CPP",2200,74,760,340);
+label("RAIL T1 / T2",-300,64,700,300);
+label("ANCHORAGE",-2500,90,-1900,320);
+label("MAIN CHANNEL",-600,60,-700,300);
+
+/* ---------- yard container stacks ---------- */
+{
+  const geo=new THREE.BoxGeometry(12.2,5.6,4.9),dummy=new THREE.Object3D();
+  const buckets=boxMats.map(()=>[]);
+  TERMS.forEach(t=>{
+    for(let r=0;r<7;r++)for(let b=0;b<16;b++){
+      const h=2+((b+r)%3)+(Math.random()<0.2?1:0);
+      for(let k=0;k<h;k++){
+        dummy.position.set(t.x-255+b*34,8.6+k*5.7,235+r*26);
+        dummy.updateMatrix();
+        buckets[(b*3+r+k)%boxMats.length].push(dummy.matrix.clone());
+      }
+    }
+  });
+  for(let r=0;r<4;r++)for(let b=0;b<10;b++){
+    dummy.position.set(2100+b*34,8.6,650+r*30);dummy.updateMatrix();
+    buckets[(Math.random()*boxMats.length)|0].push(dummy.matrix.clone());
+  }
+  buckets.forEach((arr,i)=>{
+    const im=new THREE.InstancedMesh(geo,boxMats[i],arr.length);
+    arr.forEach((m,j)=>im.setMatrixAt(j,m));G.infra.add(im);
+  });
+}
+
+/* ---------- STS cranes: lattice boom, per-operator livery ---------- */
+const cranes=[];
+function crane(x,colHex){
+  const cm=new THREE.MeshLambertMaterial({color:colHex});
+  const g=new THREE.Group();
+  /* sill beams + bogies on quay rails */
+  [[-16],[16]].forEach(s=>{
+    const sill=new THREE.Mesh(new THREE.BoxGeometry(5,3,54),cm);sill.position.set(s[0],3.5,23);g.add(sill);
+    [4,42].forEach(z=>{const bog=new THREE.Mesh(new THREE.BoxGeometry(7,2.4,9),M.dark);
+      bog.position.set(s[0],1.4,z);g.add(bog);});
+  });
+  /* legs with portal bracing */
+  const legG=new THREE.BoxGeometry(3.6,70,3.6);
+  [[-16,4],[16,4],[-16,42],[16,42]].forEach(p=>{
+    const l=new THREE.Mesh(legG,cm);l.position.set(p[0],40,p[1]);g.add(l);});
+  [[-16],[16]].forEach(s=>{
+    const br=new THREE.Mesh(new THREE.BoxGeometry(2,2,52),cm);br.position.set(s[0],52,23);g.add(br);
+    const d1=new THREE.Mesh(new THREE.BoxGeometry(2,2,46),cm);
+    d1.position.set(s[0],32,23);d1.rotation.x=0.62;g.add(d1);
+  });
+  const portal=new THREE.Mesh(new THREE.BoxGeometry(38,4,8),cm);portal.position.set(0,73,4);g.add(portal);
+  const portal2=portal.clone();portal2.position.z=42;g.add(portal2);
+  /* twin-chord lattice boom: z −105 (outreach) → +55 (backreach) */
+  const chordG=new THREE.BoxGeometry(2.2,2.2,160);
+  [[-5,76],[5,76],[-5,70],[5,70]].forEach(c=>{
+    const ch=new THREE.Mesh(chordG,cm);ch.position.set(c[0],c[1],-25);g.add(ch);});
+  const diagG=new THREE.BoxGeometry(1.3,1.3,9.4);
+  for(let i=0;i<12;i++){
+    [[-5],[5]].forEach(sd=>{
+      const d=new THREE.Mesh(diagG,cm);
+      d.position.set(sd[0],73,-95+i*13);
+      d.rotation.x=(i%2?1:-1)*0.72;g.add(d);
+    });
+  }
+  /* apex + stays */
+  const apex=new THREE.Mesh(new THREE.BoxGeometry(3.4,30,3.4),cm);apex.position.set(0,90,20);g.add(apex);
+  function stay(x1,y1,z1,y2,z2){
+    const len=Math.hypot(y2-y1,z2-z1);
+    const s=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,len,5),M.steel);
+    s.position.set(x1,(y1+y2)/2,(z1+z2)/2);
+    s.rotation.x=Math.atan2(z2-z1,y2-y1);g.add(s);
+  }
+  stay(0,105,20,78,-100);stay(0,105,20,78,52);
+  /* machinery house + operator cab */
+  const house=new THREE.Mesh(new THREE.BoxGeometry(20,9,16),M.white);house.position.set(0,80,44);g.add(house);
+  const cab=new THREE.Mesh(new THREE.BoxGeometry(7,5,7),M.acc);cab.position.set(0,63,-14);g.add(cab);
+  /* trolley + cables + spreader + box */
+  const trolley=new THREE.Mesh(new THREE.BoxGeometry(9,2.6,7),M.dark);trolley.position.set(0,68,-60);g.add(trolley);
+  const cabA=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,1,4),M.steel);g.add(cabA);
+  const cabB2=cabA.clone();g.add(cabB2);
+  const spr=new THREE.Mesh(new THREE.BoxGeometry(12.6,0.9,5.2),M.cabY);g.add(spr);
+  const load=new THREE.Mesh(new THREE.BoxGeometry(12.2,5.6,4.9),boxMats[(Math.random()*boxMats.length)|0]);g.add(load);
+  g.position.set(x,6,6);G.infra.add(g);
+  cranes.push({trolley,cabA,cabB:cabB2,spr,load,phase:Math.random()*Math.PI*2});
+}
+TERMS.forEach(t=>{crane(t.x-110,t.col);crane(t.x+40,t.col);
+  if(t.n==="BMCT"||t.n==="NSICT")crane(t.x+180,t.col);});
+
+/* ---------- RTG yard cranes ---------- */
+const rtgs=[];
+function rtg(x,z){
+  const g=new THREE.Group();
+  const legG=new THREE.BoxGeometry(2.6,26,2.6);
+  [[-13,-11],[13,-11],[-13,11],[13,11]].forEach(p=>{
+    const l=new THREE.Mesh(legG,M.cabY);l.position.set(p[0],13,p[1]);g.add(l);});
+  [[-13],[13]].forEach(s=>{
+    const b=new THREE.Mesh(new THREE.BoxGeometry(3,3,26),M.cabY);b.position.set(s[0],27,0);g.add(b);});
+  const gird=new THREE.Mesh(new THREE.BoxGeometry(30,3,3),M.cabY);gird.position.set(0,27,-11);g.add(gird);
+  const gird2=gird.clone();gird2.position.z=11;g.add(gird2);
+  const tr=new THREE.Mesh(new THREE.BoxGeometry(5,2,6),M.dark);tr.position.set(0,25,0);g.add(tr);
+  [[-13,-11],[13,-11],[-13,11],[13,11]].forEach(p=>{
+    const w=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,1.6,10),M.tyre);
+    w.rotation.z=Math.PI/2;w.position.set(p[0],1.5,p[1]);g.add(w);});
+  g.position.set(x,6,z);G.infra.add(g);
+  rtgs.push({g,tr,ph:Math.random()*6,x0:x});
+}
+TERMS.forEach(t=>{rtg(t.x-140,300);rtg(t.x+120,326);});
+
+/* ---------- ships ---------- */
+const radars=[];
+function shipHull(L,W,col){
+  const s=new THREE.Shape(),b=L*0.14;
+  s.moveTo(-L/2+6,-W/2);
+  s.lineTo(L/2-b,-W/2);
+  s.quadraticCurveTo(L/2,-W*0.16,L/2,0);
+  s.quadraticCurveTo(L/2,W*0.16,L/2-b,W/2);
+  s.lineTo(-L/2+6,W/2);
+  s.quadraticCurveTo(-L/2,W*0.3,-L/2,0);
+  s.quadraticCurveTo(-L/2,-W*0.3,-L/2+6,-W/2);
+  const geo=new THREE.ExtrudeGeometry(s,{depth:16,bevelEnabled:false});
+  geo.rotateX(-Math.PI/2);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const y=pos.getY(i);
+    if(y<6){const f=0.55+0.45*(y/6);pos.setZ(i,pos.getZ(i)*f);}
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:col}));
+}
+function makeShip(o){
+  const g=new THREE.Group(),L=o.L,W=o.W;
+  g.add(shipHull(L,W,o.col));
+  const deck=new THREE.Mesh(new THREE.BoxGeometry(L*0.95,1.2,W*0.9),M.deck);deck.position.y=16.4;g.add(deck);
+  const fc=new THREE.Mesh(new THREE.BoxGeometry(L*0.1,3.4,W*0.5),new THREE.MeshLambertMaterial({color:o.col}));
+  fc.position.set(L*0.41,18.4,0);g.add(fc);
+  if(L>60){
+    const ss=new THREE.Mesh(new THREE.BoxGeometry(L*0.08,23,W*0.78),M.acc);ss.position.set(-L*0.34,28.5,0);g.add(ss);
+    const br=new THREE.Mesh(new THREE.BoxGeometry(L*0.09,5,W*1.06),M.white);br.position.set(-L*0.34,42.5,0);g.add(br);
+    const fun=new THREE.Mesh(new THREE.BoxGeometry(L*0.03,11,W*0.26),M.funnel);fun.position.set(-L*0.415,41,0);g.add(fun);
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(L*0.032,2,W*0.28),M.dark);cap.position.set(-L*0.415,47.5,0);g.add(cap);
+    const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.7,12,5),M.white);mast.position.set(-L*0.34,51,0);g.add(mast);
+    const radar=new THREE.Mesh(new THREE.BoxGeometry(4.4,0.5,1),M.white);radar.position.set(-L*0.34,57,0);g.add(radar);radars.push(radar);
+    const bm=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.5,9,5),M.white);bm.position.set(L*0.45,22,0);g.add(bm);
+    [[-1],[1]].forEach(s=>{
+      const lb=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,7,7),M.orange);
+      lb.rotation.x=Math.PI/2;lb.position.set(-L*0.29,25,s[0]*W*0.33);g.add(lb);});
+  }else{
+    const wh=new THREE.Mesh(new THREE.BoxGeometry(L*0.3,7,W*0.7),M.white);wh.position.set(-L*0.1,20,0);g.add(wh);
+  }
+  if(o.boxes!==false){
+    const geo=new THREE.BoxGeometry(12.2,5.6,4.9),dummy=new THREE.Object3D();
+    const buckets=boxMats.map(()=>[]);
+    const bays=Math.floor(L*0.55/14),rows=Math.max(2,Math.floor(W/6.4)-1);
+    for(let b=0;b<bays;b++)for(let r=0;r<rows;r++){
+      const h=2+((b/2|0)%2);
+      for(let k=0;k<h;k++){
+        dummy.position.set(-L*0.26+b*14,19.6+k*5.7,-((rows-1)*5.4)/2+r*5.4);
+        dummy.updateMatrix();
+        buckets[(b+r*2+k)%boxMats.length].push(dummy.matrix.clone());
+      }
+    }
+    buckets.forEach((arr,i)=>{
+      if(!arr.length)return;
+      const im=new THREE.InstancedMesh(geo,boxMats[i],arr.length);
+      arr.forEach((m,j)=>im.setMatrixAt(j,m));g.add(im);
+    });
+  }
+  g.position.copy(o.pos);if(o.rotY)g.rotation.y=o.rotY;
+  G.vessels.add(g);return g;
+}
+const fleet=[
+ {name:"GODAVARI TRADER",meta:"336 m · GTI-2",st:"BERTHED",cls:"g",
+  node:makeShip({L:336,W:48,col:0x1e3a5c,pos:new THREE.Vector3(-680,0,-42)})},
+ {name:"SAHYADRI GLORY",meta:"300 m · NSICT-1",st:"BERTHED",cls:"g",
+  node:makeShip({L:300,W:45,col:0x274b43,pos:new THREE.Vector3(680,0,-40)})},
+ {name:"KONKAN EXPRESS",meta:"260 m · BMCT-1",st:"BERTHED",cls:"g",
+  node:makeShip({L:260,W:40,col:0x6d2f2a,pos:new THREE.Vector3(-1350,0,-38)})},
+ {name:"SEA PEARL VII",meta:"294 m · → NSIGT-1",st:"INBOUND",cls:"a",
+  node:makeShip({L:294,W:44,col:0x27435f,pos:new THREE.Vector3(-2700,0,-750)})},
+ {name:"OCEAN TEJ (TUG)",meta:"32 m · escort",st:"ESCORT",cls:"b",
+  node:makeShip({L:34,W:12,col:0x9c2f28,pos:new THREE.Vector3(-2880,0,-690),boxes:false})}
+];
+const inbound=fleet[3].node,tug=fleet[4].node;
+pickable(fleet[0].node,"GODAVARI TRADER",["336 m · draft 13.0 m","ALONGSIDE GTI-2","Ops: discharge 1,420 / load 1,180"]);
+pickable(fleet[1].node,"SAHYADRI GLORY",["300 m · draft 12.1 m","ALONGSIDE NSICT-1","ETD "+fmtT(T0+18*HOUR)]);
+pickable(fleet[2].node,"KONKAN EXPRESS",["260 m · draft 11.2 m","ALONGSIDE BMCT-1"]);
+pickable(inbound,"SEA PEARL VII",["294 m · draft 12.5 m","INBOUND — pilot onboard","ETB "+fmtT(T0+5*HOUR)+" · NSIGT-1"]);
+
+const anch1=makeShip({L:270,W:42,col:0x33424e,pos:new THREE.Vector3(-2450,0,-1950),rotY:0.5});
+const anch2=makeShip({L:240,W:38,col:0x24506b,pos:new THREE.Vector3(-2750,0,-2150),rotY:-0.3});
+pickable(anch1,"MALABAR SPIRIT",["274 m","AT ANCHORAGE","ETB "+fmtT(T0+22*HOUR)+" · NSICT-1"]);
+pickable(anch2,"VINDHYA CREST",["318 m","AT ANCHORAGE","ETB "+fmtT(T0+15*HOUR)+" · BMCT-2"]);
+
+/* liquid berth jetty + tanker */
+slab(24,6,220,1980,4,-40,M.quay);
+slab(240,4,18,2100,10,-140,M.steel);
+const tanker=makeShip({L:210,W:36,col:0x20262b,pos:new THREE.Vector3(2130,0,-60),boxes:false});
+pickable(tanker,"PRODUCT TANKER (SIM)",["BPCL–IOCL LIQUID BERTH","Discharging Class-B"]);
+const pilotB=makeShip({L:20,W:7,col:0xe9edef,pos:new THREE.Vector3(-1500,0,-1200),boxes:false});
+
+const wake=new THREE.Mesh(new THREE.PlaneGeometry(200,26),
+ new THREE.MeshBasicMaterial({color:0xeafcf8,transparent:true,opacity:0.22,depthWrite:false}));
+wake.rotation.x=-Math.PI/2;G.vessels.add(wake);
+
+/* buoys */
+const buoys=[];
+for(let x=-2500;x<=1500;x+=640){
+  [[-500,M.grnL],[-1000,M.redL]].forEach(([z,mat])=>{
+    const b=new THREE.Mesh(new THREE.CylinderGeometry(4,5,8,7),M.steel);
+    b.position.set(x,3,z);G.infra.add(b);
+    const l=new THREE.Mesh(new THREE.SphereGeometry(2.4,8,6),mat.clone());
+    l.position.set(x,10,z);G.infra.add(l);
+    buoys.push({m:l,ph:Math.random()*6});
+  });
+}
+
+/* ---------- gate complex + CPP ---------- */
+{
+  const g=new THREE.Group();
+  const roof=new THREE.Mesh(new THREE.BoxGeometry(30,3,120),M.white);roof.position.set(2050,26,520);g.add(roof);
+  for(let i=0;i<7;i++){
+    const p=new THREE.Mesh(new THREE.BoxGeometry(3,22,3),M.steel);
+    p.position.set(2050,12,470+i*17);g.add(p);
+  }
+  for(let i=0;i<4;i++){
+    const booth=new THREE.Mesh(new THREE.BoxGeometry(8,8,10),M.cabY);
+    booth.position.set(2066,8,478+i*28);g.add(booth);
+    const bar=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.8,14),M.redL);
+    bar.position.set(2060,10,478+i*28);bar.rotation.x=-0.9;g.add(bar);
+  }
+  const cpp=new THREE.Mesh(new THREE.BoxGeometry(480,1,260),M.park);cpp.position.set(2260,6,750);g.add(cpp);
+  G.trucks.add(g);
+  pickable(g,"PORT GATE (8 LANES) · CPP",["RFID + OCR + e-seal readers","Queue: live on gatebar","Centralised Parking Plaza behind"]);
+}
+
+/* ---------- trucks with cabs & wheels ---------- */
+function makeTruck(container){
+  const g=new THREE.Group();
+  const chassis=new THREE.Mesh(new THREE.BoxGeometry(20,1.2,4.6),M.dark);chassis.position.set(-1,3.2,0);g.add(chassis);
+  const cabMat=[M.cabY,M.cabW,M.cabB][(Math.random()*3)|0];
+  const cab=new THREE.Mesh(new THREE.BoxGeometry(5.4,5,5.4),cabMat);cab.position.set(9,6,0);g.add(cab);
+  const ws=new THREE.Mesh(new THREE.BoxGeometry(0.5,2.4,4.8),M.dark);
+  ws.position.set(11.6,7,0);ws.rotation.z=-0.16;g.add(ws);
+    [9.5,-2,-7].forEach(wx=>{[-2.5,2.5].forEach(wz=>{
+    const w=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,1.2,10),M.tyre);
+    w.rotation.x=Math.PI/2;w.position.set(wx,1.5,wz);g.add(w);});});
+  if(container){
+    const c=new THREE.Mesh(new THREE.BoxGeometry(12.2,5.6,4.9),boxMats[(Math.random()*boxMats.length)|0]);
+    c.position.set(-3,6.6,0);g.add(c);
+  }
+  G.trucks.add(g);return g;
+}
+function routeTo(termX){return [[2650,520],[2110,520],[2050,520],[termX+320,520],[termX+320,180],[termX-260,180],[termX+320,180],[termX+320,520],[2050,520],[2110,520],[2650,520]];}
+const trucks=[];
+for(let i=0;i<11;i++){
+  const t={node:makeTruck(Math.random()<0.75),wps:routeTo(TERMS[i%5].x),
+    seg:(Math.random()*4)|0,u:Math.random()*0.9,spd:26+Math.random()*10};
+  trucks.push(t);
+}
+for(let i=0;i<8;i++){
+  const p=makeTruck(true);
+  p.position.set(2080+(i%4)*90,0,700+((i/4)|0)*60);
+  p.rotation.y=Math.PI/2;
+}
+const itrhoT=makeTruck(true);
+itrhoT.traverse(c=>{if(c.isMesh&&(c.material===M.cabY||c.material===M.cabW||c.material===M.cabB))c.material=M.funnel;});
+pickable(itrhoT,"ITRHO TRAILER 07",["NSICT → BMCT · 2×20GP","Mixed-rake transfer (UC2-R5)"]);
+
+/* heatmap */
+const heatSegs=[];
+for(let i=0;i<6;i++){
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(96,46),
+    new THREE.MeshBasicMaterial({color:0x46d19a,transparent:true,opacity:0.16,depthWrite:false}));
+  p.rotation.x=-Math.PI/2;p.position.set(2110+i*100,7,520);
+  G.heat.add(p);heatSegs.push(p);
+}
+
+/* ---------- rail: sleepers, loco with bogies, wagons ---------- */
+for(const z of[640,668]){
+  slab(3400,1.2,3,-100,6.6,z,M.rail,G.rail);
+  slab(3400,1.2,3,-100,6.6,z+6,M.rail,G.rail);
+  for(let x=-1780;x<1600;x+=40)slab(4,0.6,11,x,6.2,z+3,M.dark,G.rail);
+}
+const train=new THREE.Group();G.rail.add(train);
+{
+  const body=new THREE.Mesh(new THREE.BoxGeometry(20,7.5,8),M.loco);body.position.set(2,10.5,0);train.add(body);
+  const nose=new THREE.Mesh(new THREE.BoxGeometry(5,5,7.6),M.loco);nose.position.set(14,8.8,0);train.add(nose);
+  const cabw=new THREE.Mesh(new THREE.BoxGeometry(4,2.6,7.7),M.acc);cabw.position.set(9,12,0);train.add(cabw);
+  const pan=new THREE.Mesh(new THREE.BoxGeometry(6,0.5,4),M.steel);pan.position.set(-2,15.6,0);train.add(pan);
+  function bogie(px,parent){
+    const b=new THREE.Mesh(new THREE.BoxGeometry(6,1.6,6.8),M.dark);b.position.set(px,4.4,0);parent.add(b);
+    [-1.8,1.8].forEach(off=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,7,10),M.tyre);
+      w.rotation.x=Math.PI/2;w.position.set(px+off,2.4,0);parent.add(w);});
+  }
+  bogie(9,train);bogie(-5,train);
+  for(let i=1;i<=14;i++){
+    const w=new THREE.Mesh(new THREE.BoxGeometry(18,2,7),M.steel);w.position.set(-i*22,7.8,0);train.add(w);
+    bogie(-i*22+6,train);bogie(-i*22-6,train);
+    if(i%5!==0){
+      const c=new THREE.Mesh(new THREE.BoxGeometry(12.2,5.6,4.9),boxMats[i%boxMats.length]);
+      c.position.set(-i*22,12,0);train.add(c);
+    }
+  }
+  train.position.set(1400,0,643);
+  pickable(train,"RAKE R-0988 · CTO-GR",["45 BLC wagons · siding T2","Placement "+fmtHM(T0-1*HOUR)+" · removal "+fmtHM(T0+3*HOUR),"Feeds UC2 rake board"]);
+}
+let trainX=1400,trainPhase=0,trainWait=0;
+
+/* ---------- day / dusk modes ---------- */
+const MODES={
+ day:{bg:0xbfd6e0,fog:0.00028,hS:0xcfe4f0,hG:0x9a8a6f,hI:1.0,sC:0xfff1d6,sI:1.15,sP:[600,1000,300],
+      w:0x3c7a72,sp:0x9adfd4,lamps:false,cloud:0.85},
+ dusk:{bg:0x0c1822,fog:0.00038,hS:0x2b4d62,hG:0x1a140f,hI:0.95,sC:0xffb182,sI:0.6,sP:[-900,700,500],
+      w:0x0f2e38,sp:0x2a6a72,lamps:true,cloud:0.1}
+};
+let mode="day";
+function setMode(m){
+  mode=m;const c=MODES[m];
+  scene.background=new THREE.Color(c.bg);
+  scene.fog=new THREE.FogExp2(c.bg,c.fog);
+  hemi.color.set(c.hS);hemi.groundColor.set(c.hG);hemi.intensity=c.hI;
+  sun.color.set(c.sC);sun.intensity=c.sI;sun.position.set(c.sP[0],c.sP[1],c.sP[2]);
+  M.water.color.set(c.w);M.water.specular.set(c.sp);
+  lamps.forEach(l=>l.material=c.lamps?lampOnMat:lampOffMat);
+  clouds.forEach(cl=>cl.material.opacity=c.cloud);
+  $("#modeBtn").textContent=m==="day"?"☾ DUSK MODE":"☀ DAY MODE";
+}
+$("#modeBtn").addEventListener("click",()=>setMode(mode==="day"?"dusk":"day"));
+setMode("day");
+
+/* ---------- camera rig ---------- */
+const rig={r:2500,th:-0.5,ph:1.08,tgt:new THREE.Vector3(150,0,-200)};
+const want={r:rig.r,th:rig.th,ph:rig.ph,tgt:rig.tgt.clone()};
+let follow=null;
+function applyCam(){
+  rig.r+=(want.r-rig.r)*0.06;rig.th+=(want.th-rig.th)*0.06;rig.ph+=(want.ph-rig.ph)*0.06;
+  rig.tgt.lerp(want.tgt,0.06);
+  const sp=Math.sin(rig.ph);
+  camera.position.set(rig.tgt.x+rig.r*sp*Math.sin(rig.th),rig.tgt.y+rig.r*Math.cos(rig.ph),rig.tgt.z+rig.r*sp*Math.cos(rig.th));
+  camera.lookAt(rig.tgt);
+}
+const PRESETS={
+ over:{r:2500,th:-0.5,ph:1.08,tgt:new THREE.Vector3(150,0,-200)},
+ chan:{r:950,th:-1.35,ph:1.25,tgt:new THREE.Vector3(-900,0,-750)},
+ gate:{r:620,th:0.7,ph:1.15,tgt:new THREE.Vector3(2150,10,560)},
+ rail:{r:700,th:-0.15,ph:1.2,tgt:new THREE.Vector3(-100,10,650)},
+ crane:{r:520,th:-0.25,ph:1.18,tgt:new THREE.Vector3(680,40,-20)}
+};
+function goPreset(k){
+  follow=null;document.querySelectorAll("#vlist .vcard").forEach(e=>e.classList.remove("sel"));
+  const p=PRESETS[k];want.r=p.r;want.th=p.th;want.ph=p.ph;want.tgt.copy(p.tgt);
+}
+document.querySelectorAll("#cams button[data-cam]").forEach(b=>b.addEventListener("click",()=>goPreset(b.dataset.cam)));
+
+let drag=false,moved=0,lx=0,ly=0,pinch=0;
+const cnv=renderer.domElement;
+cnv.addEventListener("pointerdown",e=>{drag=true;moved=0;lx=e.clientX;ly=e.clientY;});
+addEventListener("pointerup",()=>drag=false);
+addEventListener("pointermove",e=>{
+  if(!drag)return;
+  moved+=Math.abs(e.clientX-lx)+Math.abs(e.clientY-ly);
+  want.th-=(e.clientX-lx)*0.005;
+  want.ph=Math.min(1.45,Math.max(0.28,want.ph-(e.clientY-ly)*0.004));
+  lx=e.clientX;ly=e.clientY;
+});
+cnv.addEventListener("wheel",e=>{e.preventDefault();
+  want.r=Math.min(4600,Math.max(200,want.r*(1+e.deltaY*0.0012)));},{passive:false});
+cnv.addEventListener("touchmove",e=>{
+  if(e.touches.length===2){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(pinch)want.r=Math.min(4600,Math.max(200,want.r*(pinch/d)));
+    pinch=d;}
+},{passive:true});
+cnv.addEventListener("touchend",()=>pinch=0);
+
+/* picking */
+const ray=new THREE.Raycaster(),mv=new THREE.Vector2();
+cnv.addEventListener("click",e=>{
+  if(moved>6)return;
+  const r=cnv.getBoundingClientRect();
+  mv.x=((e.clientX-r.left)/r.width)*2-1;mv.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(mv,camera);
+  const hits=ray.intersectObjects(pickables,true);
+  const ic=$("#infocard");
+  if(hits.length){
+    let o=hits[0].object;while(o&&!o.userData.info)o=o.parent;
+    if(o){
+      ic.innerHTML=`<b>${o.userData.info.title}</b>`+o.userData.info.lines.map(l=>`<div>${l}</div>`).join("");
+      ic.style.display="block";
+      ic.style.left=Math.min(e.clientX+14,innerWidth-250)+"px";
+      ic.style.top=Math.min(e.clientY+10,innerHeight-120)+"px";
+      clearTimeout(ic._t);ic._t=setTimeout(()=>ic.style.display="none",4200);
+      return;
+    }
+  }
+  ic.style.display="none";
+});
+
+/* vessel panel */
+const VP=[
+ ...fleet.map(f=>({n:f.name,m:f.meta,st:f.st,cls:f.cls,node:f.node})),
+ {n:"MALABAR SPIRIT",m:"274 m · anchorage",st:"ANCHOR",cls:"d",node:anch1},
+ {n:"VINDHYA CREST",m:"318 m · anchorage",st:"ANCHOR",cls:"d",node:anch2}
+];
+$("#vlist").innerHTML="";
+VP.forEach(v=>{
+  const d=document.createElement("div");d.className="vcard";
+  d.innerHTML=`<b>${v.n}</b><div class="m"><span>${v.m}</span><span class="chip ${v.cls}">${v.st}</span></div>`;
+  d.addEventListener("click",()=>{
+    document.querySelectorAll("#vlist .vcard").forEach(e=>e.classList.remove("sel"));
+    d.classList.add("sel");follow=v.node;want.r=430;want.ph=1.12;
+  });
+  $("#vlist").appendChild(d);
+});
+
+function resize3D(){
+  const w=wrap.clientWidth||innerWidth,h=wrap.clientHeight||innerHeight-52;
+  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);
+}
+addEventListener("resize",resize3D);resize3D();
+
+/* ---------- animate ---------- */
+const clk=new THREE.Clock();
+function seg(t){
+  const a=t.wps[t.seg],b=t.wps[(t.seg+1)%t.wps.length];
+  const len=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+  const atGate=Math.abs(a[0]-2050)<1&&Math.abs(a[1]-520)<1;
+  const spd=atGate&&t.u<0.15?t.spd*(6/Math.max(6,S.gateQueue)):t.spd;
+  t.u+=spd*SPD*0.016/len;
+  if(t.u>=1){t.u=0;t.seg=(t.seg+1)%t.wps.length;}
+  const x=a[0]+(b[0]-a[0])*t.u,z=a[1]+(b[1]-a[1])*t.u;
+  t.node.position.set(x,6,z);
+  t.node.rotation.y=Math.atan2(-(b[1]-a[1]),(b[0]-a[0]));
+}
+function loop(){
+  requestAnimationFrame(loop);
+  const t=clk.getElapsedTime()*SPD;
+  if(activePage!=="twin")return;
+
+  for(let i=0;i<wPos.count;i++){
+    const x=wBase[i*3],z=wBase[i*3+2];
+    wPos.array[i*3+1]=Math.sin(x*0.008+t*0.9)*1.4+Math.cos(z*0.01+t*0.7)*1.2;
+  }
+  wPos.needsUpdate=true;wGeo.computeVertexNormals();
+
+  cranes.forEach(c=>{
+    const p=(t*0.35+c.phase)%(Math.PI*2);
+    const z=-60+Math.sin(p)*44;
+    c.trolley.position.z=z;
+    const drop=22+(Math.cos(p*2)*0.5+0.5)*32;
+    [c.cabA,c.cabB].forEach((cb,k)=>{
+      cb.position.set(k?3.4:-3.4,67-drop/2,z);cb.scale.y=drop;});
+    c.spr.position.set(0,67-drop,z);
+    c.load.position.set(0,67-drop-3.3,z);
+  });
+  rtgs.forEach(r=>{
+    r.tr.position.x=Math.sin(t*0.3+r.ph)*10;
+    r.g.position.x=r.x0+Math.sin(t*0.05+r.ph)*30;
+  });
+  radars.forEach(r=>r.rotation.y=t*2.2);
+
+  const ix=-2700+((t*26)%4800);
+  inbound.position.x=ix;inbound.position.y=Math.sin(t*0.8)*0.6;
+  tug.position.set(ix-190,Math.sin(t*1.1)*0.5,-690);
+  wake.position.set(ix-40,0.4,-750);
+  pilotB.position.lerp(new THREE.Vector3(ix+180,0,-800),0.01);
+  pilotB.position.y=Math.sin(t*1.4)*0.5;
+
+  fleet[0].node.position.y=Math.sin(t*0.7)*0.5;
+  fleet[1].node.position.y=Math.sin(t*0.75+1)*0.5;
+  fleet[2].node.position.y=Math.sin(t*0.65+2)*0.45;
+  tanker.position.y=Math.sin(t*0.6+3)*0.4;
+  anch1.rotation.y=0.5+Math.sin(t*0.05)*0.15;
+  anch2.rotation.y=-0.3+Math.sin(t*0.04+2)*0.15;
+
+  buoys.forEach(b=>{b.m.visible=mode==="day"?true:Math.sin(t*2.4+b.ph)>-0.2;});
+  clouds.forEach(c=>{c.position.x+=2.2*SPD*0.16;if(c.position.x>3600)c.position.x=-3600;});
+
+  trucks.forEach(seg);
+  const iu=(Math.sin(t*0.08)*0.5+0.5);
+  itrhoT.position.set(-1350+iu*(680+1350),6,180);
+  itrhoT.rotation.y=Math.cos(t*0.08)>0?0:Math.PI;
+
+  if(trainPhase===0){trainX-=14*SPD*0.16;if(trainX<=-60){trainPhase=1;trainWait=t;}}
+  else if(trainPhase===1){if(t-trainWait>16)trainPhase=2;}
+  else{trainX-=14*SPD*0.16;if(trainX<-2600){trainX=2600;trainPhase=0;}}
+  train.position.x=trainX;
+
+  const q=S.gateQueue;
+  heatSegs.forEach((p,i)=>{
+    const load=Math.max(0,Math.min(1,(q-6)/18-i*0.08));
+    p.material.color.setHSL(0.38-0.38*load,0.75,0.45);
+    p.material.opacity=0.1+load*0.3;
+  });
+
+  if(follow)want.tgt.lerp(new THREE.Vector3(follow.position.x,12,follow.position.z),0.12);
+  applyCam();
+  renderer.render(scene,camera);
+}
+loop();
+
+setTimeout(()=>fire("WF-01","AIS fused ETA for MALABAR SPIRIT drifted +2.4 h → NSICT-1 window re-planned"),16000);
+})();
+</script>
+</body>
+</html>

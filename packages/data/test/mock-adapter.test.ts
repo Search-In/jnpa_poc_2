@@ -88,27 +88,38 @@ describe('MockAdapter — runs the whole dashboard surface offline', () => {
 describe('MockAdapter — scenarios produce before/after deltas + actions', () => {
   const a = adapter();
 
-  for (const id of ['CGO-1', 'CGO-2', 'CGO-3', 'LANE-ASSIGN']) {
-    it(`${id} recomputes KPIs and fires an automated action`, async () => {
+  // §8.2 scenarios S1–S6. before = A (do-nothing/shadow), after = B (intervention);
+  // every scenario recomputes both KPI arms and emits its automated actions.
+  for (const id of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']) {
+    it(`${id} recomputes A/B KPIs and fires an automated action`, async () => {
       const r = await a.runScenario(id, {});
       expect(r.scenarioId).toBe(id);
       expect(r.before.length).toBe(10);
       expect(r.after.length).toBe(10);
       expect(r.actions.length).toBeGreaterThan(0);
-      // at least one KPI value changed
+      // twin-vs-shadow: at least one KPI differs between A (before) and B (after)
       const changed = r.after.some((k, i) => k.value !== r.before[i]!.value);
       expect(changed).toBe(true);
+      // every scenario carries the honesty-framing A/B provenance action
+      expect(r.actions.some((act) => act.kind === 'AB_ASSUMPTIONS')).toBe(true);
     });
   }
 
-  it('CGO-2 emits a cross-twin push to UC3', async () => {
-    const r = await a.runScenario('CGO-2', { surgeCount: 50, gateId: 'NSICT-G1' });
+  it('legacy CGO/LANE ids still resolve to their S-scenario', async () => {
+    expect((await a.runScenario('CGO-2', {})).scenarioId).toBe('S2');
+    expect((await a.runScenario('CGO-3', {})).scenarioId).toBe('S3');
+    expect((await a.runScenario('CGO-1', {})).scenarioId).toBe('S5');
+    expect((await a.runScenario('LANE-ASSIGN', {})).scenarioId).toBe('S4');
+  });
+
+  it('S2 emits a cross-twin push to UC3', async () => {
+    const r = await a.runScenario('S2', { surgeCount: 50, gateId: 'NSICT-G1' });
     expect(r.actions.some((act) => act.kind === 'CROSS_TWIN_PUSH' && act.target === 'UC3')).toBe(true);
   });
 
   it('is deterministic: same scenario → identical after-KPIs', async () => {
-    const r1 = await adapter().runScenario('CGO-3', {});
-    const r2 = await adapter().runScenario('CGO-3', {});
+    const r1 = await adapter().runScenario('S3', {});
+    const r2 = await adapter().runScenario('S3', {});
     expect(r1.after.map((k) => k.value)).toEqual(r2.after.map((k) => k.value));
   });
 });

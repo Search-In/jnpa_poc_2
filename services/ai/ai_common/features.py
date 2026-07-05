@@ -81,7 +81,8 @@ def synth_gate_series(steps: int = 2000, seed: int = 202) -> Tuple[np.ndarray, n
 # Rake TAT Forecaster (§7.3): predict placement/removal offsets from arrival.
 # Features: [siding, cto_idx, wagon_count, hour, inbound]; y = TAT hours.
 # ---------------------------------------------------------------------------
-CTOS = ["CONCOR", "ADANI_LOGISTICS", "GATEWAY_RAIL", "PRISTINE"]
+# Synthetic Container Train Operator codes (Guardrail §10: no real CTO brands).
+CTOS = ["CTO-1", "CTO-2", "CTO-3", "CTO-4"]
 
 
 def synth_rake_dataset(n: int = 2500, seed: int = 303) -> Tuple[np.ndarray, np.ndarray]:

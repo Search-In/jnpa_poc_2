@@ -1,8 +1,9 @@
 /**
- * Scenario engine (prompt §12). Wraps the deterministic scenario computation
- * (shared with the MockAdapter) and, for CGO-2, builds the real cross-twin
- * DeferredArrivalWindow event that gets pushed to the UC3 Trucking App. Each run
- * is seeded → repeatable for the JNPA demo.
+ * Scenario engine (prompt §8.2). Wraps the deterministic scenario computation
+ * (shared with the MockAdapter) and, for S2 (Customs Flag Surge → UC-3), builds
+ * the real cross-twin DeferredArrivalWindow event that gets pushed to the UC3
+ * Trucking App. Each run is seeded → repeatable for the JNPA demo. Legacy ids
+ * (CGO-2 → S2 etc.) resolve through runMockScenario's alias map.
  */
 import type { DeferredArrivalWindow } from '@jnpa/schemas';
 import { CROSS_TWIN_EVENT_TYPES, CROSS_TWIN_TOPIC } from '@jnpa/schemas';
@@ -18,9 +19,12 @@ export interface ScenarioEngineDeps {
 }
 
 export interface ScenarioRunResult extends ScenarioResultDTO {
-  /** The cross-twin event emitted (CGO-2 only). */
+  /** The cross-twin event emitted (S2 / legacy CGO-2 only). */
   crossTwinEvent?: DeferredArrivalWindow;
 }
+
+/** S-ids that trigger the cross-twin push, plus their legacy aliases. */
+const CROSS_TWIN_SCENARIOS = new Set(['S2', 'CGO-2']);
 
 export class ScenarioEngine {
   private sim: SimWorld;
@@ -48,7 +52,7 @@ export class ScenarioEngine {
 
     let crossTwinEvent: DeferredArrivalWindow | undefined;
 
-    if (id === 'CGO-2') {
+    if (CROSS_TWIN_SCENARIOS.has(id)) {
       const gateId = (params.gateId as string) ?? 'NSICT-G1';
       const terminalId = gateId.split('-')[0] ?? 'NSICT';
       const from = this.asOf;
@@ -61,7 +65,7 @@ export class ScenarioEngine {
         window: { from, to },
         reason: `Customs-flag surge → predicted gate-queue spike at ${gateId}`,
         recommendedSlotCap: 4,
-        correlationId: `CGO-2-${this.seed}`,
+        correlationId: `S2-${this.seed}`,
         issuedTs: from,
       };
       // Emit onto the shared cross-twin topic (UC3 subscribes).

@@ -19,6 +19,7 @@ import type {
   KpiResult, Notification, IntegrationHealth,
 } from '@jnpa/schemas';
 import { simStore } from './simStore.js';
+import { faultStore, applyIntegrationFaults } from '../console/faultStore.js';
 import {
   applyGateOps, applyPendency, applyRail, applyKpis, applyScanQueue, applyEmptyPool,
 } from './applySim.js';
@@ -70,8 +71,10 @@ export class SimAdapter implements DataAdapter {
   getNotifications(role: Role): Promise<Notification[]> {
     return this.base.getNotifications(role);
   }
-  getIntegrationHealth(): Promise<IntegrationHealth[]> {
-    return this.base.getIntegrationHealth();
+  async getIntegrationHealth(): Promise<IntegrationHealth[]> {
+    // Overlay the Integration Console's injected faults so the HealthCards tab +
+    // Operator Banner react live when a source is degraded / killed / recovered.
+    return applyIntegrationFaults(await this.base.getIntegrationHealth(), faultStore.getState());
   }
   runScenario(id: string, params: ScenarioParams): Promise<ScenarioResultDTO> {
     return this.base.runScenario(id, params);

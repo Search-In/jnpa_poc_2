@@ -9,7 +9,7 @@
  * and the tree stay in sync in both directions (a click in the 3D scene selects
  * the matching row through the shared `selectedId`).
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   CalciteList,
   CalciteListItem,
@@ -55,6 +55,10 @@ export function AssetExplorer(props: AssetExplorerProps) {
   const { terminals, facilities, gateOps, pendency, selectedId, onSelect } = props;
 
   const groups = useMemo(() => buildGroups(terminals, facilities, gateOps, pendency), [terminals, facilities, gateOps, pendency]);
+  // Track which section is expanded ourselves — otherwise a re-render (e.g. a
+  // live data tick) re-applies `open={gi === 0}` and snaps every other block
+  // (STS Cranes, Truck Gates, …) shut the instant you open it.
+  const [openTitle, setOpenTitle] = useState<string | null>(() => groups[0]?.title ?? null);
   const selected = useMemo(() => {
     for (const grp of groups) {
       const hit = grp.nodes.find((n) => n.id === selectedId);
@@ -70,13 +74,15 @@ export function AssetExplorer(props: AssetExplorerProps) {
         <div style={{ fontSize: 11, color: tokens.color.textMuted }}>Select an item, then click the map to place it</div>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
-        {groups.map((grp, gi) => (
+        {groups.map((grp) => (
           <CalciteBlock
             key={grp.title}
             heading={grp.title}
             description={grp.movable ? 'movable — click then place on map' : 'reference'}
             collapsible
-            open={gi === 0}
+            open={openTitle === grp.title}
+            onCalciteBlockOpen={() => setOpenTitle(grp.title)}
+            onCalciteBlockClose={() => setOpenTitle((t) => (t === grp.title ? null : t))}
             iconStart={grp.movable ? 'pin-tear' : 'information'}
           >
             <CalciteList label={grp.title}>
