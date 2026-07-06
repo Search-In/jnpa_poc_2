@@ -35,6 +35,9 @@ import {
   spotlight3dGraphics,
   selectionLayer,
   selectionRing,
+  routeDrawLayer,
+  routeDrawGraphics,
+  pickLayer,
   asset3dPosition,
   graphicsFor3d,
 } from './scene3d.js';
@@ -53,12 +56,22 @@ interface PortSceneProps {
   pendency: PendencyDTO[];
   /** Asset ids the simulator is driving — drawn with a 3D spotlight beam. */
   highlights?: string[];
-  /** Notify the parent when the user clicks an asset in the 3D scene. */
-  onSelect?: (assetId: string | null) => void;
+  /**
+   * Notify the parent when the user clicks an asset in the 3D scene. `pkey` is the
+   * movable-asset placement key (vessel/crane/gate/yard) when the hit asset has
+   * one, so the parent can open that asset's transform editor directly.
+   */
+  onSelect?: (assetId: string | null, pkey?: string) => void;
   /** Placement edit mode — a map click moves the selected asset to that spot. */
   editing?: boolean;
   /** The placement key of the asset to move on the next map click (from the tree). */
   movePkey?: string | null;
+  /**
+   * Route-draw mode: when set to a `truckroute:<T>` key, a map click APPENDS a
+   * waypoint to that route's traced path (instead of moving an asset). Lets the
+   * user trace the truck route along the real roads in the satellite imagery.
+   */
+  drawRouteKey?: string | null;
   /** Fired after a placement lands (so the parent can update the export count). */
   onPlacementsChanged?: () => void;
 }
@@ -77,10 +90,50 @@ export interface PortSceneHandle {
   rebuild: () => void;
   /** Rebuild ONLY the layer(s) for one asset — instant per-asset move/rotate. */
   rebuildOne: (pkey: string) => void;
+  /** Redraw the route-trace preview from the store (after undo/clear). */
+  refreshRouteDraw: () => void;
   /** Fly the camera to a named cinematic viewpoint. */
   goToPreset: (preset: CameraPreset) => void;
   /** Switch scene lighting between bright day and golden dusk. */
   setLighting: (mode: Lighting) => void;
+}
+
+/**
+ * Resolve a hit-test result to the clicked asset's { id, pkey }. `id` is the
+ * focus/asset3dPosition key (terminalId/gateId/craneId/…); `pkey` is the movable
+ * placement key (vessel/crane/gate/yard) carried on the graphic — used to open
+ * that asset's transform editor. Yard-stack tiers only carry `pkey` on the base
+ * tier, so we derive the id from `blockId`. Returns null if nothing pickable.
+ */
+function resolveHit(res: { results: Array<unknown> }): { id: string; pkey?: string } | null {
+  // Prefer the topmost graphic that carries a usable id.
+  for (const r of res.results) {
+    const graphic = (r as { graphic?: { attributes?: Record<string, unknown> } }).graphic;
+    if (!graphic) continue;
+    const a = (graphic.attributes ?? {}) as Record<string, unknown>;
+    // A pick marker carries pkey + pickId directly — the reliable click target.
+    if (a.pickId && a.pkey) return { id: a.pickId as string, pkey: a.pkey as string };
+    const id =
+      (a.terminalId as string) ??
+      (a.gateId as string) ??
+      (a.facilityId as string) ??
+      (a.craneId as string) ??
+      (a.vesselId as string) ??
+      (a.blockId as string) ??
+      null;
+    if (!id) continue;
+    // pkey directly on the graphic (vessel/crane/gate + base yard tier), else
+    // derive it for kinds where an upper tier / feature dropped it.
+    let pkey = (a.pkey as string) || undefined;
+    if (!pkey && a.gateId) pkey = `gate3d:${a.gateId as string}`;
+    if (!pkey && a.blockId && a.terminalId) {
+      // blockId "NSICT-Y3" → pkey "yard:NSICT:2" (Y is 1-indexed).
+      const m = String(a.blockId).match(/-Y(\d+)$/);
+      if (m) pkey = `yard:${a.terminalId as string}:${Number(m[1]) - 1}`;
+    }
+    return { id, ...(pkey ? { pkey } : {}) };
+  }
+  return null;
 }
 
 /** Live value resolver so the spotlight label shows the exact driven number. */
@@ -108,6 +161,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     trucks: FeatureLayer;
     channel: FeatureLayer;
     congestion: FeatureLayer;
+    picks: FeatureLayer;
   } | null>(null);
   const spotlightRef = useRef<FeatureLayer | null>(null);
   const selectionRef = useRef<GraphicsLayer | null>(null);
@@ -126,6 +180,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
   editingRef.current = !!props.editing;
   const movePkeyRef = useRef<string | null>(props.movePkey ?? null);
   movePkeyRef.current = props.movePkey ?? null;
+  const drawRouteRef = useRef<string | null>(props.drawRouteKey ?? null);
+  drawRouteRef.current = props.drawRouteKey ?? null;
+  // A GraphicsLayer that previews the route being traced (line + waypoint dots).
+  const routeDrawRef = useRef<GraphicsLayer | null>(null);
 
   // Re-apply every operational layer's graphics from current data — picks up any
   // placement overrides so a dragged asset (and its followers) move immediately.
@@ -141,7 +199,20 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     void applyGraphics(layers.gates, graphicsFor3d.gates(p.gateOps, p.terminals));
     void applyGraphics(layers.trucks, graphicsFor3d.trucks(p.gateOps, p.terminals));
     void applyGraphics(layers.congestion, graphicsFor3d.congestion(p.gateOps, p.terminals));
+    void applyGraphics(layers.picks, graphicsFor3d.picks(p.terminals, p.gateOps));
     rebuildAnim();
+  }
+
+  // Redraw the route-trace preview (line + numbered dots) for the route being
+  // drawn, from the placement store's current path. Empty layer when not drawing.
+  function refreshRouteDraw() {
+    const layer = routeDrawRef.current;
+    if (!layer) return;
+    layer.removeAll();
+    const key = drawRouteRef.current;
+    if (!key) return;
+    const path = placementStore.getPath(key) ?? [];
+    for (const g of routeDrawGraphics(path)) layer.add(g);
   }
 
   // Rebuild ONLY the layer(s) affected by a single asset's placement change, so a
@@ -176,6 +247,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
         break;
       default:
         rebuildLayers();
+    }
+    // Move the pick marker with the asset (vessel/crane/gate/yard have markers).
+    if (kind === 'vessel' || kind === 'crane' || kind === 'yard' || kind === 'gate3d') {
+      void applyGraphics(layers.picks, graphicsFor3d.picks(p.terminals, p.gateOps));
     }
   }
 
@@ -281,6 +356,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     clearSelection: () => selectionRef.current?.removeAll(),
     rebuild: rebuildLayers,
     rebuildOne,
+    refreshRouteDraw,
     goToPreset,
     setLighting,
   }), []);
@@ -310,11 +386,13 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       gates: gate3dLayer(p0.gateOps, p0.terminals),
       trucks: truckLayer(p0.gateOps, p0.terminals),
       congestion: congestionLayer(p0.gateOps, p0.terminals),
+      picks: pickLayer(p0.terminals, p0.gateOps),
     };
     layersRef.current = layers;
     // Order matters for readability: channel + congestion + decks under
-    // stacks/cranes/ships (the heatmap is a ground wash, drawn early).
-    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks]);
+    // stacks/cranes/ships (the heatmap is a ground wash, drawn early). The pick
+    // markers go LAST so they sit on top and hitTest picks them first.
+    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks, layers.picks]);
 
     const spotlight = spotlight3dLayer(p0.highlights ?? [], p0.facilities, p0.terminals);
     spotlightRef.current = spotlight;
@@ -323,6 +401,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     const selection = selectionLayer();
     selectionRef.current = selection;
     map.add(selection);
+
+    const routeDraw = routeDrawLayer();
+    routeDrawRef.current = routeDraw;
+    map.add(routeDraw);
 
     // Live-motion layers (moving trucks, shunting rake, crane hoists). These are
     // GraphicsLayers mutated per-frame — NOT part of the in-place-diff data path
@@ -393,33 +475,51 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     //    NOT 3D-mesh hit-testing (which doesn't pick glTF object symbols reliably).
     //  • normal mode → click-to-SELECT: hit-test, resolve the asset id, fly to it.
     const clickHandle = view.on('click', (event) => {
-      if (editingRef.current) {
-        const pkey = movePkeyRef.current;
-        if (!pkey) return; // nothing selected to move — ignore the click
+      // Route-draw mode wins: each click appends a waypoint to the traced route,
+      // and the preview line/dots redraw immediately. This is how the user traces
+      // the truck route along the roads in the satellite imagery.
+      const drawKey = drawRouteRef.current;
+      if (drawKey) {
         event.stopPropagation();
         const mp = event.mapPoint;
         if (mp && typeof mp.longitude === 'number' && typeof mp.latitude === 'number') {
-          const prev = placementStore.get(pkey);
-          placementStore.set(pkey, { lng: mp.longitude, lat: mp.latitude, heading: prev?.heading });
-          rebuildOne(pkey); // instant, targeted — just the placed asset's layer
+          placementStore.appendWaypoint(drawKey, mp.longitude, mp.latitude);
+          refreshRouteDraw();
+          rebuildAnim(); // trucks pick up the new waypoint as it's drawn
           propsRef.current.onPlacementsChanged?.();
         }
         return;
       }
+      if (editingRef.current) {
+        // In edit mode, a click on an ASSET selects it (opens its editor); a click
+        // on empty GROUND places the currently-selected asset there. So hit-test
+        // first, and only fall through to click-to-place when nothing was hit.
+        event.stopPropagation();
+        const mp = event.mapPoint;
+        void view.hitTest(event).then((res) => {
+          const hit = resolveHit(res);
+          if (hit?.id) {
+            // Clicked an asset → select it + open its editor (don't move).
+            focusAsset(hit.id);
+            propsRef.current.onSelect?.(hit.id, hit.pkey);
+            return;
+          }
+          // Empty ground → place the selected asset at the clicked point.
+          const pkey = movePkeyRef.current;
+          if (pkey && mp && typeof mp.longitude === 'number' && typeof mp.latitude === 'number') {
+            const prev = placementStore.get(pkey);
+            placementStore.set(pkey, { lng: mp.longitude, lat: mp.latitude, heading: prev?.heading });
+            rebuildOne(pkey);
+            propsRef.current.onPlacementsChanged?.();
+          }
+        });
+        return;
+      }
       void view.hitTest(event).then((res) => {
-        const g = res.results.find((r) => 'graphic' in r)?.graphic as { attributes?: Record<string, unknown> } | undefined;
-        const a = g?.attributes ?? {};
-        const id =
-          (a.terminalId as string) ??
-          (a.gateId as string) ??
-          (a.facilityId as string) ??
-          (a.craneId as string) ??
-          (a.vesselId as string) ??
-          (a.blockId as string) ??
-          null;
-        if (id) {
-          focusAsset(id);
-          propsRef.current.onSelect?.(id);
+        const hit = resolveHit(res);
+        if (hit?.id) {
+          focusAsset(hit.id);
+          propsRef.current.onSelect?.(hit.id, hit.pkey);
         }
       });
     });
@@ -427,13 +527,20 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     // Cursor affordance: a crosshair while editing (click-to-place), pointer over
     // pickable assets otherwise.
     const moveHandle = view.on('pointer-move', (event) => {
-      if (editingRef.current) {
-        if (containerRef.current) containerRef.current.style.cursor = movePkeyRef.current ? 'crosshair' : 'not-allowed';
+      if (drawRouteRef.current) {
+        if (containerRef.current) containerRef.current.style.cursor = 'crosshair';
         return;
       }
+      // In edit mode: pointer over an asset (you'd SELECT it), crosshair over
+      // ground when something is selected (you'd PLACE it), else default.
       void view.hitTest(event).then((res) => {
-        const hit = res.results.some((r) => 'graphic' in r);
-        if (containerRef.current) containerRef.current.style.cursor = hit ? 'pointer' : 'default';
+        const overAsset = !!resolveHit(res);
+        if (!containerRef.current) return;
+        if (editingRef.current) {
+          containerRef.current.style.cursor = overAsset ? 'pointer' : movePkeyRef.current ? 'crosshair' : 'default';
+        } else {
+          containerRef.current.style.cursor = overAsset ? 'pointer' : 'default';
+        }
       });
     });
 
@@ -452,9 +559,17 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       layersRef.current = null;
       spotlightRef.current = null;
       selectionRef.current = null;
+      routeDrawRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refresh the route-trace preview whenever draw mode / the drawn route changes
+  // (enter draw mode → show existing waypoints; leave → clear the preview).
+  useEffect(() => {
+    refreshRouteDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.drawRouteKey]);
 
   // ---- data: edit each 3D layer's features IN PLACE on change ----
   useEffect(() => {
@@ -468,10 +583,19 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     void applyGraphics(layers.gates, graphicsFor3d.gates(props.gateOps, props.terminals));
     void applyGraphics(layers.trucks, graphicsFor3d.trucks(props.gateOps, props.terminals));
     void applyGraphics(layers.congestion, graphicsFor3d.congestion(props.gateOps, props.terminals));
+    void applyGraphics(layers.picks, graphicsFor3d.picks(props.terminals, props.gateOps));
     // Feed live queue lengths to the moving trucks so they visibly slow at a
     // congested gate (the animation reads congestion, it doesn't fake it).
     animRef.current?.setGateQueues(props.gateOps);
   }, [props.terminals, props.pendency, props.gateOps]);
+
+  // Pick markers stay hit-testable at all times (a hidden layer isn't picked), but
+  // they're bumped to a clearly-visible opacity in Edit mode and kept very faint
+  // otherwise, so clicking an asset works everywhere without cluttering the view.
+  useEffect(() => {
+    const layers = layersRef.current;
+    if (layers) layers.picks.opacity = props.editing ? 1 : 0.12;
+  }, [props.editing]);
 
   // ---- spotlight halos edited in place + camera reframes on spotlight change ----
   useEffect(() => {

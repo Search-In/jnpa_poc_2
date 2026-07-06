@@ -32,16 +32,22 @@ interface Props {
   /** Human label for the header. */
   label?: string | null;
   terminals: Terminal[];
-  /** Called after each change with the affected pkey → rebuild just that asset. */
+  /** Called after each move/rotate with the affected pkey → rebuild that asset. */
   onChange: (pkey: string) => void;
+  /** Whether route-draw mode is active for THIS asset (truckroute:* only). */
+  drawing?: boolean;
+  /** Toggle route-draw mode on/off for this route. */
+  onToggleDraw?: () => void;
+  /** Called after Undo/Clear edits the route path → refresh preview + trucks. */
+  onRouteEdited?: () => void;
 }
 
 const STEPS = [1, 5, 25] as const;
 
-export function AssetTransform({ pkey, label, terminals, onChange }: Props) {
+export function AssetTransform({ pkey, label, terminals, onChange, drawing, onToggleDraw, onRouteEdited }: Props) {
   const [step, setStep] = useState<number>(5);
   // Subscribe to the placement store so the read-out + slider reflect every
-  // change the instant it lands (including live slider drags).
+  // change the instant it lands (including live slider drags + drawn waypoints).
   useSyncExternalStore(
     (cb) => placementStore.subscribe(cb),
     () => (pkey ? JSON.stringify(placementStore.get(pkey) ?? null) : ''),
@@ -50,6 +56,8 @@ export function AssetTransform({ pkey, label, terminals, onChange }: Props) {
   const pos = pkeyPosition(pkey, terminals);
   if (!pos) return null;
   const heading = Math.round(pkeyHeading(pkey));
+  const isRoute = pkey.startsWith('truckroute:');
+  const wpCount = placementStore.getPath(pkey)?.length ?? 0;
 
   // apply: write to the store (→ export data, synchronously) THEN rebuild just
   // this asset on the map — no full-scene rebuild, so the change shows instantly.
@@ -83,6 +91,38 @@ export function AssetTransform({ pkey, label, terminals, onChange }: Props) {
     >
       <div style={{ fontWeight: 600, marginBottom: 2 }}>Move &amp; rotate</div>
       <div style={{ color: tokens.color.textMuted, marginBottom: 10 }}>{label ?? pkey}</div>
+
+      {/* Route drawing (truck routes only): trace the road on the imagery so the
+          trucks follow the real path instead of the synthetic loop. */}
+      {isRoute && (
+        <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${tokens.color.border}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span>Road route</span>
+            <span style={{ color: tokens.color.textMuted }}>{wpCount} pts</span>
+          </div>
+          <CalciteButton
+            width="full"
+            scale="s"
+            appearance={drawing ? 'solid' : 'outline'}
+            kind={drawing ? 'brand' : 'neutral'}
+            iconStart={drawing ? 'check' : 'pencil'}
+            onClick={onToggleDraw}
+          >
+            {drawing ? 'Click roads to add points — Done' : wpCount ? 'Edit road route' : 'Draw road route'}
+          </CalciteButton>
+          {drawing && (
+            <div style={{ fontSize: 11, color: tokens.color.textMuted, margin: '6px 0' }}>
+              Click along the road in order; the loop closes back to the first point.
+            </div>
+          )}
+          {wpCount > 0 && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <CalciteButton scale="s" appearance="outline" iconStart="undo" onClick={() => { placementStore.undoWaypoint(pkey); onRouteEdited?.(); }}>Undo pt</CalciteButton>
+              <CalciteButton scale="s" appearance="outline" kind="danger" iconStart="trash" onClick={() => { placementStore.clearPath(pkey); onRouteEdited?.(); }}>Clear</CalciteButton>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Direction / heading */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
