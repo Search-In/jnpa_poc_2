@@ -617,17 +617,21 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
     elevationInfo: { mode: 'on-the-ground' },
     renderer: {
       type: 'simple',
-      // Composite gate-house that matches the reference cockpit's gate: a wide flat
-      // CANOPY roof spanning the lanes on two support POSTS, with a red BOOM barrier
-      // model across the road. Multiple symbolLayers render as one gate; the boom
-      // GLB makes it read instantly as a checkpoint. Canopy is queue-coloured below.
+      // Composite toll-naka gate-house, modelled on the reference cockpit's gate:
+      // a realistic gate gantry/booth (gate-realistic.glb) as the toll-naka structure,
+      // a wide flat CANOPY roof spanning the lanes, and a red BOOM barrier model across
+      // the road. Multiple symbolLayers render as one gate at the gate point; together
+      // they read instantly as a toll naka / checkpoint. Canopy stays queue-coloured.
       symbol: {
         type: 'point-3d',
         symbolLayers: [
-          // Red boom barrier across the road (real GLB) — the recognisable gate.
-          { type: 'object', resource: { href: `${MODELS}/gate-boom.glb` }, heading: QUAY_HEADING + 90, height: 6, anchor: 'bottom' },
-          // Canopy roof slab over the lanes.
-          { type: 'object', resource: { primitive: 'cube' }, width: 34, depth: 9, height: 1.6, material: { color: [230, 233, 235] }, anchor: 'bottom', heading: QUAY_HEADING },
+          // Indian toll-naka model (procedurally generated, own geometry): a green arched
+          // canopy spanning the road on blue pillars, with grey booths and red boom
+          // barriers baked in, so trucks pass UNDER the canopy. Sized to ~35 m span.
+          { type: 'object', resource: { href: `${MODELS}/toll-naka.glb` }, heading: QUAY_HEADING, height: 9, anchor: 'bottom' },
+          // Compact queue-coloured apron pad (the live congestion cue — the ONLY layer the
+          // queueLength colour visualVariable tints; the toll-naka GLB keeps its own colours).
+          { type: 'object', resource: { primitive: 'cube' }, width: 12, depth: 6, height: 0.5, material: { color: [230, 233, 235] }, anchor: 'bottom', heading: QUAY_HEADING },
         ],
       },
       visualVariables: [
@@ -682,7 +686,10 @@ function truckGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] 
           attributes: {
             objectId: stableOid(`truck:${g.gateId}:${k}`),
             gateId: g.gateId,
-            model: k % 3 === 0 ? 'pickup-realistic' : 'truck-realistic',
+            // Two vehicle types: the heavy truck (truck-realistic) is unchanged; only the
+            // former light-pickup slot now uses the blue container truck. Queue
+            // count/positions/behaviour unchanged.
+            model: k % 3 === 0 ? 'container-truck' : 'truck-realistic',
           },
         }),
       );
@@ -709,7 +716,7 @@ export function truckLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
       field: 'model',
       uniqueValueInfos: [
         { model: 'truck-realistic', h: 8 },
-        { model: 'pickup-realistic', h: 5 },
+        { model: 'container-truck', h: 8 },
       ].map(({ model, h }) => ({
         value: model,
         symbol: {

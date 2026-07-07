@@ -235,7 +235,10 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
     const gateId = t.gates[0] ?? `${t.terminalId}-G1`;
     const perTerminal = 2;
     for (let k = 0; k < perTerminal; k++) {
-      const model = (ti + k) % 3 === 0 ? 'pickup-realistic' : 'truck-realistic';
+      // Two vehicle types: the heavy truck (truck-realistic) is unchanged; only the former
+      // light-pickup slot now uses the blue container truck. Spawn/route/heading/speed/scale
+      // logic below is unchanged.
+      const model: string = (ti + k) % 3 === 0 ? 'container-truck' : 'truck-realistic';
       const start = at(wps, 0);
       const g = new Graphic({
         geometry: new Point({ longitude: start[0], latitude: start[1], spatialReference: { wkid: 4326 } }),
