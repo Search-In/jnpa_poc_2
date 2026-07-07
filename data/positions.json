@@ -3,24 +3,24 @@
   "note": "JNPA 3D asset placements",
   "placements": {
     "vessel:NSICT": {
-      "lng": 72.945013,
-      "lat": 18.959685
+      "lng": 72.947253,
+      "lat": 18.958663
     },
     "vessel:NSIGT": {
-      "lng": 72.940072,
-      "lat": 18.949435
+      "lng": 72.942551,
+      "lat": 18.948392
     },
     "vessel:GTI": {
-      "lng": 72.93816,
-      "lat": 18.946855
+      "lng": 72.93856,
+      "lat": 18.946535
     },
     "vessel:JNPCT": {
-      "lng": 72.948485,
-      "lat": 18.961732
+      "lng": 72.951021,
+      "lat": 18.959901
     },
     "vessel:BMCT": {
-      "lng": 72.933589,
-      "lat": 18.939489
+      "lng": 72.934322,
+      "lat": 18.93907
     },
     "crane:NSICT:1": {
       "lng": 72.949707,
@@ -411,13 +411,13 @@
       "heading": 130
     },
     "truckroute:NSIGT": {
-      "lng": 72.95023,
-      "lat": 18.943421,
+      "lng": 72.94986,
+      "lat": 18.943624,
       "heading": 211
     },
     "truckroute:GTI": {
-      "lng": 72.951011,
-      "lat": 18.938405,
+      "lng": 72.951422,
+      "lat": 18.938179,
       "heading": 225
     },
     "truckroute:BMCT": {
