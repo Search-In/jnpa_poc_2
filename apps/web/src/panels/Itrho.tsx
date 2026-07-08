@@ -12,6 +12,8 @@ import type { ITRHOMovement } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { SourceBadge } from './SourceBadge.js';
 import { useSimDep } from '../sim/useSimStore.js';
 
 const hm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—');
@@ -40,6 +42,9 @@ export function Itrho({ window }: { window: { from: string; to: string } }) {
         const done = legs.filter((m) => m.inTs).length;
         return (
           <>
+            <ImportExportToolbar data={legs} filename="itrho.json" />
+            {/* ITRHO_OUT/IN events are sourced from TOS (see sim cargo.ts). */}
+            <div><SourceBadge source="Terminal API (TOS)" /></div>
             <p style={{ fontSize: 12, color: 'var(--calcite-color-text-3)' }}>
               {legs.length} legs in window · {inTransit} in-transit · {done} completed
             </p>

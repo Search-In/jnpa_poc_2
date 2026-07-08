@@ -317,11 +317,14 @@ export function generateCargo(world: World, opts: CargoGenOptions): CargoDataset
   const RAKE_COUNT = Math.max(8, Math.floor(rakeContainers.length / 60));
   let rakeContainerCursor = 0;
   for (let r = 0; r < RAKE_COUNT; r++) {
-    const sidingId: SidingId = rng.bool(0.5) ? 'T1' : 'T2';
+    // Balance rakes across both sidings AND both directions so T1 and T2 each get
+    // realistic inbound and outbound traffic. Independent 50/50 draws over the
+    // small rake count could otherwise leave a siding with zero inbound trains.
+    const sidingId: SidingId = r % 2 === 0 ? 'T1' : 'T2';
     const terminal = rng.pick(terminals.filter((t) => t.sidings.includes(sidingId)).length
       ? terminals.filter((t) => t.sidings.includes(sidingId))
       : terminals);
-    const direction = rng.bool(0.5) ? 'INBOUND' : 'OUTBOUND';
+    const direction = Math.floor(r / 2) % 2 === 0 ? 'INBOUND' : 'OUTBOUND';
     const arrivalMs = startMs + rng.int(0, windowMs - 12 * HOUR);
     const placementMs = arrivalMs + rng.int(1, 3) * HOUR;
     const removalMs = placementMs + rng.int(2, 5) * HOUR;

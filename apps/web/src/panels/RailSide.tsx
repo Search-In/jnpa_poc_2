@@ -18,6 +18,8 @@ import type { RailSideDTO, RakeForecastDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { useSimDep } from '../sim/useSimStore.js';
 
@@ -47,6 +49,9 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
     <Panel heading={t('panel_rail', lang)} state={state} isEmpty={(d) => d.rakes.length === 0}>
       {(rail) => (
         <>
+          <ImportExportToolbar data={rail} filename="rail-side.json" />
+          {/* RAIL_IN/OUT events are sourced from FOIS / CTO (see sim cargo.ts). */}
+          <div><SourceBadge source="FOIS" /></div>
           <CalciteSegmentedControl
             onCalciteSegmentedControlChange={(e) => setSiding((e.target as unknown as { value: SidingId }).value)}
           >
@@ -93,23 +98,27 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
           <CalciteTable caption={`Rakes on ${siding}`} style={{ marginTop: 8 }}>
             <CalciteTableRow slot="table-header">
               <CalciteTableHeader heading="Rake" />
+              <CalciteTableHeader heading="Train" />
               <CalciteTableHeader heading="CTO" />
               <CalciteTableHeader heading="Dir" />
               <CalciteTableHeader heading="Arrival" />
               <CalciteTableHeader heading="Placement" />
               <CalciteTableHeader heading="Removal" />
               <CalciteTableHeader heading="TAT" />
+              <CalciteTableHeader heading="Wagons" />
               <CalciteTableHeader heading="Mixed" />
             </CalciteTableRow>
             {rail.rakes.slice(0, 20).map((r) => (
               <CalciteTableRow key={r.rakeId}>
                 <CalciteTableCell>{r.rakeId}</CalciteTableCell>
+                <CalciteTableCell>{r.trainNo}</CalciteTableCell>
                 <CalciteTableCell>{r.ctoOperator}</CalciteTableCell>
                 <CalciteTableCell>{r.direction === 'INBOUND' ? '⬇ IN' : '⬆ OUT'}</CalciteTableCell>
                 <CalciteTableCell>{new Date(r.arrivalTs).toLocaleString()}</CalciteTableCell>
                 <CalciteTableCell>{r.placementTs ? new Date(r.placementTs).toLocaleTimeString() : '—'}</CalciteTableCell>
                 <CalciteTableCell>{r.removalTs ? new Date(r.removalTs).toLocaleTimeString() : '—'}</CalciteTableCell>
                 <CalciteTableCell>{hrs(r.arrivalTs, r.departureTs)}</CalciteTableCell>
+                <CalciteTableCell>{r.wagonCount}</CalciteTableCell>
                 <CalciteTableCell>
                   {r.mixedFlag ? <CalciteChip kind="brand" value="mixed">mixed</CalciteChip> : '—'}
                 </CalciteTableCell>

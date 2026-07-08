@@ -7,6 +7,8 @@ import type { ScanEvent } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
@@ -21,7 +23,11 @@ export function ScanQueue() {
   return (
     <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(scans) => (
-        <CalciteTable caption="scan queue">
+        <>
+          <ImportExportToolbar data={scans} filename="scan-queue.json" />
+          {/* CUSTOMS_FLAG / SCAN_* events are sourced from ICEGATE (see sim cargo.ts). */}
+          <div><SourceBadge source="ICEGATE" /></div>
+          <CalciteTable caption="scan queue">
           <CalciteTableRow slot="table-header">
             <CalciteTableHeader heading="Container" />
             <CalciteTableHeader heading="Flagged by" />
@@ -40,7 +46,8 @@ export function ScanQueue() {
               </CalciteTableCell>
             </CalciteTableRow>
           ))}
-        </CalciteTable>
+          </CalciteTable>
+        </>
       )}
     </Panel>
   );
