@@ -70,6 +70,24 @@ const TABS = [
   { id: 'methodology', label: 'Methodology' },
 ] as const;
 
+/**
+ * UI-only role → visible dashboard tabs (temporary mapping, pending business
+ * confirmation). PRESENTATION FILTER ONLY — backend RBAC, API authorization and
+ * role-based data scoping are unchanged; hidden tabs simply do not render. To
+ * revert: delete this map and the `visibleTabs`/`canSeeTab` usages below.
+ */
+const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
+  DTCCC_ADMIN: TABS.map((tb) => tb.id), // full access
+  JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
+  JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
+  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'notifications', 'methodology'],
+  CUSTOMS: ['movements', 'scan', 'pendency', 'notifications', 'scenarios', 'methodology'],
+  CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
+  ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'notifications', 'methodology'],
+  CFS_OPERATOR: ['movements', 'gate', 'pendency', 'notifications', 'methodology'],
+  SHIPPING_LINE: ['movements', 'empty', 'notifications', 'methodology'],
+};
+
 export function Dashboard() {
   const { adapter, role, setRole, lang, setLang, authReady } = useApp();
   // Live-data simulator state. `tick` advances while the sim clock runs; keying
@@ -119,6 +137,16 @@ export function Dashboard() {
 
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<string>('movements');
+  // UI-only tab visibility for the current role (see ROLE_TAB_IDS).
+  const canSeeTab = (id: TabId) => ROLE_TAB_IDS[role].includes(id);
+  const visibleTabs = useMemo(() => TABS.filter((tb) => ROLE_TAB_IDS[role].includes(tb.id)), [role]);
+  // If the active tab isn't visible for this role (e.g. after switching role),
+  // fall back to the first visible tab.
+  useEffect(() => {
+    if (!visibleTabs.some((tb) => tb.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id ?? 'movements');
+    }
+  }, [visibleTabs, activeTab]);
   // Anchor-map view mode: flat 2D MapView vs. the new 3D SceneView sea-port.
   const [mapMode, setMapMode] = useState<'2d' | '3d'>('2d');
   // Asset selected in the 3D scene / explorer tree (kept in sync both ways).
@@ -452,7 +480,7 @@ export function Dashboard() {
                 uncontrolled selection back to the first tab. */}
             <CalciteTabs layout="inline" style={{ padding: 12 }}>
               <CalciteTabNav slot="title-group">
-                {TABS.map((tb) => (
+                {visibleTabs.map((tb) => (
                   <CalciteTabTitle
                     key={tb.id}
                     tab={tb.id}
@@ -463,19 +491,21 @@ export function Dashboard() {
                   </CalciteTabTitle>
                 ))}
               </CalciteTabNav>
-              <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>
-              <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>
-              <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>
-              <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>
-              <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>
-              <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>
-              <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>
-              <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>
-              <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>
-              <CalciteTab tab="models" selected={activeTab === 'models'}><div data-tour-tab="models"><ModelCards /></div></CalciteTab>
-              <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health"><HealthCards /></div></CalciteTab>
-              <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>
-              <CalciteTab tab="methodology" selected={activeTab === 'methodology'}><div data-tour-tab="methodology"><MethodologyPanel /></div></CalciteTab>
+              {/* UI-only: each panel renders only when the role may see its tab
+                  (ROLE_TAB_IDS). Data behind each panel is unchanged/role-scoped. */}
+              {canSeeTab('movements') && <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>}
+              {canSeeTab('rail') && <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>}
+              {canSeeTab('itrho') && <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>}
+              {canSeeTab('gate') && <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>}
+              {canSeeTab('pendency') && <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>}
+              {canSeeTab('scan') && <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>}
+              {canSeeTab('empty') && <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>}
+              {canSeeTab('scenarios') && <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>}
+              {canSeeTab('workflows') && <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>}
+              {canSeeTab('models') && <CalciteTab tab="models" selected={activeTab === 'models'}><div data-tour-tab="models"><ModelCards /></div></CalciteTab>}
+              {canSeeTab('health') && <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health"><HealthCards /></div></CalciteTab>}
+              {canSeeTab('notifications') && <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>}
+              {canSeeTab('methodology') && <CalciteTab tab="methodology" selected={activeTab === 'methodology'}><div data-tour-tab="methodology"><MethodologyPanel /></div></CalciteTab>}
             </CalciteTabs>
           </div>
         )}

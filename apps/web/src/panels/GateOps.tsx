@@ -12,6 +12,8 @@ import type { GateOpsDTO, GateQueueForecastDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
@@ -29,6 +31,9 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
     <Panel heading={t('panel_gate', lang)} state={ops} isEmpty={(d) => d.length === 0}>
       {(rows) => (
         <>
+          <ImportExportToolbar data={rows} filename="gate-ops.json" />
+          {/* GATE_IN/OUT events are sourced from TOS (see sim cargo.ts). */}
+          <div><SourceBadge source="Terminal API (TOS)" /></div>
           <CalciteTable caption="gate ops">
             <CalciteTableRow slot="table-header">
               <CalciteTableHeader heading="Gate" />

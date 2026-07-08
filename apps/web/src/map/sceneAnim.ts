@@ -97,7 +97,7 @@ function objectSymbol(href: string, height: number, heading: number, tiltable?: 
   } as never;
 }
 
-/** A simple coloured primitive (used for the crane hoist box + tug wake). */
+/** A simple coloured primitive (used for the crane hoist box). */
 function boxSymbol(color: number[], w: number, d: number, h: number, heading = 0) {
   return {
     type: 'point-3d',
@@ -170,8 +170,7 @@ interface Rake {
 
 interface Hoist {
   g: Graphic;
-  base: LngLat; // crane ground position
-  seaward: LngLat; // a point ~40 m seaward (trolley out over the ship)
+  base: LngLat; // crane ground position (box stays vertically aligned here)
   phase: number; // animation phase offset
 }
 
@@ -315,19 +314,28 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   }
 
   // ---- crane hoists: one working box per operating terminal's mid crane ----
+  // The box MUST sit at its crane. Cranes are placed from their positions.json
+  // overrides (crane:<T>:<i>), which can be ~1 km from the terminal geom; the box
+  // was previously anchored to the geom, so it floated in mid-air detached from
+  // any crane. Anchor it to the mid crane's real position so it rides up over a
+  // crane (the intended STS animation), not alone over the terminal.
   const hoists: Hoist[] = [];
   opTerminals.forEach((t, ti) => {
     const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
-    const alongM = 0; // mid-quay crane
-    const base = place(lng, lat, alongM, 30); // crane stands 30 m inland of water
-    const seaward = place(lng, lat, alongM, -140); // trolley reaches out over the ship
+    const quay = t.quayLengthM ?? 800;
+    const nCranes = Math.max(3, Math.min(9, Math.round(quay / 200)));
+    const midI = Math.floor(nCranes / 2);
+    const midAlongM = ((midI + 0.5) / nCranes - 0.5) * quay;
+    const ov = placementStore.get(`crane:${t.terminalId}:${midI}`);
+    // Mid-crane position: its placement override if dragged, else the derived spot.
+    const base: LngLat = ov ? [ov.lng, ov.lat] : place(lng, lat, midAlongM, 30);
     const g = new Graphic({
       geometry: new Point({ longitude: base[0], latitude: base[1], spatialReference: { wkid: 4326 } }),
       symbol: boxSymbol(craneBoxColor(ti), 12, 5, 5, QUAY_BEARING_DEG),
       attributes: { kind: 'hoist-live' },
     });
     craneLayer.add(g);
-    hoists.push({ g, base, seaward, phase: ti * 1.3 });
+    hoists.push({ g, base, phase: ti * 1.3 });
   });
 
   // -----------------------------------------------------------------------
@@ -337,6 +345,13 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   }
 
   function tick(t: number, dt: number) {
+    // Rail-rake track footprint (the static line the train shunts along). Any
+    // yard truck rendering within ~40 m of it is clipped below, so the fleet
+    // never draws on/beside the train. Only NSIGT/GTI routes ever reach it; every
+    // other terminal's trucks (403 m–1.2 km away) are never affected.
+    const rk0 = rakes[0];
+    const railA = rk0?.origin;
+    const railB = rk0 ? advance(rk0.origin, (rk0.axisDeg * Math.PI) / 180, 220) : null;
     // --- trucks ---
     for (const tr of trucks) {
       const a = at(tr.wps, tr.seg);
@@ -361,6 +376,9 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
       tr.g.geometry = new Point({ longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } });
       const heading = (headingBetween(cur, nxt) + TRUCK_MODEL_OFFSET) % 360;
       tr.g.symbol = objectSymbol(`${MODELS}/${tr.model}.glb`, tr.model === 'pickup-realistic' ? 5 : 8, heading);
+      // Clip: hide this truck only while it would render over the train track,
+      // so no yard truck appears on/beside the rake. Trucks elsewhere are shown.
+      tr.g.visible = !(railA != null && railB != null && distPtSegM([lng, lat], railA, railB) < 40);
     }
 
     // --- rail rake: run in ~220 m, dwell, run out (slow shunting pace) ---
@@ -392,14 +410,12 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
       }
     }
 
-    // --- crane hoists: trolley out over the ship + hoist up/down ---
+    // --- crane hoists: box rides straight up/down, locked to its crane's XY so
+    //     it stays vertically aligned with the crane and never detaches. ---
     for (const h of hoists) {
       const p = (t * 0.6 + h.phase) % (Math.PI * 2);
-      const trolley = Math.sin(p) * 0.5 + 0.5; // 0 (over apron) .. 1 (over ship)
-      const lng = h.base[0] + (h.seaward[0] - h.base[0]) * trolley;
-      const lat = h.base[1] + (h.seaward[1] - h.base[1]) * trolley;
       const lift = 8 + (Math.cos(p * 2) * 0.5 + 0.5) * 26; // box rides up and down
-      h.g.geometry = new Point({ longitude: lng, latitude: lat, z: lift, spatialReference: { wkid: 4326 } });
+      h.g.geometry = new Point({ longitude: h.base[0], latitude: h.base[1], z: lift, spatialReference: { wkid: 4326 } });
     }
 
     // --- tug: ping-pong along its patrol leg, facing its travel direction ---
@@ -446,6 +462,17 @@ function advance(p: LngLat, brg: number, d: number): LngLat {
   return [p[0] + e / M_PER_DEG_LON, p[1] + n / M_PER_DEG_LAT];
 }
 
+/** Distance (m) from point `p` to segment `a`–`b`, in the local metric frame. */
+function distPtSegM(p: LngLat, a: LngLat, b: LngLat): number {
+  const ax = (a[0] - p[0]) * M_PER_DEG_LON_C, ay = (a[1] - p[1]) * M_PER_DEG_LAT_C;
+  const bx = (b[0] - p[0]) * M_PER_DEG_LON_C, by = (b[1] - p[1]) * M_PER_DEG_LAT_C;
+  const dx = bx - ax, dy = by - ay;
+  const L = dx * dx + dy * dy || 1;
+  const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L));
+  return Math.hypot(ax + u * dx, ay + u * dy);
+}
+
+/** Hoist-box colour per terminal, cycling the flow-stream palette. */
 function craneBoxColor(i: number): number[] {
   const palette = [
     tokens.flow.IMPORT,
@@ -460,3 +487,4 @@ function hexToRgb(hex: string): number[] {
   const h = hex.replace('#', '');
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 0.95];
 }
+

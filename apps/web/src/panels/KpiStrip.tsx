@@ -26,7 +26,7 @@ function KpiCard({ kpi }: { kpi: KpiResult }) {
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
         <span style={{ color, fontWeight: 600 }}>
-          {arrow} {Math.abs(kpi.improvementPct)}% {t('improvement', lang)}
+          {arrow} {Math.abs(kpi.improvementPct)}%{positive ? ` ${t('improvement', lang)}` : ''}
         </span>
       </div>
       <div slot="footer-start" style={{ fontSize: 11, color: tokens.color.textMuted }}>
