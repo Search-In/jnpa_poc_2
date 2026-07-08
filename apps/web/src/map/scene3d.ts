@@ -617,17 +617,21 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
     elevationInfo: { mode: 'on-the-ground' },
     renderer: {
       type: 'simple',
-      // Composite gate-house that matches the reference cockpit's gate: a wide flat
-      // CANOPY roof spanning the lanes on two support POSTS, with a red BOOM barrier
-      // model across the road. Multiple symbolLayers render as one gate; the boom
-      // GLB makes it read instantly as a checkpoint. Canopy is queue-coloured below.
+      // Composite toll-naka gate-house, modelled on the reference cockpit's gate:
+      // a realistic gate gantry/booth (gate-realistic.glb) as the toll-naka structure,
+      // a wide flat CANOPY roof spanning the lanes, and a red BOOM barrier model across
+      // the road. Multiple symbolLayers render as one gate at the gate point; together
+      // they read instantly as a toll naka / checkpoint. Canopy stays queue-coloured.
       symbol: {
         type: 'point-3d',
         symbolLayers: [
-          // Red boom barrier across the road (real GLB) — the recognisable gate.
-          { type: 'object', resource: { href: `${MODELS}/gate-boom.glb` }, heading: QUAY_HEADING + 90, height: 6, anchor: 'bottom' },
-          // Canopy roof slab over the lanes.
-          { type: 'object', resource: { primitive: 'cube' }, width: 34, depth: 9, height: 1.6, material: { color: [230, 233, 235] }, anchor: 'bottom', heading: QUAY_HEADING },
+          // Indian toll-naka model (procedurally generated, own geometry): a green arched
+          // canopy spanning the road on blue pillars, with grey booths and red boom
+          // barriers baked in, so trucks pass UNDER the canopy. Sized to ~35 m span.
+          { type: 'object', resource: { href: `${MODELS}/toll-naka.glb` }, heading: QUAY_HEADING, height: 9, anchor: 'bottom' },
+          // Compact queue-coloured apron pad (the live congestion cue — the ONLY layer the
+          // queueLength colour visualVariable tints; the toll-naka GLB keeps its own colours).
+          { type: 'object', resource: { primitive: 'cube' }, width: 12, depth: 6, height: 0.5, material: { color: [230, 233, 235] }, anchor: 'bottom', heading: QUAY_HEADING },
         ],
       },
       visualVariables: [
@@ -682,7 +686,10 @@ function truckGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] 
           attributes: {
             objectId: stableOid(`truck:${g.gateId}:${k}`),
             gateId: g.gateId,
-            model: k % 3 === 0 ? 'pickup-realistic' : 'truck-realistic',
+            // Two vehicle types: the heavy truck (truck-realistic) is unchanged; only the
+            // former light-pickup slot now uses the blue container truck. Queue
+            // count/positions/behaviour unchanged.
+            model: k % 3 === 0 ? 'container-truck' : 'truck-realistic',
           },
         }),
       );
@@ -709,7 +716,7 @@ export function truckLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
       field: 'model',
       uniqueValueInfos: [
         { model: 'truck-realistic', h: 8 },
-        { model: 'pickup-realistic', h: 5 },
+        { model: 'container-truck', h: 8 },
       ].map(({ model, h }) => ({
         value: model,
         symbol: {
@@ -940,6 +947,50 @@ export function selectionLayer(): GraphicsLayer {
   return new GraphicsLayer({ title: '3D · Selection', listMode: 'hide' });
 }
 
+// ---- route-draw preview (tracing a truck route on the imagery) --------------
+
+/** A GraphicsLayer for previewing the route being traced (line + waypoint dots). */
+export function routeDrawLayer(): GraphicsLayer {
+  return new GraphicsLayer({ title: '3D · Route (draw)', listMode: 'hide', elevationInfo: { mode: 'on-the-ground' } });
+}
+
+/**
+ * Build the preview graphics for a traced route: a bright dashed polyline through
+ * the clicked waypoints (closed back to the start, since trucks loop it) plus a
+ * numbered dot at each waypoint. Rebuilt on every click while drawing.
+ */
+export function routeDrawGraphics(path: [number, number][]): Graphic[] {
+  if (path.length === 0) return [];
+  const out: Graphic[] = [];
+  if (path.length >= 2) {
+    const ring = [...path, path[0]!]; // close the loop like the trucks drive it
+    out.push(
+      new Graphic({
+        geometry: new Polyline({ paths: [ring.map((p) => [p[0], p[1]])], spatialReference: { wkid: 4326 } }),
+        symbol: {
+          type: 'line-3d',
+          symbolLayers: [{ type: 'line', size: 3, material: { color: tokens.color.brand }, cap: 'round', pattern: { type: 'style', style: 'dash' } }],
+        } as never,
+      }),
+    );
+  }
+  path.forEach(([lng, lat], i) => {
+    out.push(
+      new Graphic({
+        geometry: new Point({ longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } }),
+        symbol: {
+          type: 'point-3d',
+          symbolLayers: [
+            { type: 'object', resource: { primitive: 'cylinder' }, width: 10, depth: 10, height: 3, material: { color: i === 0 ? [46, 187, 106, 1] : [26, 115, 194, 0.95] }, anchor: 'bottom' },
+          ],
+        } as never,
+        attributes: { seq: i + 1 },
+      }),
+    );
+  });
+  return out;
+}
+
 export function selectionRing(lng: number, lat: number): Graphic {
   return new Graphic({
     geometry: new Point({ longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } }),
@@ -950,6 +1001,86 @@ export function selectionRing(lng: number, lat: number): Graphic {
       ],
     } as never,
   });
+}
+
+// ---- pick markers (reliable click targets over the glTF models) ------------
+// ArcGIS SceneView.hitTest() is unreliable at picking glTF `object` symbols, so
+// each movable asset also gets a small flat pick MARKER sitting exactly on it,
+// carrying the same {id, pkey} attributes resolveHit() reads. hitTest picks these
+// simple markers reliably → clicking an asset opens its editor. They're drawn on
+// a thin translucent disc (subtle but visible enough to aim at) above the models.
+
+/** One pick marker per movable asset (vessel / crane / gate / yard block). */
+function pickMarkerGraphics(terminals: Terminal[], gateOps: GateOpsDTO[]): Graphic[] {
+  const out: Graphic[] = [];
+  const push = (pkey: string, id: string, extra: Record<string, unknown> = {}) => {
+    const pos = pkeyPosition(pkey, terminals);
+    if (!pos) return;
+    out.push(
+      new Graphic({
+        geometry: new Point({ longitude: pos[0], latitude: pos[1], spatialReference: { wkid: 4326 } }),
+        attributes: { objectId: stableOid(`pick:${pkey}`), pkey, pickId: id, ...extra },
+      }),
+    );
+  };
+  for (const t of terminals) {
+    if (t.geom.type !== 'Point') continue;
+    // Vessel (operating terminals only, matching vesselGraphics).
+    if (t.status === 'OPERATING') push(`vessel:${t.terminalId}`, t.terminalId);
+    // STS cranes — same count rule as craneGraphics (quay/200, clamp 3..9).
+    const quay = t.quayLengthM ?? 800;
+    const nCranes = Math.max(3, Math.min(9, Math.round(quay / 200)));
+    for (let i = 0; i < nCranes; i++) push(`crane:${t.terminalId}:${i}`, `${t.terminalId}-STS${i + 1}`);
+    // Yard blocks (3×4 = 12).
+    for (let i = 0; i < YARD_ROWS * YARD_COLS; i++) push(`yard:${t.terminalId}:${i}`, `${t.terminalId}-Y${i + 1}`);
+  }
+  // Gates (from live gateOps so only real gates get a marker).
+  for (const g of gateOps) push(`gate3d:${g.gateId}`, g.gateId);
+  return out;
+}
+
+/** A hit-testable marker layer sitting above the models (see pickMarkerGraphics). */
+export function pickLayer(terminals: Terminal[], gateOps: GateOpsDTO[]): FeatureLayer {
+  return new FeatureLayer({
+    title: '3D · Pick targets',
+    // Keep it out of the LayerList — it's an interaction aid, not a data layer.
+    listMode: 'hide',
+    // Faint by default (bumped to full opacity in Edit mode by PortScene); stays
+    // hit-testable either way so clicking an asset opens its editor everywhere.
+    opacity: 0.12,
+    source: pickMarkerGraphics(terminals, gateOps) as unknown as Graphic[],
+    objectIdField: 'objectId',
+    geometryType: 'point',
+    spatialReference: { wkid: 4326 },
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'pkey', type: 'string' },
+      { name: 'pickId', type: 'string' },
+    ],
+    // Sit slightly above ground so the disc floats over the models and is easy to
+    // click; screen-size so it's a consistent, comfortable target at any zoom.
+    elevationInfo: { mode: 'relative-to-ground', offset: 2 },
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'point-3d',
+        symbolLayers: [
+          {
+            type: 'icon',
+            resource: { primitive: 'circle' },
+            size: 14,
+            material: { color: [26, 115, 194, 0.25] },
+            outline: { color: [26, 115, 194, 0.9], size: 1.5 },
+          },
+        ],
+      },
+    } as never,
+    popupEnabled: false,
+  });
+}
+
+function pickGraphicsFor(terminals: Terminal[], gateOps: GateOpsDTO[]): Graphic[] {
+  return pickMarkerGraphics(terminals, gateOps);
 }
 
 // ---- per-kind builders for in-place diffing --------------------------------
@@ -963,4 +1094,5 @@ export const graphicsFor3d = {
   trucks: truckGraphics,
   channel: channelGraphics,
   congestion: congestionGraphics,
+  picks: pickGraphicsFor,
 };

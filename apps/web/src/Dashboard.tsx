@@ -130,6 +130,8 @@ export function Dashboard() {
   const [editingPlacement, setEditingPlacement] = useState(false);
   // 3D cinematic controls: current lighting (day/dusk) for the day/dusk toggle.
   const [lighting, setLighting] = useState<Lighting>('day');
+  // Route-draw mode: the `truckroute:<T>` key currently being traced (null = off).
+  const [drawRouteKey, setDrawRouteKey] = useState<string | null>(null);
   // Seeded from data/positions.json, so Export/Reset are live from first render.
   const [placementCount, setPlacementCount] = useState(() => placementStore.count());
 
@@ -227,7 +229,7 @@ export function Dashboard() {
                   appearance={editingPlacement ? 'solid' : 'outline'}
                   kind={editingPlacement ? 'brand' : 'neutral'}
                   iconStart={editingPlacement ? 'check' : 'pencil'}
-                  onClick={() => setEditingPlacement((v) => !v)}
+                  onClick={() => setEditingPlacement((v) => { if (v) setDrawRouteKey(null); return !v; })}
                   title="Pick an asset in the left tree, then click the map to place it"
                 >
                   {editingPlacement
@@ -320,6 +322,8 @@ export function Dashboard() {
                       onSelect={(id, pkey) => {
                         setSelectedAsset(id);
                         setSelectedPkey(pkey ?? null);
+                        // Leaving the route we were drawing → exit draw mode.
+                        setDrawRouteKey((k) => (k && k !== pkey ? null : k));
                         sceneRef.current?.focus(id);
                       }}
                     />
@@ -332,9 +336,19 @@ export function Dashboard() {
                       gateOps={gateOps.data}
                       pendency={pendency.data}
                       highlights={highlights}
-                      onSelect={setSelectedAsset}
+                      onSelect={(id, pkey) => {
+                        // Clicking an asset on the map selects it AND, if it's a
+                        // movable asset, opens its transform editor (turns Edit on)
+                        // — so you can edit directly without the side tree.
+                        setSelectedAsset(id);
+                        setSelectedPkey(pkey ?? null);
+                        if (pkey) setEditingPlacement(true);
+                        // Leaving the route we were drawing → exit draw mode.
+                        setDrawRouteKey((k) => (k && k !== pkey ? null : k));
+                      }}
                       editing={editingPlacement}
                       movePkey={selectedPkey}
+                      drawRouteKey={drawRouteKey}
                       onPlacementsChanged={() => setPlacementCount(placementStore.count())}
                     />
                     {/* Move & rotate controls — in Edit mode, once an asset is
@@ -345,6 +359,16 @@ export function Dashboard() {
                         pkey={selectedPkey}
                         label={selectedAsset}
                         terminals={terminals.data}
+                        drawing={drawRouteKey === selectedPkey}
+                        onToggleDraw={() =>
+                          setDrawRouteKey((k) => (k === selectedPkey ? null : selectedPkey))
+                        }
+                        onRouteEdited={() => {
+                          // Undo/Clear changed the path → redraw preview + trucks.
+                          sceneRef.current?.refreshRouteDraw();
+                          sceneRef.current?.rebuildOne(selectedPkey);
+                          setPlacementCount(placementStore.count());
+                        }}
                         onChange={(pkey) => {
                           // Rebuild ONLY this asset's layer → the move/rotate shows
                           // on the map instantly; the store write already happened

@@ -143,8 +143,16 @@ Replace `gateTransactionTime`.
   (documented in `services/ai/_common/features.py`) until real history is loadable
   via the connectors.
 
-## 8. Scenario deltas — ASSUMED (demo targets)
+## 8. Scenario deltas — ASSUMED (demo targets, twin-vs-shadow A/B)
 
-- CGO-3 ITRHO optimisation targets an **8–12% empty-rake-TAT reduction** (bid
-  §8.4.5). The scenario uses a deterministic seed so the delta is repeatable; the
-  percentage is a modelled target, not a measured result.
+- The six §8.2 scenarios (S1–S6) each run **twin-vs-shadow A/B**: a do-nothing
+  "shadow" continuation (arm A) and an intervention "twin" arm (B), both derived
+  from the **same** base KPI snapshot. Every delta shown is B-vs-A. In offline
+  mock mode A and B are two **named, documented deterministic parameter sets**
+  (per-KPI multiplicative assumptions listed in `AB_DESIGNS`,
+  `packages/data/src/scenarios-mock.ts`), not one magic factor — so each number is
+  a modelled outcome under stated assumptions, never a claimed JNPA baseline.
+- Example (S3, mixed-train optimisation, bid §8.2): the batched ITRHO split plan
+  targets an inter-terminal-transfer-TAT improvement over the naive sequential
+  split. The scenario is deterministic (fixed factors, seeded), so the delta is
+  repeatable; the figure is a modelled target, not a measured result.

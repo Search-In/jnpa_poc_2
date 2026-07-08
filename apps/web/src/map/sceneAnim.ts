@@ -140,6 +140,8 @@ interface TruckMover {
   speed: number; // m/s (scaled)
   gateId: string; // which gate this truck's speed keys off (queue → slower)
   model: string;
+  /** True when following a user-DRAWN path (skip the synthetic gate-slowdown). */
+  custom: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,17 +217,28 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   const trucks: TruckMover[] = [];
   const opTerminals = terminals.filter((t) => t.geom.type === 'Point' && t.status === 'OPERATING');
   opTerminals.forEach((t, ti) => {
-    // Route anchor = the gate-approach point; a `truckroute:<T>` override drags +
-    // rotates the whole loop about it, and the trucks keep circulating the moved
-    // route. Default heading is the quay bearing (route runs along the quay).
-    const [tlng, tlat] = (t.geom as { coordinates: [number, number] }).coordinates;
-    const routeAnchor = place(tlng, tlat, 0, 620);
-    const tr = anchorTransform(`truckroute:${t.terminalId}`, routeAnchor, QUAY_BEARING_DEG);
-    const wps = truckRoute(t).map((p) => applyAnchor(p, tr));
+    // Preferred: a user-TRACED route polyline (waypoints clicked on the satellite
+    // imagery) — the trucks follow the real roads exactly. Falls back to the
+    // synthetic quay-frame loop (anchor-drag + rotate) when no path is drawn.
+    const rkey = `truckroute:${t.terminalId}`;
+    const drawn = placementStore.getPath(rkey);
+    let wps: LngLat[];
+    const usingDrawn = !!(drawn && drawn.length >= 2);
+    if (usingDrawn) {
+      wps = drawn!.map((p) => [p[0], p[1]] as LngLat);
+    } else {
+      const [tlng, tlat] = (t.geom as { coordinates: [number, number] }).coordinates;
+      const routeAnchor = place(tlng, tlat, 0, 620);
+      const tr = anchorTransform(rkey, routeAnchor, QUAY_BEARING_DEG);
+      wps = truckRoute(t).map((p) => applyAnchor(p, tr));
+    }
     const gateId = t.gates[0] ?? `${t.terminalId}-G1`;
     const perTerminal = 2;
     for (let k = 0; k < perTerminal; k++) {
-      const model = (ti + k) % 3 === 0 ? 'pickup-realistic' : 'truck-realistic';
+      // Two vehicle types: the heavy truck (truck-realistic) is unchanged; only the former
+      // light-pickup slot now uses the blue container truck. Spawn/route/heading/speed/scale
+      // logic below is unchanged.
+      const model: string = (ti + k) % 3 === 0 ? 'container-truck' : 'truck-realistic';
       const start = at(wps, 0);
       const g = new Graphic({
         geometry: new Point({ longitude: start[0], latitude: start[1], spatialReference: { wkid: 4326 } }),
@@ -242,6 +255,7 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
         speed: 5 + ((ti + k) % 3) * 0.8,
         gateId,
         model,
+        custom: usingDrawn,
       });
     }
   });
@@ -329,7 +343,9 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
       const b = at(tr.wps, tr.seg + 1);
       const segLenM = metresBetween(a, b) || 1;
       // Trucks slow near the gate when its queue is long (congestion is visible).
-      const nearGate = tr.seg === 1 || tr.seg === 2 || tr.seg === 6;
+      // Only for the synthetic route, whose seg indices 1/2/6 are the gate area;
+      // a user-drawn path has arbitrary seg indices, so skip the slowdown there.
+      const nearGate = !tr.custom && (tr.seg === 1 || tr.seg === 2 || tr.seg === 6);
       const q = gateQueue.get(tr.gateId) ?? 6;
       const speed = nearGate ? tr.speed * Math.max(0.25, 6 / Math.max(6, q)) : tr.speed;
       // metres this frame = speed(m/s) × dt(s); ÷ segment length → fraction of seg.

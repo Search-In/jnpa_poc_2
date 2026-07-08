@@ -25,6 +25,14 @@ export interface Placement {
   lat: number;
   /** Optional heading (deg) if the asset was rotated. */
   heading?: number;
+  /**
+   * Optional ROUTE POLYLINE — an ordered list of [lng, lat] waypoints traced on
+   * the satellite imagery (only meaningful for `truckroute:*` keys). When set,
+   * the trucks follow this exact path instead of the synthetic quay-frame loop,
+   * so they stay on the real roads. `lng`/`lat` above remain the route anchor
+   * (first waypoint) for focus/selection.
+   */
+  path?: [number, number][];
 }
 
 /** The full export shape (positions.json). */
@@ -72,8 +80,47 @@ class PlacementStore {
       lng: round(p.lng),
       lat: round(p.lat),
       ...(p.heading != null ? { heading: Math.round(p.heading) } : {}),
+      ...(p.path && p.path.length ? { path: p.path.map((pt) => [round(pt[0]), round(pt[1])] as [number, number]) } : {}),
     });
     this.emit();
+  }
+
+  // ---- route polyline editing (truckroute:* keys) --------------------------
+
+  /** Current traced route waypoints for a key, or undefined if none drawn. */
+  getPath(key: string): [number, number][] | undefined {
+    return this.map.get(key)?.path;
+  }
+
+  /**
+   * Append a waypoint to a route's traced path. The FIRST waypoint also becomes
+   * the route anchor (lng/lat) so focus/selection point at the route start.
+   */
+  appendWaypoint(key: string, lng: number, lat: number): void {
+    const cur = this.map.get(key);
+    const path = [...(cur?.path ?? []), [lng, lat] as [number, number]];
+    const anchor = path[0]!;
+    this.set(key, { lng: anchor[0], lat: anchor[1], ...(cur?.heading != null ? { heading: cur.heading } : {}), path });
+  }
+
+  /** Remove the last waypoint (undo one click). Drops the path if it empties. */
+  undoWaypoint(key: string): void {
+    const cur = this.map.get(key);
+    if (!cur?.path?.length) return;
+    const path = cur.path.slice(0, -1);
+    if (path.length === 0) {
+      // No waypoints left → keep the anchor but drop the path entirely.
+      this.set(key, { lng: cur.lng, lat: cur.lat, ...(cur.heading != null ? { heading: cur.heading } : {}) });
+    } else {
+      this.set(key, { lng: path[0]![0], lat: path[0]![1], ...(cur.heading != null ? { heading: cur.heading } : {}), path });
+    }
+  }
+
+  /** Clear a route's traced path (reverts trucks to the synthetic loop). */
+  clearPath(key: string): void {
+    const cur = this.map.get(key);
+    if (!cur) return;
+    this.set(key, { lng: cur.lng, lat: cur.lat, ...(cur.heading != null ? { heading: cur.heading } : {}) });
   }
 
   /**
@@ -172,7 +219,18 @@ function readPlacementFile(file: unknown): Record<string, Placement> {
   if (!f || f.version !== 1 || typeof f.placements !== 'object' || f.placements == null) return out;
   for (const [k, v] of Object.entries(f.placements)) {
     if (v && typeof v.lng === 'number' && typeof v.lat === 'number') {
-      out[k] = { lng: round(v.lng), lat: round(v.lat), ...(v.heading != null ? { heading: round(v.heading) } : {}) };
+      // Preserve a route polyline if present (array of [lng,lat] pairs).
+      const path = Array.isArray((v as Placement).path)
+        ? (v as Placement).path!.filter(
+            (pt): pt is [number, number] => Array.isArray(pt) && typeof pt[0] === 'number' && typeof pt[1] === 'number',
+          ).map((pt) => [round(pt[0]), round(pt[1])] as [number, number])
+        : undefined;
+      out[k] = {
+        lng: round(v.lng),
+        lat: round(v.lat),
+        ...(v.heading != null ? { heading: round(v.heading) } : {}),
+        ...(path && path.length ? { path } : {}),
+      };
     }
   }
   return out;
