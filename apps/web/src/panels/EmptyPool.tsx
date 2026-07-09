@@ -17,9 +17,10 @@ import { useSimDep } from '../sim/useSimStore.js';
 export function EmptyPool() {
   const { adapter, lang } = useApp();
   const simDep = useSimDep();
-  // Shipping-document filter (same pattern as Container Movements). Kept
-  // non-destructive: EmptyPoolDTO exposes no ShippingDoc.type field yet, so this
-  // does not filter rows until that backend data is available.
+  // Shipping-document filter (same pattern as Container Movements). Scopes the
+  // rows to lines whose predominant shipping-document type is the selected one
+  // (IAL/EAL/D-O), using the per-line classification the adapter derives from the
+  // shipping documents.
   const [docFilter, setDocFilter] = useState<string>('ALL');
   const state = useAsync<EmptyPoolDTO>(() => adapter.getEmptyPool(), [adapter, simDep]);
   return (
@@ -46,7 +47,9 @@ export function EmptyPool() {
             <CalciteTableHeader heading="Demand" />
             <CalciteTableHeader heading="Balance" />
           </CalciteTableRow>
-          {dto.pools.map((p) => {
+          {dto.pools
+            .filter((p) => docFilter === 'ALL' || dto.primaryDocByLine?.[p.lineId] === docFilter)
+            .map((p) => {
             const balance = p.availableQty - p.projectedDemandQty;
             return (
               <CalciteTableRow key={`${p.lineId}-${p.depotId}`}>

@@ -12,6 +12,7 @@ import {
   CalciteTableRow,
   CalciteTableCell,
   CalciteChip,
+  CalciteButton,
 } from '@esri/calcite-components-react';
 import type { SidingId } from '@jnpa/schemas';
 import type { RailSideDTO, RakeForecastDTO } from '@jnpa/data';
@@ -31,6 +32,8 @@ const hm = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour:
 export function RailSide({ window }: { window: { from: string; to: string } }) {
   const { adapter, lang } = useApp();
   const [siding, setSiding] = useState<SidingId>('T1');
+  // Rake whose wagon composition is expanded below the table (null = collapsed).
+  const [openRake, setOpenRake] = useState<string | null>(null);
   const simDep = useSimDep();
   const state = useAsync<RailSideDTO>(() => adapter.getRailSide(siding, window), [adapter, siding, window.from, window.to, simDep]);
   // Next-24h forecast: project ETA placement/removal/departure for every rake on
@@ -100,6 +103,7 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
               <CalciteTableHeader heading="Rake" />
               <CalciteTableHeader heading="Train" />
               <CalciteTableHeader heading="CTO" />
+              <CalciteTableHeader heading="FOIS" />
               <CalciteTableHeader heading="Dir" />
               <CalciteTableHeader heading="Arrival" />
               <CalciteTableHeader heading="Placement" />
@@ -113,18 +117,59 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
                 <CalciteTableCell>{r.rakeId}</CalciteTableCell>
                 <CalciteTableCell>{r.trainNo}</CalciteTableCell>
                 <CalciteTableCell>{r.ctoOperator}</CalciteTableCell>
+                <CalciteTableCell>{r.foisRef}</CalciteTableCell>
                 <CalciteTableCell>{r.direction === 'INBOUND' ? '⬇ IN' : '⬆ OUT'}</CalciteTableCell>
                 <CalciteTableCell>{new Date(r.arrivalTs).toLocaleString()}</CalciteTableCell>
                 <CalciteTableCell>{r.placementTs ? new Date(r.placementTs).toLocaleTimeString() : '—'}</CalciteTableCell>
                 <CalciteTableCell>{r.removalTs ? new Date(r.removalTs).toLocaleTimeString() : '—'}</CalciteTableCell>
                 <CalciteTableCell>{hrs(r.arrivalTs, r.departureTs)}</CalciteTableCell>
-                <CalciteTableCell>{r.wagonCount}</CalciteTableCell>
+                <CalciteTableCell>
+                  <CalciteButton
+                    scale="s"
+                    appearance="transparent"
+                    kind="brand"
+                    iconStart="table"
+                    title="View wagon composition"
+                    onClick={() => setOpenRake((cur) => (cur === r.rakeId ? null : r.rakeId))}
+                  >
+                    {r.wagonCount}
+                  </CalciteButton>
+                </CalciteTableCell>
                 <CalciteTableCell>
                   {r.mixedFlag ? <CalciteChip kind="brand" value="mixed">mixed</CalciteChip> : '—'}
                 </CalciteTableCell>
               </CalciteTableRow>
             ))}
           </CalciteTable>
+
+          {/* Wagon composition for the expanded rake (position → containers),
+              from the DTO's wagons list (FOIS wagon composition, UC2-R5). */}
+          {openRake && (() => {
+            const ws = rail.wagons.filter((w) => w.rakeId === openRake).slice().sort((a, b) => a.position - b.position);
+            return (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--calcite-color-text-2)', marginBottom: 4 }}>
+                  Wagon composition · {openRake} · {ws.length} wagons
+                </div>
+                <CalciteTable caption={`Wagons of ${openRake}`} scale="s">
+                  <CalciteTableRow slot="table-header">
+                    <CalciteTableHeader heading="Pos" />
+                    <CalciteTableHeader heading="Wagon" />
+                    <CalciteTableHeader heading="Containers" />
+                    <CalciteTableHeader heading="Container nos" />
+                  </CalciteTableRow>
+                  {ws.map((w) => (
+                    <CalciteTableRow key={w.wagonId}>
+                      <CalciteTableCell>{w.position}</CalciteTableCell>
+                      <CalciteTableCell>{w.wagonId}</CalciteTableCell>
+                      <CalciteTableCell>{w.containerNos.length}</CalciteTableCell>
+                      <CalciteTableCell>{w.containerNos.join(', ') || '—'}</CalciteTableCell>
+                    </CalciteTableRow>
+                  ))}
+                </CalciteTable>
+              </div>
+            );
+          })()}
           <p style={{ fontSize: 12, color: 'var(--calcite-color-text-3)' }}>
             {rail.rakes.length} rakes · {rail.wagons.length} wagons on {siding} in window.
           </p>

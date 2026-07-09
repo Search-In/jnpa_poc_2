@@ -14,6 +14,7 @@ import type {
   Rake,
   Role,
   ScanEvent,
+  ShippingDocType,
   SidingId,
   Wagon,
   Facility,
@@ -93,6 +94,12 @@ export interface RakeForecastDTO {
 
 export interface EmptyPoolDTO {
   pools: EmptyPool[];
+  /**
+   * The predominant shipping-document type (IAL/EAL/DO) per line code, derived
+   * from the shipping documents on the same lineId. Drives the panel's doc-type
+   * filter so it scopes empty-pool rows to the lines led by that document type.
+   */
+  primaryDocByLine?: Record<string, ShippingDocType>;
 }
 
 export interface ScenarioParams {

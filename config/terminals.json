@@ -14,7 +14,7 @@
       "status": "OPERATING",
       "quayLengthM": 600,
       "capacityTEU": 1500000,
-      "geom": { "type": "Point", "coordinates": [72.9435, 18.9490] },
+      "geom": { "type": "Point", "coordinates": [72.9505, 18.9527] },
       "gates": ["NSICT-G1", "NSICT-G2"],
       "sidingMapping": { "rail": ["T1"] },
       "tos": { "mode": "EDIFACT", "ediVersion": "D21A" }
@@ -26,7 +26,8 @@
       "status": "OPERATING",
       "quayLengthM": 330,
       "capacityTEU": 1200000,
-      "geom": { "type": "Point", "coordinates": [72.9425, 18.9470] },
+      "$geomNote": "Terminal-marker position only (2D marker + 2D gates + hidden 3D deck derive from this; 3D asset placements in data/positions.json are absolute and unaffected). Fine-tuned to the JNPA satellite reference: NSIGT is the NE-most (and northern-most) container berth.",
+      "geom": { "type": "Point", "coordinates": [72.9525, 18.9550] },
       "gates": ["NSIGT-G1"],
       "sidingMapping": { "rail": ["T1"] },
       "tos": { "mode": "REST" }
@@ -38,7 +39,7 @@
       "status": "OPERATING",
       "quayLengthM": 712,
       "capacityTEU": 2000000,
-      "geom": { "type": "Point", "coordinates": [72.9412, 18.9445] },
+      "geom": { "type": "Point", "coordinates": [72.9444, 18.9457] },
       "gates": ["GTI-G1", "GTI-G2"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "X12" }
@@ -51,7 +52,7 @@
       "quayLengthM": 2000,
       "capacityTEU": 4800000,
       "$geomNote": "BMCT sits SW of the older NSICT/NSIGT/GTI cluster — this separation is the raison d'être of ITRHO (inter-terminal road transfer). Geom aligned to BMCT's 3D asset placements (data/positions.json: vessel/cranes/yards/gates) so the berth-line sits on the developed terminal instead of in open water; the previous [72.9120, 18.9100] fell in the channel. Approximate for demonstration; replace with surveyed polygon before production.",
-      "geom": { "type": "Point", "coordinates": [72.9375, 18.9400] },
+      "geom": { "type": "Point", "coordinates": [72.9383, 18.9386] },
       "gates": ["BMCT-G1", "BMCT-G2", "BMCT-G3"],
       "sidingMapping": { "rail": ["T2"] },
       "tos": { "mode": "REST" }
@@ -63,7 +64,8 @@
       "status": "OPERATING",
       "quayLengthM": 680,
       "capacityTEU": 1200000,
-      "geom": { "type": "Point", "coordinates": [72.9455, 18.9520] },
+      "$geomNote": "Terminal-marker position only (2D marker + 2D gates + hidden 3D deck derive from this; 3D asset placements in data/positions.json are absolute and unaffected). Fine-tuned to the JNPA satellite reference: NSFT/JNPCT is third along the wharf, between GTI and NSICT.",
+      "geom": { "type": "Point", "coordinates": [72.9479, 18.9497] },
       "gates": ["JNPCT-G1", "JNPCT-G2"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "FILE_DROP" }

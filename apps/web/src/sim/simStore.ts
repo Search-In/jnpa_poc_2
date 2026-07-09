@@ -46,6 +46,8 @@ export type Faction = 'gates' | 'rail' | 'pendency' | 'movements' | 'scan' | 'em
 export interface GateOverride {
   queueLength?: number;
   avgTxnTimeMin?: number;
+  /** Open gate lanes — the dynamic-lane-assignment state, driven by scenarios. */
+  openLanes?: number;
 }
 
 /** Per-facility pendency override (absolute container count). */

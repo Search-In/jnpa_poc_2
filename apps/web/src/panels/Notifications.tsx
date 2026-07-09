@@ -9,19 +9,26 @@ import type { Notification } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { SourceBadge } from './SourceBadge.js';
+import { useCustomsFlags } from '../state/customsFlagStore.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 
 export function Notifications() {
   const { adapter, role, lang } = useApp();
   const state = useAsync<Notification[]>(() => adapter.getNotifications(role), [adapter, role]);
+  // Manually-raised customs-scan flags (Container Movements tab) shown alongside
+  // the simulator-derived notifications; subscribing keeps the list live.
+  const manualFlags = useCustomsFlags(role);
   const [acked, setAcked] = useState<Set<string>>(new Set());
 
   return (
     <Panel heading={t('panel_notifications', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(notifs) => (
+        <>
+        <div><SourceBadge source="TOS · ICEGATE · e-Seal" /></div>
         <CalciteList label="notifications">
-          {notifs.map((n) => (
+          {[...manualFlags, ...notifs].map((n) => (
             <CalciteListItem
               key={n.notifId}
               label={n.body[lang]}
@@ -51,6 +58,7 @@ export function Notifications() {
             </CalciteListItem>
           ))}
         </CalciteList>
+        </>
       )}
     </Panel>
   );

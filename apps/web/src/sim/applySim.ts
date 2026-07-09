@@ -18,7 +18,8 @@ export function applyGateOps(base: GateOpsDTO[], sim: SimState): GateOpsDTO[] {
       ...g,
       queueLength: o.queueLength ?? g.queueLength,
       avgTxnTimeMin: o.avgTxnTimeMin ?? g.avgTxnTimeMin,
-    };
+      ...(o.openLanes != null ? { openLanes: o.openLanes } : {}),
+    } as GateOpsDTO;
   });
 }
 

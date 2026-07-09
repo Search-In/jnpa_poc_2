@@ -14,6 +14,7 @@ import type {
   Rake,
   Role,
   ScanEvent,
+  ShippingDocType,
   SidingId,
   Terminal,
   ITRHOMovement,
@@ -201,12 +202,40 @@ export class MockAdapter implements DataAdapter {
   }
 
   async getScanQueue(): Promise<ScanEvent[]> {
-    // "queue" = scans not yet ended, plus recently completed
-    return this.sim.dataset.scans;
+    // "queue" = scans not yet ended, plus recently completed. Enrich each row with
+    // the container's e-seal (universal e-seal reader) number + a pre-document-
+    // processing status derived from the existing ESEAL_AFFIX / ESEAL_BREAK events
+    // (sourceSystem 'ESEAL'). No new API — extra fields ride on the ScanEvent row.
+    const { scans, containers, events } = this.sim.dataset;
+    const sealByContainer = new Map(containers.map((c) => [c.containerNo, c.currentSealNo] as const));
+    const affixed = new Set<string>();
+    const broken = new Set<string>();
+    for (const e of events) {
+      if (e.eventType === 'ESEAL_AFFIX') affixed.add(e.containerNo);
+      else if (e.eventType === 'ESEAL_BREAK') broken.add(e.containerNo);
+    }
+    return scans.map((s) => ({
+      ...s,
+      sealNo: sealByContainer.get(s.containerNo),
+      preDoc: broken.has(s.containerNo) ? 'TAMPER' : affixed.has(s.containerNo) ? 'VERIFIED' : 'PENDING',
+    })) as ScanEvent[];
   }
 
   async getEmptyPool(): Promise<EmptyPoolDTO> {
-    return { pools: this.sim.dataset.emptyPools };
+    // Classify each line by its predominant filterable shipping-doc type
+    // (IAL/EAL/DO), joined by lineId, so the panel's doc-type filter scopes rows.
+    const counts: Record<string, Partial<Record<ShippingDocType, number>>> = {};
+    for (const d of this.sim.dataset.shippingDocs) {
+      if (d.type !== 'IAL' && d.type !== 'EAL' && d.type !== 'DO') continue;
+      const c = (counts[d.lineId] ??= {});
+      c[d.type] = (c[d.type] ?? 0) + 1;
+    }
+    const RANK: ShippingDocType[] = ['IAL', 'EAL', 'DO'];
+    const primaryDocByLine: Record<string, ShippingDocType> = {};
+    for (const [line, c] of Object.entries(counts)) {
+      primaryDocByLine[line] = RANK.reduce((best, t) => (c[t] ?? 0) > (c[best] ?? 0) ? t : best, RANK[0]!);
+    }
+    return { pools: this.sim.dataset.emptyPools, primaryDocByLine };
   }
 
   // -- KPIs -----------------------------------------------------------------

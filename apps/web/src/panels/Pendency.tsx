@@ -21,11 +21,14 @@ const sev = (n: number) => (n > 150 ? tokens.congestion.RED : n > 50 ? tokens.co
 /**
  * Yard Planning / Optimization info sections — reuse the existing automation
  * rules (workflowStore) as the step-by-step content. WF-PENDENCY governs
- * yard/CFS dwell planning; WF-REEFER-PLUG is the rule that notifies the
- * 'Yard Planner' role (yard plug allocation + evacuation prioritisation).
+ * yard/CFS dwell planning; WF-RAKE-ETA covers rake-driven siding/yard placement
+ * re-planning (UC2-R5: rake visibility for terminal-operator yard planning);
+ * WF-REEFER-PLUG notifies the 'Yard Planner' role (yard plug allocation +
+ * evacuation prioritisation).
  */
 const YARD_INFO_SECTIONS: Array<{ title: string; ruleId: string }> = [
   { title: 'Yard Planning', ruleId: 'WF-PENDENCY' },
+  { title: 'Rake-Based Siding Planning', ruleId: 'WF-RAKE-ETA' },
   { title: 'Yard Operation Optimization', ruleId: 'WF-REEFER-PLUG' },
 ];
 

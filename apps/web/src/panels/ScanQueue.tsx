@@ -16,6 +16,10 @@ import { useSimDep } from '../sim/useSimStore.js';
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
 
+// Pre-document-processing status colour (from the e-seal reader state).
+const preDocColor = (p?: string) =>
+  p === 'TAMPER' ? tokens.severity.CRIT : p === 'VERIFIED' ? tokens.kpi.better : tokens.severity.WARN;
+
 export function ScanQueue() {
   const { adapter, lang } = useApp();
   const simDep = useSimDep();
@@ -25,11 +29,14 @@ export function ScanQueue() {
       {(scans) => (
         <>
           <ImportExportToolbar data={scans} filename="scan-queue.json" />
-          {/* CUSTOMS_FLAG / SCAN_* events are sourced from ICEGATE (see sim cargo.ts). */}
-          <div><SourceBadge source="ICEGATE" /></div>
+          {/* CUSTOMS_FLAG / SCAN_* events from ICEGATE; e-seal read + pre-doc from
+              the universal e-seal reader (ESEAL events, see sim cargo.ts). */}
+          <div><SourceBadge source="ICEGATE · e-Seal" /></div>
           <CalciteTable caption="scan queue">
           <CalciteTableRow slot="table-header">
             <CalciteTableHeader heading="Container" />
+            <CalciteTableHeader heading="e-Seal" />
+            <CalciteTableHeader heading="Pre-doc" />
             <CalciteTableHeader heading="Flagged by" />
             <CalciteTableHeader heading="Start" />
             <CalciteTableHeader heading="Result" />
@@ -37,6 +44,15 @@ export function ScanQueue() {
           {scans.slice(0, 25).map((s) => (
             <CalciteTableRow key={s.scanId}>
               <CalciteTableCell>{s.containerNo}</CalciteTableCell>
+              <CalciteTableCell>{(s as ScanEvent & { sealNo?: string }).sealNo ?? '—'}</CalciteTableCell>
+              <CalciteTableCell>
+                {(() => {
+                  const pd = (s as ScanEvent & { preDoc?: string }).preDoc ?? '—';
+                  return (
+                    <CalciteChip value={pd} style={{ ['--calcite-chip-text-color' as never]: preDocColor(pd) }}>{pd}</CalciteChip>
+                  );
+                })()}
+              </CalciteTableCell>
               <CalciteTableCell>{s.flaggedBy}</CalciteTableCell>
               <CalciteTableCell>{new Date(s.startTs).toLocaleString()}</CalciteTableCell>
               <CalciteTableCell>

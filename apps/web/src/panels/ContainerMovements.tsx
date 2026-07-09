@@ -17,6 +17,7 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
+import { customsFlagStore } from '../state/customsFlagStore.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
@@ -148,6 +149,7 @@ export function ContainerMovements() {
               <CalciteTableHeader heading="At" />
               <CalciteTableHeader heading="Source" />
               <CalciteTableHeader heading="Events" />
+              <CalciteTableHeader heading="Customs" />
             </CalciteTableRow>
             {moves.slice(0, 50).map((m) => (
               <CalciteTableRow key={m.container.containerNo}>
@@ -176,6 +178,18 @@ export function ContainerMovements() {
                     onClick={() => setSelected(m)}
                   >
                     {m.trail.length}
+                  </CalciteButton>
+                </CalciteTableCell>
+                <CalciteTableCell>
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="danger"
+                    iconStart="flag"
+                    title="Flag this container for a customs scan (raises a notification)"
+                    onClick={() => customsFlagStore.flagForCustoms(m.container.containerNo, m.facilityId)}
+                  >
+                    Flag
                   </CalciteButton>
                 </CalciteTableCell>
               </CalciteTableRow>
