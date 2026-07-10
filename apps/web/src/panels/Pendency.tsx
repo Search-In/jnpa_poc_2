@@ -90,9 +90,9 @@ function YardInfoDrawer({ onClose }: { onClose: () => void }) {
 export function Pendency() {
   const { adapter, lang } = useApp();
   const simDep = useSimDep();
-  // Shipping-document filter (same pattern as Container Movements). Kept
-  // non-destructive: PendencyDTO exposes no ShippingDoc.type field yet, so this
-  // does not filter rows until that backend data is available.
+  // Shipping-document filter (same pattern as Empty Pool). Scopes the rows to
+  // facilities whose predominant shipping-document type is the selected one
+  // (IAL/EAL/D-O), using the per-facility classification the adapter derives.
   const [docFilter, setDocFilter] = useState<string>('ALL');
   // Yard planning & optimization info drawer (ⓘ), mirroring the Container
   // Movements timeline info button.
@@ -104,7 +104,10 @@ export function Pendency() {
       {(rows) => (
         <>
           <ImportExportToolbar data={rows} filename="pendency.json" />
-          <div style={{ marginBottom: 6 }}>
+          {/* Yard-planning action (left) and the data-source note (right) share one
+              aligned row, so the two info indicators are separated and no longer
+              stack/conflict. Derived KPI folded from terminal gate/yard (TOS) events. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '2px 0 10px' }}>
             <CalciteButton
               scale="s"
               appearance="outline"
@@ -114,9 +117,8 @@ export function Pendency() {
             >
               Yard planning info
             </CalciteButton>
+            <SourceBadge source="Terminal API (TOS)" />
           </div>
-          {/* Derived KPI folded from terminal gate/yard (TOS) events (see adapter). */}
-          <div><SourceBadge source="Terminal API (TOS)" /></div>
           <CalciteSelect
             label="Document filter"
             onCalciteSelectChange={(e) => setDocFilter((e.target as unknown as { value: string }).value)}
@@ -133,6 +135,7 @@ export function Pendency() {
             <CalciteTableHeader heading="Pendency" />
           </CalciteTableRow>
           {[...rows]
+            .filter((r) => docFilter === 'ALL' || r.primaryDoc === docFilter)
             .sort((a, b) => b.pendency - a.pendency)
             .map((r) => (
               <CalciteTableRow key={r.facilityId} data-asset={r.facilityId}>

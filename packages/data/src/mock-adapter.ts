@@ -163,6 +163,27 @@ export class MockAdapter implements DataAdapter {
     const kpis = this.computeKpis();
     const pend = kpis.find((k) => k.key === 'containerPendency');
     const byFacility = new Map(pend?.byFacility?.map((b) => [b.facilityId, b.value]) ?? []);
+    // Predominant filterable shipping-doc type (IAL/EAL/DO) per facility — same
+    // predominant-doc logic as getEmptyPool, but joined facility←container←doc so
+    // the panel's doc-type filter can scope rows (EmptyPool joins by lineId).
+    const docByContainer = new Map<string, ShippingDocType>();
+    for (const d of this.sim.dataset.shippingDocs) {
+      if (d.type === 'IAL' || d.type === 'EAL' || d.type === 'DO') {
+        for (const cn of d.containerNos) docByContainer.set(cn, d.type);
+      }
+    }
+    const counts: Record<string, Partial<Record<ShippingDocType, number>>> = {};
+    for (const e of this.sim.dataset.events) {
+      const dt = docByContainer.get(e.containerNo);
+      if (!dt) continue;
+      const c = (counts[e.facilityId] ??= {});
+      c[dt] = (c[dt] ?? 0) + 1;
+    }
+    const RANK: ShippingDocType[] = ['IAL', 'EAL', 'DO'];
+    const primaryDocByFacility: Record<string, ShippingDocType> = {};
+    for (const [fac, c] of Object.entries(counts)) {
+      primaryDocByFacility[fac] = RANK.reduce((best, t) => (c[t] ?? 0) > (c[best] ?? 0) ? t : best, RANK[0]!);
+    }
     return this.sim.world.facilities
       .filter((f) => ['CFS', 'ICD', 'TERMINAL', 'DPD'].includes(f.type))
       .map((f) => ({
@@ -171,6 +192,7 @@ export class MockAdapter implements DataAdapter {
         facilityName: f.name,
         pendency: byFacility.get(f.facilityId) ?? 0,
         geom: f.geom,
+        ...(primaryDocByFacility[f.facilityId] ? { primaryDoc: primaryDocByFacility[f.facilityId] } : {}),
       }));
   }
 

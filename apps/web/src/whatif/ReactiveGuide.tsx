@@ -161,7 +161,14 @@ function SectionHeader({ word, rest }: { word: string; rest: string }) {
   );
 }
 
-export function ReactiveGuide({ onSpotlight }: { onSpotlight?: (assetIds: string[]) => void }) {
+export function ReactiveGuide({
+  onSpotlight,
+  coachCollapsed,
+}: {
+  onSpotlight?: (assetIds: string[]) => void;
+  /** True when the What-If coach-mark is minimised — only then may this panel show. */
+  coachCollapsed?: boolean;
+}) {
   const sim = useSimStore();
   const scenarioId = sim.tour.scenarioId;
 
@@ -174,8 +181,10 @@ export function ReactiveGuide({ onSpotlight }: { onSpotlight?: (assetIds: string
     [scenarioKey],
   );
 
-  // No active scenario (or no causal mapping for it) → render nothing.
-  if (!scenarioId || !model) return null;
+  // No active scenario (or no causal mapping for it) → render nothing. Also hidden
+  // while the What-If coach-mark is expanded (both float and would overlap); it
+  // reappears when the coach is minimised, so the causal guide stays accessible.
+  if (!scenarioId || !model || !coachCollapsed) return null;
 
   if (collapsed) {
     return (

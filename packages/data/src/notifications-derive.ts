@@ -42,7 +42,7 @@ export function buildNotifications(dataset: CargoDataset, _world: World): Notifi
       notif(
         'CUSTOMS_SCANNER_FLAG',
         'WARN',
-        ['CUSTOMS', 'TERMINAL_OPS', 'DTCCC_ADMIN'],
+        ['CUSTOMS', 'TERMINAL_OPS', 'CFS_OPERATOR', 'ICD_OPERATOR', 'DTCCC_ADMIN'],
         {
           en: `Container ${e.containerNo} flagged for customs scan at ${e.facilityId}.`,
           hi: `कंटेनर ${e.containerNo} को ${e.facilityId} पर सीमा शुल्क स्कैन हेतु चिह्नित किया गया।`,
@@ -59,7 +59,7 @@ export function buildNotifications(dataset: CargoDataset, _world: World): Notifi
       notif(
         'DAMAGE_ASSESSMENT',
         'CRIT',
-        ['TERMINAL_OPS', 'SHIPPING_LINE', 'DTCCC_ADMIN'],
+        ['TERMINAL_OPS', 'SHIPPING_LINE', 'CFS_OPERATOR', 'ICD_OPERATOR', 'DTCCC_ADMIN'],
         {
           en: `Damage reported on ${e.containerNo} at ${e.facilityId}. Inspection required.`,
           hi: `${e.facilityId} पर ${e.containerNo} में क्षति की सूचना। निरीक्षण आवश्यक।`,
@@ -76,7 +76,7 @@ export function buildNotifications(dataset: CargoDataset, _world: World): Notifi
       notif(
         'GATE_IN',
         'INFO',
-        ['TERMINAL_OPS', 'DTCCC_ADMIN'],
+        ['TERMINAL_OPS', 'CFS_OPERATOR', 'ICD_OPERATOR', 'CTO_RAIL', 'JNPA_TRAFFIC', 'JNPA_MARINE', 'DTCCC_ADMIN'],
         {
           en: `Gate-in: ${e.containerNo} at ${e.gateId ?? e.facilityId}.`,
           hi: `गेट-इन: ${e.gateId ?? e.facilityId} पर ${e.containerNo}।`,
@@ -91,7 +91,7 @@ export function buildNotifications(dataset: CargoDataset, _world: World): Notifi
       notif(
         'GATE_OUT',
         'INFO',
-        ['TERMINAL_OPS', 'DTCCC_ADMIN'],
+        ['TERMINAL_OPS', 'CFS_OPERATOR', 'ICD_OPERATOR', 'CTO_RAIL', 'JNPA_TRAFFIC', 'JNPA_MARINE', 'DTCCC_ADMIN'],
         {
           en: `Gate-out (CODECO): ${e.containerNo} cleared at ${e.gateId ?? e.facilityId}.`,
           hi: `गेट-आउट (CODECO): ${e.gateId ?? e.facilityId} पर ${e.containerNo} मुक्त।`,
@@ -108,7 +108,7 @@ export function buildNotifications(dataset: CargoDataset, _world: World): Notifi
       notif(
         'SPECIAL_INSTRUCTION',
         'CRIT',
-        ['CUSTOMS', 'TERMINAL_OPS', 'DTCCC_ADMIN'],
+        ['CUSTOMS', 'TERMINAL_OPS', 'CFS_OPERATOR', 'ICD_OPERATOR', 'DTCCC_ADMIN'],
         {
           en: `E-seal break detected on ${e.containerNo}. Hold for inspection.`,
           hi: `${e.containerNo} पर ई-सील टूटना पाया गया। निरीक्षण हेतु रोकें।`,

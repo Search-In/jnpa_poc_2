@@ -149,7 +149,14 @@ function useValueRects(
   return hits;
 }
 
-export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
+export function GuidedTour({
+  onTab,
+  onCollapsedChange,
+}: {
+  onTab: (tab: TabId) => void;
+  /** Reports this coach-mark's minimised state so siblings (Reactive Guide) can react. */
+  onCollapsedChange?: (collapsed: boolean) => void;
+}) {
   const sim = useSimStore();
   const { scenarioId, stepIndex, autoAdvance, stepStartedAt } = sim.tour;
   const script = scenarioId ? getScript(scenarioId) : undefined;
@@ -171,6 +178,9 @@ export function GuidedTour({ onTab }: { onTab: (tab: TabId) => void }) {
 
   // Collapse the card to a compact pill so it never blocks the dashboard.
   const [collapsed, setCollapsed] = useState(false);
+  // Surface the collapsed state so the Reactive Guide can hide while this coach is
+  // expanded and reappear once it is minimised.
+  useEffect(() => { onCollapsedChange?.(collapsed); }, [collapsed, onCollapsedChange]);
 
   // Progress bar for auto-advance — purely visual, resets each step.
   const [progress, setProgress] = useState(0);

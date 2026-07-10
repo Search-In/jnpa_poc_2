@@ -77,6 +77,12 @@ export interface PendencyDTO {
   facilityName: string;
   pendency: number;
   geom: Facility['geom'];
+  /**
+   * Predominant shipping-doc type (IAL/EAL/DO) handled at this facility, derived
+   * from the shipping documents of its containers. Drives the panel's doc-type
+   * filter (the facility analogue of EmptyPoolDTO.primaryDocByLine).
+   */
+  primaryDoc?: ShippingDocType;
 }
 
 export interface RailSideDTO {
