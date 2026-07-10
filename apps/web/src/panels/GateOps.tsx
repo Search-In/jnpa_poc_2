@@ -40,6 +40,7 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
               <CalciteTableHeader heading="Terminal" />
               <CalciteTableHeader heading="Queue" />
               <CalciteTableHeader heading="Avg txn (min)" />
+              <CalciteTableHeader heading="Open lanes" />
             </CalciteTableRow>
             {rows.map((g) => (
               <CalciteTableRow key={g.gateId} data-asset={g.gateId}>
@@ -51,6 +52,7 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
                   </CalciteChip>
                 </CalciteTableCell>
                 <CalciteTableCell>{g.avgTxnTimeMin}</CalciteTableCell>
+                <CalciteTableCell>{(g as GateOpsDTO & { openLanes?: number }).openLanes ?? '—'}</CalciteTableCell>
               </CalciteTableRow>
             ))}
           </CalciteTable>

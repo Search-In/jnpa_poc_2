@@ -216,6 +216,10 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   const trucks: TruckMover[] = [];
   const opTerminals = terminals.filter((t) => t.geom.type === 'Point' && t.status === 'OPERATING');
   opTerminals.forEach((t, ti) => {
+    // Per request: remove NSICT's two route trucks (blue container-truck + yellow
+    // truck) that travel beside the T1 rail rake. Every other terminal's trucks
+    // (and their index `ti`) are unchanged.
+    if (t.terminalId === 'NSICT') return;
     // Preferred: a user-TRACED route polyline (waypoints clicked on the satellite
     // imagery) — the trucks follow the real roads exactly. Falls back to the
     // synthetic quay-frame loop (anchor-drag + rotate) when no path is drawn.
@@ -321,6 +325,9 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   // crane (the intended STS animation), not alone over the terminal.
   const hoists: Hoist[] = [];
   opTerminals.forEach((t, ti) => {
+    // Per request: all crane hoist boxes removed (NSIGT green, GTI purple,
+    // NSICT + JNPCT blue, BMCT orange).
+    if (t.terminalId === 'NSIGT' || t.terminalId === 'GTI' || t.terminalId === 'NSICT' || t.terminalId === 'JNPCT' || t.terminalId === 'BMCT') return;
     const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
     const quay = t.quayLengthM ?? 800;
     const nCranes = Math.max(3, Math.min(9, Math.round(quay / 200)));

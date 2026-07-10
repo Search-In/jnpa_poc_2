@@ -77,11 +77,32 @@ export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
   });
 }
 
+/**
+ * Per-gate offset (deg lng/lat) FROM the gate's own terminal, visually fine-tuned
+ * against the JNPA satellite + Page-57 reference. Each gate is set individually
+ * (not a global formula) and kept as an offset so it stays attached to its
+ * terminal. All gates sit on the landward (ESE) internal road; a terminal's
+ * first gate is ~250 m landward, and its EXTRA gates cluster next to the first
+ * instead of fanning progressively 400–700 m to the south-east.
+ */
+const GATE_OFFSET: Record<string, [number, number]> = {
+  'BMCT-G1': [0.002, -0.001], 'BMCT-G2': [0.0028, -0.0016], 'BMCT-G3': [0.0036, -0.0022],
+  'GTI-G1': [0.002, -0.001], 'GTI-G2': [0.0028, -0.0016],
+  'NSIGT-G1': [0.002, -0.001],
+  'NSICT-G1': [0.002, -0.001], 'NSICT-G2': [0.0028, -0.0016],
+  'JNPCT-G1': [0.002, -0.001], 'JNPCT-G2': [0.0028, -0.0016],
+};
+
 function gateGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
   const gatePos = new Map<string, [number, number]>();
   for (const t of terminals) {
     const c = (t.geom as { coordinates: [number, number] }).coordinates;
-    t.gates.forEach((g, i) => gatePos.set(g, [c[0] + 0.002 * (i + 1), c[1] + 0.001 * (i + 1)]));
+    // Individual landward offset per gate (see GATE_OFFSET), applied to the
+    // gate's terminal so every gate stays attached to it.
+    t.gates.forEach((g) => {
+      const o = GATE_OFFSET[g] ?? [0.002, -0.001];
+      gatePos.set(g, [c[0] + o[0], c[1] + o[1]]);
+    });
   }
   return gateOps
     .filter((g) => gatePos.has(g.gateId))
@@ -209,7 +230,12 @@ export function highlightGraphics(
   for (const t of terminals) {
     const c = (t.geom as { coordinates: [number, number] }).coordinates;
     pos.set(t.terminalId, c);
-    t.gates.forEach((g, i) => pos.set(g, [c[0] + 0.002 * (i + 1), c[1] + 0.001 * (i + 1)]));
+    // Same per-gate offsets as gateGraphics (GATE_OFFSET), so a scenario
+    // spotlight rings the gate marker at its fine-tuned position.
+    t.gates.forEach((g) => {
+      const o = GATE_OFFSET[g] ?? [0.002, -0.001];
+      pos.set(g, [c[0] + o[0], c[1] + o[1]]);
+    });
   }
 
   return assetIds

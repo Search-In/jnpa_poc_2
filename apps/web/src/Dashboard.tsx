@@ -137,6 +137,9 @@ export function Dashboard() {
 
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
   const [activeTab, setActiveTab] = useState<string>('movements');
+  // Whether the What-If coach-mark is minimised — the Reactive Guide only shows
+  // when it is, so the two floating panels never overlap during a scenario.
+  const [coachCollapsed, setCoachCollapsed] = useState(false);
   // UI-only tab visibility for the current role (see ROLE_TAB_IDS).
   const canSeeTab = (id: TabId) => ROLE_TAB_IDS[role].includes(id);
   const visibleTabs = useMemo(() => TABS.filter((tb) => ROLE_TAB_IDS[role].includes(tb.id)), [role]);
@@ -513,11 +516,11 @@ export function Dashboard() {
     </CalciteShell>
     {/* Guided What-If tour overlay — narrates a scenario as it drives the board.
         Switches the active tab per step so the spotlight lands on the right panel. */}
-    <GuidedTour onTab={(tab: TabId) => setActiveTab(tab)} />
+    <GuidedTour onTab={(tab: TabId) => setActiveTab(tab)} onCollapsedChange={setCoachCollapsed} />
     {/* Reactive Guide (§8.1, crit 5) — the causal WHICH/WHERE/HOW/WHY panel that
         rides alongside a running scenario; hovering a WHERE node re-rings its
         geography on the map via setHighlights. */}
-    <ReactiveGuide onSpotlight={(ids) => simStore.setHighlights(ids)} />
+    <ReactiveGuide onSpotlight={(ids) => simStore.setHighlights(ids)} coachCollapsed={coachCollapsed} />
     {/* Integration Simulator Console (§6) — slide-over opened by the DATA_MODE
         chip; injects per-source faults the whole board reacts to. */}
     <IntegrationConsole />

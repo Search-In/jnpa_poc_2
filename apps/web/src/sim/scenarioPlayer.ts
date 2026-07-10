@@ -36,7 +36,7 @@ export interface MetricChange {
 
 /** A patch applied to simStore when a step fires (all optional, additive). */
 export interface StepPatch {
-  gates?: Record<string, { queueLength?: number; avgTxnTimeMin?: number }>;
+  gates?: Record<string, { queueLength?: number; avgTxnTimeMin?: number; openLanes?: number }>;
   pendency?: Record<string, number>;
   rail?: Record<string, { inboundQueue?: number; placed?: number }>;
   movementRate?: number;
@@ -302,7 +302,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           { label: 'Open lanes at NSICT-G1', from: 6, to: 3, tone: 'worse' },
           { label: 'Gate NSICT-G1 queue', from: 6, to: 14, unit: 'trucks', tone: 'worse' },
         ],
-        patch: { gates: { [G_NSICT]: { queueLength: 14, avgTxnTimeMin: 4.6 } } },
+        patch: { gates: { [G_NSICT]: { queueLength: 14, avgTxnTimeMin: 4.6, openLanes: 3 } } },
       },
       {
         title: 'The queue peaks',
@@ -315,7 +315,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           { label: 'Gate NSICT-G1 queue', from: 14, to: 28, unit: 'trucks', tone: 'worse' },
           { label: 'Gate txn time (simulated)', from: 4.6, to: 5.8, unit: 'min', tone: 'worse' },
         ],
-        patch: { gates: { [G_NSICT]: { queueLength: 28, avgTxnTimeMin: 5.8 } } },
+        patch: { gates: { [G_NSICT]: { queueLength: 28, avgTxnTimeMin: 5.8, openLanes: 3 } } },
       },
       {
         title: 'The twin acts: re-assign lanes, throttle releases',
@@ -327,7 +327,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
         metrics: [
           { label: 'Gate NSICT-G1 queue (simulated)', from: 28, to: 16, unit: 'trucks', tone: 'better' },
         ],
-        patch: { gates: { [G_NSICT]: { queueLength: 16, avgTxnTimeMin: 4.9 } } },
+        patch: { gates: { [G_NSICT]: { queueLength: 16, avgTxnTimeMin: 4.9, openLanes: 5 } } },
         action: { kind: 'LANE_ASSIGNMENT', detail: 'Re-assign 2 exit lanes to entry at NSICT-G1 + throttle CPP releases feeding the gate for 4 h' },
       },
       {
@@ -341,7 +341,7 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
           { label: 'Gate txn time (simulated)', from: 5.8, to: 4.3, unit: 'min', tone: 'better' },
           { label: 'Gate NSICT-G1 queue (simulated)', from: 16, to: 9, unit: 'trucks', tone: 'better' },
         ],
-        patch: { gates: { [G_NSICT]: { queueLength: 9, avgTxnTimeMin: 4.3 } } },
+        patch: { gates: { [G_NSICT]: { queueLength: 9, avgTxnTimeMin: 4.3, openLanes: 5 } } },
         action: { kind: 'RECOMMENDATION', detail: 'Simulated: dynamic lane re-assignment + CPP throttling → gate txn time 5.8 → 4.3 min within simulation' },
       },
     ],

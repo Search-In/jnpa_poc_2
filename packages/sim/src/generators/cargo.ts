@@ -348,10 +348,13 @@ export function generateCargo(world: World, opts: CargoGenOptions): CargoDataset
     for (let w = 0; w < wagonCount; w++) {
       const onWagon: string[] = [];
       const k = rng.int(1, 2);
-      for (let c = 0; c < k && rakeContainerCursor < rakeContainers.length; c++) {
+      for (let c = 0; c < k; c++) {
         const cn = rakeContainers[rakeContainerCursor % rakeContainers.length]!.containerNo;
         onWagon.push(cn);
-        assigned.push(cn);
+        // RAIL events (and the mixed-train KPI) use only the real, non-wrapped
+        // assignments — kept identical; the wagon display cycles the pool so that
+        // no wagon (on any rake / siding) is left with an empty container list.
+        if (rakeContainerCursor < rakeContainers.length) assigned.push(cn);
         rakeContainerCursor++;
       }
       wagons.push({ wagonId: simId(rng, 'WG'), rakeId, position: w + 1, containerNos: onWagon });
