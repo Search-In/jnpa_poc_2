@@ -15,6 +15,7 @@ import { RULE_BY_ID } from '../workflow/workflowStore.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
+import { useCargoRefresh } from '../state/cargoRefreshStore.js';
 
 const sev = (n: number) => (n > 150 ? tokens.congestion.RED : n > 50 ? tokens.congestion.AMBER : tokens.congestion.GREEN);
 
@@ -97,7 +98,9 @@ export function Pendency() {
   // Yard planning & optimization info drawer (ⓘ), mirroring the Container
   // Movements timeline info button.
   const [infoOpen, setInfoOpen] = useState(false);
-  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, simDep]);
+  // Refetch after a cargo write (discharge/release may change yard assignment).
+  const cargoRev = useCargoRefresh();
+  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, simDep, cargoRev]);
   return (
     <>
     <Panel heading={t('panel_pendency', lang)} state={state} isEmpty={(d) => d.length === 0}>

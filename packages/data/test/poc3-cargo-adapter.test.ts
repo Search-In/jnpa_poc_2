@@ -95,3 +95,31 @@ describe('Poc3CargoAdapter — re-sources cargo from GET /api/cargo', () => {
     expect(a.mode).toBe('mock');
   });
 });
+
+describe('Poc3CargoAdapter.updateCargo — partial write to the existing cargo resource', () => {
+  it('PATCHes /api/cargo/{id} with only the changed field and maps the response', async () => {
+    const discharged: CargoRecord = { ...RECORD, yard_block: 'B-07' };
+    const fetchImpl = vi.fn(async () => ok(discharged));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const dto = await a.updateCargo('maeu 6123458', { yard_block: 'B-07' });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain('/api/cargo/MAEU6123458');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({ yard_block: 'B-07' });
+    expect(dto.cargo?.yard_block).toBe('B-07'); // mapped via the shared cargo mapper
+  });
+
+  it('falls back to PUT on the same resource when PATCH returns 405', async () => {
+    const released: CargoRecord = { ...RECORD, is_released: true };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 405, statusText: 'Method Not Allowed', json: async () => ({}) })
+      .mockResolvedValueOnce(ok(released));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const dto = await a.updateCargo('MAEU6123458', { is_released: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect((fetchImpl.mock.calls[0]![1] as RequestInit).method).toBe('PATCH');
+    expect((fetchImpl.mock.calls[1]![1] as RequestInit).method).toBe('PUT');
+    expect(dto.container.status).toBe('GATE_OUT'); // released → GATE_OUT
+  });
+});

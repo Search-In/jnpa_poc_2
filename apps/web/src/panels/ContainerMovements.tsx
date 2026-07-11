@@ -24,6 +24,7 @@ import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
+import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
@@ -163,14 +164,151 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
   );
 }
 
+/**
+ * Vessel Discharge modal — assigns a yard block to a live POC-3 cargo record via
+ * the existing Poc3CargoAdapter write (`PATCH /api/cargo/{id} { yard_block }`).
+ * Reuses the app's role="dialog" overlay pattern (see TimelineDrawer) + CalciteNotice
+ * feedback. Yard options are the distinct yard blocks already in the live cargo —
+ * no hardcoded yard names. On success it bumps cargoRefreshStore so Movement +
+ * Yard/Pendency refetch through the existing adapter flow.
+ */
+function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[]; onClose: () => void }) {
+  const { adapter } = useApp();
+  // Live POC-3 cargo records eligible for discharge (present + not yet released).
+  const options = useMemo(() => moves.filter((m) => m.cargo && !m.cargo.is_released), [moves]);
+  // Yard blocks already in use across the live cargo = the existing yard data.
+  const yards = useMemo(
+    () => Array.from(new Set(moves.map((m) => m.cargo?.yard_block).filter((y): y is string => !!y))).sort(),
+    [moves],
+  );
+  const [containerNo, setContainerNo] = useState<string>(options[0]?.container.containerNo ?? '');
+  const [yard, setYard] = useState<string>(yards[0] ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const selected = options.find((m) => m.container.containerNo === containerNo) ?? options[0];
+  const rec = selected?.cargo;
+
+  const confirm = async () => {
+    if (!adapter.updateCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
+    if (!selected || !yard) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Existing Poc3CargoAdapter → PATCH /api/cargo/{id} { yard_block } → POC-3.
+      await adapter.updateCargo(selected.container.containerNo, { yard_block: yard });
+      cargoRefreshStore.bump(); // refetch Movement + Yard/Pendency via the existing flow
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
+      <div
+        role="dialog"
+        aria-label="Vessel discharge"
+        style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: 'min(440px, 96vw)', maxHeight: '90vh', background: tokens.color.bgPanel,
+          border: `1px solid ${tokens.color.border}`, borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101, display: 'flex', flexDirection: 'column',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff', borderRadius: '12px 12px 0 0' }}>
+          <CalciteIcon icon="export" scale="s" />
+          <strong style={{ fontSize: 14 }}>Vessel Discharge</strong>
+          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
+            <CalciteIcon icon="x" scale="s" />
+          </button>
+        </div>
+
+        <div style={{ padding: '12px 14px', overflowY: 'auto' }}>
+          {options.length === 0 ? (
+            <CalciteNotice open kind="info" icon="information" scale="s">
+              <div slot="title">No cargo awaiting discharge</div>
+              <div slot="message">Every live cargo record is already released.</div>
+            </CalciteNotice>
+          ) : done ? (
+            <CalciteNotice open kind="success" icon="check-circle" scale="s">
+              <div slot="title">Discharge recorded</div>
+              <div slot="message">{selected?.container.containerNo} assigned to yard {yard}.</div>
+            </CalciteNotice>
+          ) : (
+            <>
+              <label style={{ fontSize: 12, color: tokens.color.textMuted }}>Container</label>
+              <CalciteSelect label="Container" onCalciteSelectChange={(e) => setContainerNo((e.target as unknown as { value: string }).value)}>
+                {options.map((m) => (
+                  <CalciteOption key={m.container.containerNo} value={m.container.containerNo} selected={m.container.containerNo === selected?.container.containerNo}>
+                    {m.container.containerNo}
+                  </CalciteOption>
+                ))}
+              </CalciteSelect>
+
+              {/* Read-only context from the selected POC-3 cargo record. */}
+              <div style={{ fontSize: 12, color: tokens.color.textMuted, margin: '8px 0 10px', lineHeight: 1.7 }}>
+                <div>Vessel: <strong style={{ color: tokens.color.text }}>{rec?.vessel_name ?? '—'}</strong></div>
+                <div>Customs: <strong style={{ color: tokens.color.text }}>{rec?.customs_status ?? '—'}</strong></div>
+                <div>Current yard: <strong style={{ color: tokens.color.text }}>{rec?.yard_block ?? '—'}</strong></div>
+                <div>ETA: <strong style={{ color: tokens.color.text }}>{rec?.eta ? new Date(rec.eta).toLocaleString() : '—'}</strong></div>
+              </div>
+
+              <label style={{ fontSize: 12, color: tokens.color.textMuted }}>Assign yard block</label>
+              {yards.length === 0 ? (
+                <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
+                  <div slot="message">No yard blocks available from the current cargo data.</div>
+                </CalciteNotice>
+              ) : (
+                <CalciteSelect label="Yard block" onCalciteSelectChange={(e) => setYard((e.target as unknown as { value: string }).value)}>
+                  {yards.map((y) => (
+                    <CalciteOption key={y} value={y} selected={y === yard}>{y}</CalciteOption>
+                  ))}
+                </CalciteSelect>
+              )}
+
+              {error && (
+                <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
+                  <div slot="title">Discharge failed</div>
+                  <div slot="message">{error}</div>
+                </CalciteNotice>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
+          {done ? (
+            <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
+          ) : (
+            <>
+              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy}>Cancel</CalciteButton>
+              <CalciteButton scale="s" iconStart="export" loading={busy} disabled={options.length === 0 || !yard || busy} onClick={confirm}>
+                Confirm discharge
+              </CalciteButton>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function ContainerMovements() {
   const { adapter, role, lang } = useApp();
   const [stream, setStream] = useState<OriginStream | 'ALL'>('ALL');
   // Container whose lifecycle timeline is open in the slide-over (null = closed).
   const [selected, setSelected] = useState<ContainerMovementDTO | null>(null);
+  // Vessel Discharge modal open state.
+  const [dischargeOpen, setDischargeOpen] = useState(false);
+  // Bumped after any cargo write → this list refetches from the Cargo API.
+  const cargoRev = useCargoRefresh();
   const state = useAsync<ContainerMovementDTO[]>(
     () => adapter.getContainerMovements({ role, ...(stream !== 'ALL' ? { originStream: stream } : {}) }),
-    [adapter, role, stream],
+    [adapter, role, stream, cargoRev],
   );
   // Reflect the manual customs flag (customsFlagStore) so the Flag action visibly
   // transitions the container's Customs cell to a "Flagged" state. Raw snapshot
@@ -183,25 +321,34 @@ export function ContainerMovements() {
     <Panel heading={t('panel_movements', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(moves) => (
         <>
-          <ImportExportToolbar
-            data={moves.map((m) => ({
-              'Container No': m.container.containerNo,
-              'ISO Type': m.container.isoTypeCode,
-              'Size (ft)': m.container.sizeFt,
-              'Laden': m.container.laden ? 'Laden' : 'Empty',
-              'Gross Weight (kg)': m.container.grossWtKg,
-              'Cargo Type': m.container.cargoType,
-              'Line Owner': m.container.lineOwner,
-              'Seal No': m.container.currentSealNo,
-              'Current Status': m.container.status,
-              'Origin Stream': m.container.originStream,
-              'Facility': m.facilityId,
-              'Last Event': m.lastEventType,
-              'Last Event Time': m.lastEventTs,
-              'Workflow': m.trail.map((e) => e.eventType).join(' → '),
-            }))}
-            filename="container-movements.csv"
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            {/* Vessel Discharge — beside the existing Import / Export buttons. */}
+            <CalciteButton scale="s" iconStart="export" onClick={() => setDischargeOpen(true)}>
+              Vessel Discharge
+            </CalciteButton>
+            <div style={{ marginLeft: 'auto' }}>
+              <ImportExportToolbar
+                data={moves.map((m) => ({
+                  'Container No': m.container.containerNo,
+                  'ISO Type': m.container.isoTypeCode,
+                  'Size (ft)': m.container.sizeFt,
+                  'Laden': m.container.laden ? 'Laden' : 'Empty',
+                  'Gross Weight (kg)': m.container.grossWtKg,
+                  'Cargo Type': m.container.cargoType,
+                  'Line Owner': m.container.lineOwner,
+                  'Seal No': m.container.currentSealNo,
+                  'Current Status': m.container.status,
+                  'Origin Stream': m.container.originStream,
+                  'Facility': m.facilityId,
+                  'Last Event': m.lastEventType,
+                  'Last Event Time': m.lastEventTs,
+                  'Workflow': m.trail.map((e) => e.eventType).join(' → '),
+                }))}
+                filename="container-movements.csv"
+              />
+            </div>
+          </div>
+          {dischargeOpen && <VesselDischargeModal moves={moves} onClose={() => setDischargeOpen(false)} />}
           {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
               FOIS rail, e-Seal). See the per-record Source column + timeline. */}
           <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>

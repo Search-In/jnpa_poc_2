@@ -109,6 +109,42 @@ export class Poc3CargoAdapter implements DataAdapter {
     return rows.map(mapCargoToMovement);
   }
 
+  // -- the one re-sourced WRITE (partial update of the existing cargo record) --
+  /**
+   * Update the EXISTING `/api/cargo/{container_number}` record with only the
+   * required fields (e.g. `{ yard_block }` on discharge, `{ is_released: true }`
+   * on release) and return the updated record via the shared cargo mapper. No
+   * new endpoint/DTO/service is introduced — it writes to the same resource the
+   * reads use. See {@link writeJson} for verb negotiation.
+   */
+  async updateCargo(containerNo: string, patch: Partial<CargoRecord>): Promise<ContainerMovementDTO> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    const updated = await this.writeJson<CargoRecord>(`/api/cargo/${encodeURIComponent(norm)}`, patch);
+    return mapCargoToMovement(updated);
+  }
+
+  /**
+   * Partial-update the existing cargo resource. Prefers PATCH (partial update);
+   * if the backend's existing update verb is PUT instead (PATCH → 405), it retries
+   * once with PUT to the SAME resource with the SAME body, so it adapts to whichever
+   * update verb the endpoint already exposes without inventing a new one. Auth /
+   * URL plumbing mirrors {@link getJson}.
+   */
+  private async writeJson<T>(path: string, body: unknown): Promise<T> {
+    const send = (method: 'PATCH' | 'PUT') => {
+      const token = this.getToken();
+      return this.fetchImpl(this.buildUrl(path), {
+        method,
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+    };
+    let res = await send('PATCH');
+    if (res.status === 405) res = await send('PUT'); // existing resource exposes PUT, not PATCH
+    if (!res.ok) throw new Error(`POC-3 Cargo API ${path} → ${res.status} ${res.statusText}`);
+    return (await res.json()) as T;
+  }
+
   // -- everything else passes straight through to the base adapter -----------
   getFacilities(role?: Role): Promise<Facility[]> {
     return this.base.getFacilities(role);

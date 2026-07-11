@@ -198,6 +198,16 @@ export interface DataAdapter {
   getIntegrationHealth(): Promise<IntegrationHealth[]>;
   runScenario(id: string, params: ScenarioParams): Promise<ScenarioResultDTO>;
 
+  /**
+   * Write-through to the POC-3 shared Cargo resource: a PARTIAL update of the
+   * EXISTING `/api/cargo/{container_number}` record (e.g. `{ yard_block }` for a
+   * vessel discharge, `{ is_released: true }` for a gate release). Returns the
+   * updated record projected into the canonical {@link ContainerMovementDTO} via
+   * the same cargo mapper the reads use. Optional: implemented only on the
+   * Poc3CargoAdapter path (undefined when cargo is served from the mock/sim).
+   */
+  updateCargo?(containerNo: string, patch: Partial<CargoRecord>): Promise<ContainerMovementDTO>;
+
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';
 }

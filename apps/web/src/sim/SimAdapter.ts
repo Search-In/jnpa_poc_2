@@ -10,7 +10,7 @@
  * refetch while the clock runs. Writes/scenarios pass straight through.
  */
 import type {
-  DataAdapter, ContainerMovementDTO, ContainerMovementFilter, GateOpsDTO,
+  DataAdapter, CargoRecord, ContainerMovementDTO, ContainerMovementFilter, GateOpsDTO,
   GateQueueForecastDTO, PendencyDTO, RailSideDTO, RakeForecastDTO, EmptyPoolDTO,
   TimeWindow, ScenarioParams, ScenarioResultDTO,
 } from '@jnpa/data';
@@ -39,6 +39,11 @@ export class SimAdapter implements DataAdapter {
   }
   getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
     return this.base.getContainerMovements(filter);
+  }
+  /** Cargo write passes straight through to the base (Poc3CargoAdapter). */
+  updateCargo(containerNo: string, patch: Partial<CargoRecord>): Promise<ContainerMovementDTO> {
+    if (!this.base.updateCargo) return Promise.reject(new Error('Cargo write is unavailable in this data mode.'));
+    return this.base.updateCargo(containerNo, patch);
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
