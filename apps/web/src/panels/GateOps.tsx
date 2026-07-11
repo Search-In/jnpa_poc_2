@@ -31,7 +31,16 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
     <Panel heading={t('panel_gate', lang)} state={ops} isEmpty={(d) => d.length === 0}>
       {(rows) => (
         <>
-          <ImportExportToolbar data={rows} filename="gate-ops.json" />
+          <ImportExportToolbar
+            data={rows.map((g) => ({
+              'Gate': g.gateId,
+              'Terminal': g.terminalId,
+              'Queue Length': g.queueLength,
+              'Avg Txn Time (min)': g.avgTxnTimeMin,
+              'Transactions': g.transactions.length,
+            }))}
+            filename="gate-ops.csv"
+          />
           {/* GATE_IN/OUT events are sourced from TOS (see sim cargo.ts). */}
           <div><SourceBadge source="Terminal API (TOS)" /></div>
           <CalciteTable caption="gate ops">

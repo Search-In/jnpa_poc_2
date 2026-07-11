@@ -13,6 +13,7 @@ import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
+import { simStore } from '../sim/simStore.js';
 
 export function EmptyPool() {
   const { adapter, lang } = useApp();
@@ -22,12 +23,27 @@ export function EmptyPool() {
   // (IAL/EAL/D-O), using the per-line classification the adapter derives from the
   // shipping documents.
   const [docFilter, setDocFilter] = useState<string>('ALL');
+  // Row → map focus: the clicked row spotlights its depot on the map. Reuses the
+  // exact "show me on the map" channel the What-If tour uses (simStore.setHighlights
+  // → the map's `highlights` prop → existing ring halo + pan/zoom). The depot is a
+  // real facility (EmptyPool.depotId === Facility.facilityId), so no coordinates are
+  // hardcoded — the map resolves the location from the facility geometry.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const state = useAsync<EmptyPoolDTO>(() => adapter.getEmptyPool(), [adapter, simDep]);
   return (
     <Panel heading={t('panel_empty', lang)} state={state} isEmpty={(d) => d.pools.length === 0}>
       {(dto) => (
         <>
-          <ImportExportToolbar data={dto} filename="empty-pool.json" />
+          <ImportExportToolbar
+            data={dto.pools.map((p) => ({
+              'Line': p.lineId,
+              'Depot': p.depotId,
+              'Available Qty': p.availableQty,
+              'Projected Demand': p.projectedDemandQty,
+              'As Of': p.asOfTs,
+            }))}
+            filename="empty-pool.csv"
+          />
           {/* Empty pool = shipping-line depot availability (IAL/EAL, D/O) — UC2-R4. */}
           <div><SourceBadge source="Shipping Line" /></div>
           <CalciteSelect
@@ -51,8 +67,18 @@ export function EmptyPool() {
             .filter((p) => docFilter === 'ALL' || dto.primaryDocByLine?.[p.lineId] === docFilter)
             .map((p) => {
             const balance = p.availableQty - p.projectedDemandQty;
+            const rowKey = `${p.lineId}-${p.depotId}`;
             return (
-              <CalciteTableRow key={`${p.lineId}-${p.depotId}`}>
+              <CalciteTableRow
+                key={rowKey}
+                selected={selectedKey === rowKey}
+                style={{ cursor: 'pointer' }}
+                onClick={() => {
+                  setSelectedKey(rowKey);
+                  // Spotlight this depot's real location on the map (pan/zoom + ring).
+                  simStore.setHighlights([p.depotId]);
+                }}
+              >
                 <CalciteTableCell>{p.lineId}</CalciteTableCell>
                 <CalciteTableCell>{p.depotId}</CalciteTableCell>
                 <CalciteTableCell>{p.availableQty}</CalciteTableCell>

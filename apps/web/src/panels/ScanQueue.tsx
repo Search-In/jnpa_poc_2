@@ -28,7 +28,7 @@ export function ScanQueue() {
     <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(scans) => (
         <>
-          <ImportExportToolbar data={scans} filename="scan-queue.json" />
+          <ImportExportToolbar data={scans} filename="scan-queue.csv" />
           {/* CUSTOMS_FLAG / SCAN_* events from ICEGATE; e-seal read + pre-doc from
               the universal e-seal reader (ESEAL events, see sim cargo.ts). */}
           <div><SourceBadge source="ICEGATE · e-Seal" /></div>

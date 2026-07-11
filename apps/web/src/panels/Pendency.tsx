@@ -103,7 +103,16 @@ export function Pendency() {
     <Panel heading={t('panel_pendency', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(rows) => (
         <>
-          <ImportExportToolbar data={rows} filename="pendency.json" />
+          <ImportExportToolbar
+            data={rows.map((r) => ({
+              'Facility': r.facilityId,
+              'Facility Name': r.facilityName,
+              'Type': r.facilityType,
+              'Pendency': r.pendency,
+              'Doc Type': r.primaryDoc ?? '',
+            }))}
+            filename="pendency.csv"
+          />
           {/* Yard-planning action (left) and the data-source note (right) share one
               aligned row, so the two info indicators are separated and no longer
               stack/conflict. Derived KPI folded from terminal gate/yard (TOS) events. */}

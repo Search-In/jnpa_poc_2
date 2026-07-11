@@ -10,7 +10,7 @@
  * It is intentionally written for a non-port-ops viewer: every step says what is
  * changing and why, and the numbers are shown as before → after.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { CalciteButton, CalciteChip, CalciteIcon } from '@esri/calcite-components-react';
 import { simStore, TOUR_STEP_MS } from './simStore.js';
 import { useSimStore } from './useSimStore.js';
@@ -33,51 +33,93 @@ interface Rect { top: number; left: number; width: number; height: number; }
  * a few frames and only accept a real, on-screen rect — never a zero/offscreen
  * one (which would paint a stray "white dot" + dim box at the top-left corner).
  */
-function useSpotlightRect(tab: TabId | null, dep: unknown): Rect | null {
-  const [rect, setRect] = useState<Rect | null>(null);
+function useSpotlightRect(tab: TabId | null, spotlight: string[] | null, dep: unknown): { rect: Rect | null; isRow: boolean } {
+  const [state, setState] = useState<{ rect: Rect | null; isRow: boolean }>({ rect: null, isRow: false });
   useLayoutEffect(() => {
-    setRect(null);
+    setState({ rect: null, isRow: false });
     if (!tab) return;
     let cancelled = false;
-    let attempts = 0;
 
-    const findEl = () =>
+    const valid = (r: { width: number; height: number; bottom: number; right: number }) =>
+      r.width > 24 && r.height > 24 && r.bottom > 0 && r.right > 0;
+
+    // The exact row/process the scenario is driving: the first spotlighted asset
+    // (step.spotlight — existing What-If data) that resolves to an on-screen
+    // [data-asset] element. A <calcite-table-row> lays its cells out via the
+    // parent grid, so the row host can measure ~0 — union the cells' boxes so the
+    // ring lands on the ROW, not the whole card.
+    const rowRect = (): Rect | null => {
+      for (const id of spotlight ?? []) {
+        for (const host of Array.from(document.querySelectorAll<HTMLElement>(`[data-asset="${id}"]`))) {
+          // The light-DOM <calcite-table-row> host is display:contents (~0×0). The
+          // VISIBLE row is a <tr> rendered inside its OPEN shadow root, and each
+          // cell's <td> lives in the calcite-table-cell's own shadow root. Resolve
+          // the rendered row, trying in order: the shadow <tr>, the union of the
+          // shadow <td>s, then the host itself. First measurable box wins.
+          const sr = host.shadowRoot;
+          const candidates: Array<DOMRect | undefined> = [];
+          const tr = sr?.querySelector('tr, [role="row"]') ?? sr?.firstElementChild;
+          if (tr) candidates.push(tr.getBoundingClientRect());
+          const tds = Array.from(host.children)
+            .map((cell) => (cell as HTMLElement).shadowRoot?.querySelector('td, [role="cell"], [role="gridcell"]') ?? (cell as HTMLElement).shadowRoot?.firstElementChild)
+            .filter((td): td is Element => !!td)
+            .map((td) => td.getBoundingClientRect())
+            .filter((b) => b.width > 0 && b.height > 0);
+          if (tds.length) {
+            const top = Math.min(...tds.map((b) => b.top));
+            const left = Math.min(...tds.map((b) => b.left));
+            const right = Math.max(...tds.map((b) => b.right));
+            const bottom = Math.max(...tds.map((b) => b.bottom));
+            candidates.push(new DOMRect(left, top, right - left, bottom - top));
+          }
+          candidates.push(host.getBoundingClientRect());
+          for (const b of candidates) {
+            if (b && valid(b)) return { top: b.top, left: b.left, width: b.width, height: b.height };
+          }
+        }
+      }
+      return null;
+    };
+
+    const panelEl = () =>
       document.querySelector<HTMLElement>(`[data-tour-tab="${tab}"]`) ??
       document.querySelector<HTMLElement>('[data-tour-panels]');
 
-    const valid = (r: DOMRect) =>
-      r.width > 24 && r.height > 24 && r.bottom > 0 && r.right > 0;
+    // When the step spotlights an asset that has an on-screen home (a [data-asset]
+    // row/marker), the asset-level highlight owns it — the whole panel must NEVER
+    // be ringed. Only ring the panel for spotlights with no DOM asset (e.g. a
+    // KPI-only step), preserving that context.
+    const assetOnScreen = () => (spotlight ?? []).some((id) => document.querySelector(`[data-asset="${id}"]`));
 
-    const measure = () => {
+    const compute = (): { rect: Rect | null; isRow: boolean } => {
+      const row = rowRect();
+      if (row) return { rect: row, isRow: true };
+      // The asset owns its own highlight — never ring the whole card.
+      if (assetOnScreen()) return { rect: null, isRow: false };
+      const r = panelEl()?.getBoundingClientRect();
+      if (r && valid(r)) return { rect: { top: r.top, left: r.left, width: r.width, height: r.height }, isRow: false };
+      return { rect: null, isRow: false };
+    };
+
+    // Continuously track the target so the ring stays attached through ANY scroll
+    // (page, gate table, or any scrollable parent), layout change or target move —
+    // not just discrete window scroll/resize events. Re-render only when the box
+    // actually changes.
+    let raf = 0;
+    let lastKey = '';
+    const loop = () => {
       if (cancelled) return;
-      const el = findEl();
-      const r = el?.getBoundingClientRect();
-      if (r && valid(r)) {
-        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-      } else if (attempts++ < 30) {
-        // Keep trying until the panel is laid out (≈ up to ~0.5s of frames).
-        requestAnimationFrame(measure);
-      } else {
-        setRect(null); // give up gracefully — no stray box
-      }
+      const s = compute();
+      const key = s.rect
+        ? `${Math.round(s.rect.top)}|${Math.round(s.rect.left)}|${Math.round(s.rect.width)}|${Math.round(s.rect.height)}|${s.isRow}`
+        : `x|${s.isRow}`;
+      if (key !== lastKey) { lastKey = key; setState(s); }
+      raf = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(measure);
-
-    // Re-measure on resize/scroll so the ring tracks layout changes.
-    const remeasure = () => {
-      const el = findEl();
-      const r = el?.getBoundingClientRect();
-      if (r && valid(r)) setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
-    };
-    window.addEventListener('resize', remeasure);
-    window.addEventListener('scroll', remeasure, true);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('resize', remeasure);
-      window.removeEventListener('scroll', remeasure, true);
-    };
-  }, [tab, dep]);
-  return rect;
+    raf = requestAnimationFrame(loop);
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [tab, spotlight, dep]);
+  return state;
 }
 
 /** A resolved value-level highlight: where it is + the live number to pin. */
@@ -92,16 +134,11 @@ const css = (sel: string) => document.querySelector<HTMLElement>(sel);
  * change (the panel may still be laying out / the value still animating), then
  * tracks resize/scroll. Targets that aren't on screen are dropped (no stray box).
  */
-function useValueRects(
-  targets: ValueTarget[] | undefined,
-  step: number,
-  tick: number,
-): ValueHit[] {
+function useValueRects(targets: ValueTarget[] | undefined, step: number): ValueHit[] {
   const [hits, setHits] = useState<ValueHit[]>([]);
   useLayoutEffect(() => {
     if (!targets || targets.length === 0) { setHits([]); return; }
     let cancelled = false;
-    let frames = 0;
 
     const resolve = (t: ValueTarget): ValueHit | null => {
       if (t.kind === 'kpi') {
@@ -125,27 +162,23 @@ function useValueRects(
       return { rect: r, value: (row.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40), tone: 'neutral', label: t.id };
     };
 
-    const measure = () => {
+    // Continuously track each target through ANY scroll / layout change / value
+    // animation (not just window scroll/resize). Re-render only when a rect or the
+    // pinned value actually changes.
+    let raf = 0;
+    let lastKey = '';
+    const loop = () => {
       if (cancelled) return;
       const next = targets.map(resolve).filter((h): h is ValueHit => h != null);
-      setHits(next);
-      if (frames++ < 24) requestAnimationFrame(measure); // ~0.4s of re-measures
+      const key = next
+        .map((h) => `${Math.round(h.rect.top)}|${Math.round(h.rect.left)}|${Math.round(h.rect.width)}|${Math.round(h.rect.height)}|${h.value}|${h.label}`)
+        .join('~');
+      if (key !== lastKey) { lastKey = key; setHits(next); }
+      raf = requestAnimationFrame(loop);
     };
-    requestAnimationFrame(measure);
-
-    const remeasure = () => {
-      if (cancelled) return;
-      setHits(targets.map(resolve).filter((h): h is ValueHit => h != null));
-    };
-    window.addEventListener('resize', remeasure);
-    window.addEventListener('scroll', remeasure, true);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('resize', remeasure);
-      window.removeEventListener('scroll', remeasure, true);
-    };
-  // Re-resolve when the step changes or the sim ticks (values animate per tick).
-  }, [targets, step, tick]);
+    raf = requestAnimationFrame(loop);
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [targets, step]);
   return hits;
 }
 
@@ -171,16 +204,48 @@ export function GuidedTour({
     }
   }, [step, stepIndex, onTab]);
 
-  const rect = useSpotlightRect(step?.tab ?? null, stepIndex);
+  const { rect, isRow } = useSpotlightRect(step?.tab ?? null, step?.spotlight ?? null, stepIndex);
   // Pin-point value highlights — the EXACT KPI cards / rows whose numbers move.
   // Re-resolved each sim tick so the ring tracks the value as it animates.
-  const valueHits = useValueRects(step?.valueTargets, stepIndex, sim.tick);
+  const valueHits = useValueRects(step?.valueTargets, stepIndex);
 
   // Collapse the card to a compact pill so it never blocks the dashboard.
   const [collapsed, setCollapsed] = useState(false);
   // Surface the collapsed state so the Reactive Guide can hide while this coach is
   // expanded and reappear once it is minimised.
   useEffect(() => { onCollapsedChange?.(collapsed); }, [collapsed, onCollapsedChange]);
+
+  // Draggable dialog: the header is the drag handle. The dropped position persists
+  // until the tour ends or resets (position clears whenever the scenario changes).
+  // null = the default docked position (bottom-right).
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => { setPos(null); }, [scenarioId]);
+  const onDragStart = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return; // let the minimise button work
+    const panel = e.currentTarget.parentElement;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const dx = e.clientX - r.left;
+    const dy = e.clientY - r.top;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId); // keep receiving moves even off the handle
+    const onMove = (ev: PointerEvent) => {
+      setPos({
+        x: Math.max(0, Math.min(ev.clientX - dx, window.innerWidth - 80)),
+        y: Math.max(0, Math.min(ev.clientY - dy, window.innerHeight - 40)),
+      });
+    };
+    const onUp = () => {
+      handle.releasePointerCapture(e.pointerId);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+    e.preventDefault();
+  };
 
   // Progress bar for auto-advance — purely visual, resets each step.
   const [progress, setProgress] = useState(0);
@@ -221,7 +286,7 @@ export function GuidedTour({
 
       {/* Soft outline around the active panel — context only. The pin-point
           value rings below are the real focus. No full-screen dim. */}
-      {rect && valueHits.length === 0 && (
+      {rect && (isRow || valueHits.length === 0) && (
         <div
           aria-hidden
           style={{
@@ -314,8 +379,8 @@ export function GuidedTour({
         aria-label={`Guided scenario: ${script.title}`}
         style={{
           position: 'fixed',
-          bottom: 16,
-          right: 16,
+          // Dragged position (top/left) once moved; otherwise the default dock.
+          ...(pos ? { top: pos.y, left: pos.x } : { bottom: 16, right: 16 }),
           width: 'min(380px, calc(100vw - 32px))',
           maxHeight: 'calc(100vh - 32px)',
           overflowY: 'auto',
@@ -326,12 +391,14 @@ export function GuidedTour({
           zIndex: 1000,
         }}
       >
-        {/* Header: scenario + step counter + minimize */}
+        {/* Header: scenario + step counter + minimize. Doubles as the drag handle. */}
         <div
+          onPointerDown={onDragStart}
           style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '10px 12px', background: tokens.color.brand, color: '#fff',
             borderRadius: '12px 12px 0 0',
+            cursor: 'move', userSelect: 'none', touchAction: 'none',
           }}
         >
           <CalciteIcon icon={script.icon} scale="s" />
@@ -463,13 +530,6 @@ export function GuidedTour({
             onClick={() => simStore.prevStep()}
           >
             Back
-          </CalciteButton>
-          <CalciteButton
-            scale="s" appearance="transparent"
-            iconStart={autoAdvance ? 'pause' : 'play'}
-            onClick={() => simStore.setTourAutoAdvance(!autoAdvance)}
-          >
-            {autoAdvance ? 'Pause' : 'Auto-play'}
           </CalciteButton>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <CalciteButton scale="s" appearance="outline" kind="neutral" iconStart="x" onClick={() => simStore.stopScenario()}>
