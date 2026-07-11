@@ -657,6 +657,124 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
 }
 
 // ---------------------------------------------------------------------------
+// CCTV surveillance towers — a procedural multi-camera pole beside each toll
+// plaza (gate3d), modelled on the reference photo: a tall light-grey mast with a
+// dark mounting hub near the top and THREE silver "bullet" cameras on short
+// brackets, each capped with a dark lens hood and fanned ~120° apart. No CCTV GLB
+// ships with the app, so it is assembled from the same object PRIMITIVES the
+// scene already uses (cylinders/cube/sphere, like the crane hoist box). It is
+// anchored off the SAME (override-aware) gate position via offsetFrom, on the
+// approach-road shoulder clear of the lanes. Decorative only: a plain GraphicsLayer
+// with no pkey/sim/data coupling, so the placement editor and overlays ignore it.
+// ---------------------------------------------------------------------------
+const CCTV_MAST_H = 8.5; // m — mast height
+const CCTV_MAST_D = 0.9; // m — mast diameter
+// Beside the toll: +alongM sits just outside the ~35 m lane span; +offsetM is
+// landward, onto the approach-road shoulder (before the lanes), never in traffic.
+const CCTV_FLANK_ALONG_M = 22;
+const CCTV_FLANK_OFFSET_M = 18;
+const CCTV_MAST_GREY = [178, 183, 188];
+const CCTV_METAL_DARK = [38, 41, 45];
+const CCTV_CAM_SILVER = [206, 210, 214];
+
+/** A point-3d symbol for one object primitive, sized in metres and oriented. */
+function cctvPrim(
+  primitive: 'cylinder' | 'cube' | 'sphere',
+  w: number, d: number, h: number,
+  color: number[], anchor: 'bottom' | 'center', heading: number, tilt?: number,
+) {
+  return {
+    type: 'point-3d',
+    symbolLayers: [
+      { type: 'object', resource: { primitive }, width: w, depth: d, height: h, material: { color }, anchor, heading, ...(tilt != null ? { tilt } : {}) },
+    ],
+  } as never;
+}
+
+/** Offset a point by `distM` metres along compass bearing `brgDeg`. */
+function metreOffset(lng: number, lat: number, brgDeg: number, distM: number): [number, number] {
+  const r = (brgDeg * Math.PI) / 180;
+  return [lng + dLon(Math.sin(r) * distM), lat + dLat(Math.cos(r) * distM)];
+}
+
+/** Build every part-graphic of one CCTV tower standing at (lng,lat), fanning the
+ *  camera cluster around `heading` (the toll's orientation). */
+function cctvTowerGraphics(lng: number, lat: number, heading: number, gateId: string): Graphic[] {
+  const parts: Graphic[] = [];
+  let n = 0;
+  const add = (l: number, la: number, z: number, symbol: unknown) =>
+    parts.push(new Graphic({
+      geometry: new Point({ longitude: l, latitude: la, z, spatialReference: { wkid: 4326 } }),
+      symbol: symbol as never,
+      attributes: { objectId: stableOid(`cctv:${gateId}:${n++}`), gateId },
+    }));
+
+  // One realistic bullet camera pointing outward along compass bearing `brg`,
+  // mounted at height `z`. Composed of a mount arm + U-clamp, a rear cap, a silver
+  // barrel, an overhanging sun-shield visor, a front lens hood, and a glass lens —
+  // all laid along `brg` (cylinders use tilt 90 to lie horizontal along it).
+  const bulletCamera = (brg: number, z: number) => {
+    const p = (distM: number) => metreOffset(lng, lat, brg, distM);
+    // Tubular mount arm from the hub out to the camera's underside.
+    const [arml, arma] = p(0.7);
+    add(arml, arma, z - 0.06, cctvPrim('cylinder', 0.15, 0.15, 0.9, CCTV_METAL_DARK, 'center', brg, 90));
+    // U-mount clamp bracket under the barrel.
+    const [ul, ula] = p(1.32);
+    add(ul, ula, z - 0.33, cctvPrim('cube', 0.26, 0.34, 0.52, CCTV_METAL_DARK, 'center', brg));
+    // Dark rear cap (back of the camera).
+    const [rl, rla] = p(1.12);
+    add(rl, rla, z, cctvPrim('cylinder', 0.6, 0.6, 0.16, CCTV_METAL_DARK, 'center', brg, 90));
+    // Silver barrel — the main camera body.
+    const [bl, bla] = p(1.78);
+    add(bl, bla, z, cctvPrim('cylinder', 0.56, 0.56, 1.3, CCTV_CAM_SILVER, 'center', brg, 90));
+    // Sun-shield visor on top, overhanging the lens (the signature bullet-cam hood).
+    const [vl, vla] = p(2.0);
+    add(vl, vla, z + 0.33, cctvPrim('cube', 0.64, 1.75, 0.1, CCTV_METAL_DARK, 'center', brg));
+    // Front lens hood — a slightly wider dark ring at the barrel mouth.
+    const [fl, fla] = p(2.42);
+    add(fl, fla, z, cctvPrim('cylinder', 0.64, 0.64, 0.34, CCTV_METAL_DARK, 'center', brg, 90));
+    // Glass lens — a dark disc set in the hood.
+    const [gl, gla] = p(2.58);
+    add(gl, gla, z, cctvPrim('sphere', 0.42, 0.42, 0.3, [18, 20, 24], 'center', brg));
+  };
+
+  // Mast — tall light-grey pole (base seated on the ground).
+  add(lng, lat, 0, cctvPrim('cylinder', CCTV_MAST_D, CCTV_MAST_D, CCTV_MAST_H, CCTV_MAST_GREY, 'bottom', heading));
+  // Rounded dark cap on the pole top.
+  add(lng, lat, CCTV_MAST_H, cctvPrim('sphere', CCTV_MAST_D * 1.05, CCTV_MAST_D * 1.05, CCTV_MAST_D * 0.7, CCTV_METAL_DARK, 'center', heading));
+  // Dark spherical mounting hub near the top, where the camera arms meet.
+  const hubZ = CCTV_MAST_H - 1.2;
+  add(lng, lat, hubZ, cctvPrim('sphere', 1.05, 1.05, 1.0, CCTV_METAL_DARK, 'center', heading));
+
+  // Three bullet cameras fanned 120° apart around the hub, pointing outward.
+  const camZ = hubZ + 0.1;
+  for (let i = 0; i < 3; i++) bulletCamera((heading + 40 + i * 120) % 360, camZ);
+  return parts;
+}
+
+export function cctvLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): GraphicsLayer {
+  // relative-to-ground honours each part's z (mast base z=0 sits on the ground;
+  // the hub/cameras float near the mast top).
+  const layer = new GraphicsLayer({ title: '3D · CCTV towers', elevationInfo: { mode: 'relative-to-ground' } });
+  const byTerminal = new Map(terminals.map((t) => [t.terminalId, t] as const));
+  const gateToPos = new Map<string, [number, number]>();
+  for (const t of terminals) {
+    if (t.geom.type !== 'Point') continue;
+    t.gates.forEach((g, i) => gateToPos.set(g, gatePosition(t, i)));
+  }
+  for (const g of gateOps) {
+    if (!gateToPos.has(g.gateId) || !byTerminal.has(g.terminalId)) continue;
+    const [glng, glat] = gateToPos.get(g.gateId)!;
+    // One tower beside the toll approach (shoulder, clear of the lanes).
+    const [lng, lat] = offsetFrom(glng, glat, CCTV_FLANK_ALONG_M, CCTV_FLANK_OFFSET_M);
+    // Fan the cameras around the toll's own orientation (override-aware).
+    const heading = placementStore.get(`gate3d:${g.gateId}`)?.heading ?? QUAY_HEADING;
+    for (const part of cctvTowerGraphics(lng, lat, heading, g.gateId)) layer.add(part);
+  }
+  return layer;
+}
+
+// ---------------------------------------------------------------------------
 // Trucks — a queue of real truck GLBs trailing inland from each gate along the
 // access road; the queue LENGTH is the live gate queue (capped for perf). This
 // keeps moving/waiting vehicles on the port road, not scattered on the water.

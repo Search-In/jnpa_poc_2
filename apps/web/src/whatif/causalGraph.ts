@@ -102,7 +102,7 @@ export interface ScenarioPerturbation {
 const CFS_BELT = ['CFS-DRONAGIRI-1', 'CFS-URAN-1', 'CFS-PANVEL-1'];
 const GATES = ['NSICT-G1', 'GTI-G2', 'BMCT-G1', 'BMCT-G2'];
 const SIDINGS = ['T1', 'T2'];
-const TERMINALS = ['GTI', 'BMCT', 'NSICT', 'NSIGT', 'NSFT'];
+const TERMINALS = ['GTI', 'BMCT', 'NSICT', 'NSIGT', 'JNPCT'];
 
 export const CAUSAL_NODES: CausalNode[] = [
   // --- levers (what scenarios and operators actually move) -----------------

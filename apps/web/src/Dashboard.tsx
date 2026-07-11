@@ -131,7 +131,10 @@ export function Dashboard() {
     () =>
       sim.tour.scenarioId
         ? sim.highlights
-        : [...new Set([...Object.keys(sim.gates), ...Object.keys(sim.pendency)])],
+        : // Outside a guided tour, surface explicit spotlights (e.g. an Empty Pool
+          // row click via simStore.setHighlights) alongside whatever the manual
+          // simulator is driving, so panel row → map focus reuses the same halo.
+          [...new Set([...sim.highlights, ...Object.keys(sim.gates), ...Object.keys(sim.pendency)])],
     [sim.tour.scenarioId, sim.highlights, sim.gates, sim.pendency],
   );
 

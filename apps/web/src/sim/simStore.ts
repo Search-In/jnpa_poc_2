@@ -242,7 +242,7 @@ class SimStore {
    * assets, and (if autoAdvance) arm the step timer. The board animates live as
    * each step's patch lands; the coach-mark overlay reads `tour` to narrate.
    */
-  startScenario = (scenarioId: string, autoAdvance = true) => {
+  startScenario = (scenarioId: string, _autoAdvance = true) => {
     const script = getScript(scenarioId);
     if (!script || script.steps.length === 0) return;
     // Fresh tour → reset the fired-workflow dedup so this run's steps fire again.
@@ -257,7 +257,9 @@ class SimStore {
         speed: s.speed,
         clockMs: s.clockMs,
         tick: s.tick,
-        tour: { scenarioId: script.id, stepIndex: 0, autoAdvance, stepStartedAt: ++this.stamp },
+        // Auto step progression is disabled — the guided tour advances only via the
+        // Next button. `autoAdvance` is forced false so the step timer never arms.
+        tour: { scenarioId: script.id, stepIndex: 0, autoAdvance: false, stepStartedAt: ++this.stamp },
       };
       return this.applyStep(seeded, script.id, 0);
     });
@@ -355,12 +357,12 @@ class SimStore {
   }
 
   private armTourTimer() {
+    // Automatic step progression is fully disabled. The guided tour advances ONLY
+    // when the user clicks Next (nextStep). No timer is ever scheduled here,
+    // regardless of tour.autoAdvance — which may be restored true from localStorage
+    // or a cross-tab BroadcastChannel sync. This is the single, authoritative point
+    // that guarantees a step never advances on its own.
     this.clearTourTimer();
-    const { scenarioId, autoAdvance, stepIndex } = this.state.tour;
-    if (!scenarioId || !autoAdvance) return;
-    const script = getScript(scenarioId);
-    if (!script || stepIndex >= script.steps.length - 1) return; // last step: stop
-    this.tourTimer = setTimeout(() => this.nextStep(), TOUR_STEP_MS);
   }
 
   private clearTourTimer() {

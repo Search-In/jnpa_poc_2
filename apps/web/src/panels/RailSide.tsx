@@ -52,7 +52,15 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
     <Panel heading={t('panel_rail', lang)} state={state} isEmpty={(d) => d.rakes.length === 0}>
       {(rail) => (
         <>
-          <ImportExportToolbar data={rail} filename="rail-side.json" />
+          <ImportExportToolbar
+            data={rail.wagons.map((w) => ({
+              'Wagon': w.wagonId,
+              'Rake': w.rakeId,
+              'Position': w.position,
+              'Containers': w.containerNos.join(', '),
+            }))}
+            filename="rail-side.csv"
+          />
           {/* RAIL_IN/OUT events are sourced from FOIS / CTO (see sim cargo.ts). */}
           <div><SourceBadge source="FOIS" /></div>
           <CalciteSegmentedControl

@@ -114,20 +114,25 @@ function boxSymbol(color: number[], w: number, d: number, h: number, heading = 0
 // route hugs the real access road at real coordinates.
 // ---------------------------------------------------------------------------
 
-/** Waypoints (lng,lat) for one terminal's gate-in / apron / gate-out circuit. */
+/** Waypoints (lng,lat) for one terminal's gate approach-road circuit. */
 function truckRoute(t: Terminal): LngLat[] {
   const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
   const quay = t.quayLengthM ?? 800;
   const half = quay * 0.35;
-  // offset (perpendicular): + = landward. Gate sits ~470 m inland; apron ~230 m.
+  // Perpendicular offset: + = landward. The gate/toll line sits at ~470 m; the
+  // container YARD is SEAWARD of it (~230–300 m). This circuit stays entirely
+  // LANDWARD of the toll line (offset >= 470 m), so trucks follow the access /
+  // approach road and never cross the container yard, cranes or water. (Before,
+  // the three interior waypoints at 230–300 m drove trucks straight through the
+  // container stacks — the cause of trucks appearing inside the yard.)
   return [
     place(lng, lat, half + 120, 640), // far approach road, down-quay
-    place(lng, lat, 0, 620), // road in front of the gate line
-    place(lng, lat, 0, 470), // through the gate
-    place(lng, lat, -half, 300), // onto the apron, up-quay
-    place(lng, lat, -half, 230), // yard edge
-    place(lng, lat, half, 230), // traverse the yard face
-    place(lng, lat, half, 470), // back to the gate
+    place(lng, lat, 0, 620), // approach road in front of the gate line
+    place(lng, lat, 0, 470), // through the toll line, on the access road
+    place(lng, lat, -half, 540), // access road, up-quay (landward of the toll)
+    place(lng, lat, -half, 600), // approach road, up-quay
+    place(lng, lat, half, 600), // approach road, down-quay
+    place(lng, lat, half, 470), // back through the toll line
     place(lng, lat, half + 120, 640), // out to the approach road
   ];
 }
