@@ -87,6 +87,12 @@ export class MockAdapter implements DataAdapter {
 
     let scoped = containers;
     if (filter.originStream) scoped = scoped.filter((c) => c.originStream === filter.originStream);
+    // Exact container-number search parity with the POC-3 Cargo API (Container
+    // Search). Normalised the same way (upper, de-spaced) so a lookup matches.
+    if (filter.containerNo) {
+      const norm = filter.containerNo.trim().toUpperCase().replace(/\s+/g, '');
+      scoped = scoped.filter((c) => c.containerNo === norm);
+    }
 
     const roleFacilities =
       filter.role && FACILITY_SCOPED_ROLES.has(filter.role)

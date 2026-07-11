@@ -16,12 +16,19 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.WEB_PORT ?? 5173),
-    // Live mode: proxy /gateway → the BFF so the browser avoids CORS.
     proxy: {
+      // Live mode: proxy /gateway → the BFF so the browser avoids CORS.
       '/gateway': {
         target: process.env.GATEWAY_URL ?? 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/gateway/, ''),
+      },
+      // Cargo: proxy /poc3 → the POC-3 shared Cargo API so the browser stays
+      // same-origin (no CORS dependency in dev). The adapter calls /poc3/api/cargo.
+      '/poc3': {
+        target: process.env.POC3_URL ?? 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/poc3/, ''),
       },
     },
   },

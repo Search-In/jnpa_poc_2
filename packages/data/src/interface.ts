@@ -38,6 +38,50 @@ export interface ContainerMovementFilter {
   /** Restrict to a role's scope (row-level). */
   role?: Role;
   window?: TimeWindow;
+  // ---- POC-3 shared Cargo API filters (GET /api/cargo query params) ---------
+  // These map 1:1 to the POC-3 gateway's query parameters. MockAdapter honours
+  // `containerNo` (exact match) for parity; the rest are POC-3-only and ignored
+  // by the mock/sim path (which has no customs/release projection).
+  /** Exact ISO-6346 container number. Drives Container Search → GET /api/cargo/{id}. */
+  containerNo?: string;
+  /** Customs clearance status filter (POC-3 `customs_status`). */
+  customsStatus?: CargoCustomsStatus;
+  /** Yard block filter (POC-3 `yard_block`). */
+  yardBlock?: string;
+  /** Released-from-port filter (POC-3 `is_released`). */
+  isReleased?: boolean;
+  /** Allocated haulage plate filter (POC-3 `vehicle_number`). */
+  vehicleNumber?: string;
+  /** Page size (POC-3 `limit`, 1–1000, default 100). */
+  limit?: number;
+  /** Page offset (POC-3 `offset`, ≥0, default 0). */
+  offset?: number;
+}
+
+/** Customs clearance status served by the POC-3 shared Cargo API. */
+export type CargoCustomsStatus = 'PENDING' | 'CLEARED' | 'HELD' | 'UNDER_INSPECTION';
+
+/**
+ * The raw shared Cargo record as served by the POC-3 gateway (`CargoOut`,
+ * `GET /api/cargo`). This is the single source of truth for cargo — POC-2 keeps
+ * no cargo store of its own. Field names mirror the API (snake_case) so the
+ * payload maps with zero transformation; the adapter derives the canonical
+ * {@link ContainerMovementDTO} view from it for the existing UI.
+ */
+export interface CargoRecord {
+  /** ISO-6346 container number (primary key). */
+  container_number: string;
+  vessel_name?: string | null;
+  customs_status: CargoCustomsStatus;
+  yard_block?: string | null;
+  is_released: boolean;
+  vehicle_number?: string | null;
+  gate?: string | null;
+  camera_id?: string | null;
+  /** ISO-8601 timestamp (estimated time of arrival). */
+  eta?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ---- result DTOs -----------------------------------------------------------
@@ -50,6 +94,14 @@ export interface ContainerMovementDTO {
   facilityId: string;
   /** Full ordered event trail for drill-down. */
   trail: Array<{ eventType: string; ts: string; facilityId: string; sourceSystem: string }>;
+  /**
+   * The raw POC-3 shared Cargo record this DTO was derived from, present ONLY
+   * when the row is sourced from the POC-3 Cargo API (undefined in mock/sim
+   * mode). Carries the cargo-native fields (vessel, customs, yard, release,
+   * vehicle, gate, camera, ETA) the mock projection does not have, so the Cargo
+   * panel can render them straight from the single source of truth.
+   */
+  cargo?: CargoRecord;
 }
 
 export interface GateOpsDTO {

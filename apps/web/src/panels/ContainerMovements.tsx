@@ -3,6 +3,12 @@
  * (CFS/DPE), Trans-shipment and rail — unified, filterable, role-scoped. The
  * filter scopes the unified container list; the trail drill-down shows the full
  * event chain per container.
+ *
+ * Data source: the POC-3 shared Cargo API (`GET /api/cargo`) — the single source
+ * of truth. The adapter maps each cargo record into this panel's existing DTO,
+ * so the layout, columns, timeline drawer and pagination are UNCHANGED. Fields
+ * POC-3 does not model (e.g. originStream) render as "N/A" rather than redesign
+ * the table.
  */
 import { useState } from 'react';
 import {
@@ -60,7 +66,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 
         <div style={{ padding: '10px 14px', overflowY: 'auto', flex: 1 }}>
           <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 12px' }}>
-            {move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
+            {move.cargo ? 'N/A' : move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
           </p>
 
           {trail.length === 0 ? (
@@ -129,7 +135,7 @@ export function ContainerMovements() {
           <ImportExportToolbar data={moves} filename="container-movements.json" />
           {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
               FOIS rail, e-Seal). See the per-record Source column + timeline. */}
-          <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" /></div>
+          <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>
           <CalciteSelect
             label="Stream filter"
             onCalciteSelectChange={(e) => setStream((e.target as unknown as { value: OriginStream | 'ALL' }).value)}
@@ -154,7 +160,12 @@ export function ContainerMovements() {
             {moves.slice(0, 50).map((m) => (
               <CalciteTableRow key={m.container.containerNo}>
                 <CalciteTableCell>{m.container.containerNo}</CalciteTableCell>
-                <CalciteTableCell><CalciteChip value={m.container.originStream}>{m.container.originStream}</CalciteChip></CalciteTableCell>
+                <CalciteTableCell>
+                  {/* POC-3 does not model an origin stream → N/A (no redesign). */}
+                  {m.cargo
+                    ? <span style={{ color: tokens.color.textMuted }}>N/A</span>
+                    : <CalciteChip value={m.container.originStream}>{m.container.originStream}</CalciteChip>}
+                </CalciteTableCell>
                 <CalciteTableCell>{m.container.lineOwner}</CalciteTableCell>
                 <CalciteTableCell>{m.lastEventType}</CalciteTableCell>
                 <CalciteTableCell>{m.facilityId}</CalciteTableCell>
