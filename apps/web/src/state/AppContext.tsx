@@ -10,7 +10,7 @@
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DataAdapter } from '@jnpa/data';
-import { LiveAdapter, MockAdapter } from '@jnpa/data';
+import { LiveAdapter, MockAdapter, Poc3CargoAdapter } from '@jnpa/data';
 import type { Role } from '@jnpa/schemas';
 import type { BaselinesConfig } from '@jnpa/kpi';
 import terminalsConfig from '../../../../config/terminals.json';
@@ -33,6 +33,14 @@ const AppContext = createContext<AppState | null>(null);
 const MODE = (import.meta.env?.VITE_DATA_MODE as 'mock' | 'live') ?? 'mock';
 const GATEWAY_BASE = '/gateway';
 
+// POC-3 shared Cargo API. Cargo is re-sourced from POC-3 (the single common
+// backend); every other panel stays on the mock/live base adapter. In dev the
+// browser hits the relative `/poc3` path (Vite proxies it to the POC-3 gateway,
+// avoiding CORS); set VITE_CARGO_API_BASE to the gateway origin for a deployed
+// build. Set VITE_CARGO_SOURCE=mock to opt out and keep cargo on the simulator.
+const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | undefined) || '/poc3';
+const CARGO_FROM_POC3 = (import.meta.env?.VITE_CARGO_SOURCE ?? 'poc3') !== 'mock';
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>('DTCCC_ADMIN');
   const [lang, setLang] = useState<Lang>('en');
@@ -49,8 +57,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             terminalsConfig: terminalsConfig as unknown as ConstructorParameters<typeof MockAdapter>[0]['terminalsConfig'],
             baselines: baselinesConfig as unknown as BaselinesConfig,
           });
+    // Re-source cargo from the POC-3 shared Cargo API (single source of truth);
+    // all other panels keep the mock/live base. Skipped when VITE_CARGO_SOURCE=mock.
+    const withCargo = CARGO_FROM_POC3
+      ? new Poc3CargoAdapter(base, { cargoBaseUrl: CARGO_API_BASE, getToken: () => tokenRef.current })
+      : base;
     // Wrap so the live-data Simulator's overrides flow into every tab + the map.
-    return new SimAdapter(base);
+    return new SimAdapter(withCargo);
   }, []);
 
   // Live mode: (re)mint a dev token whenever the role changes.

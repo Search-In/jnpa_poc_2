@@ -10,9 +10,12 @@ import { CalciteIcon } from '@esri/calcite-components-react';
 import { useApp } from '../state/AppContext.js';
 import { tokens } from '../theme/tokens.js';
 
-export function SourceBadge({ source }: { source: string }) {
+export function SourceBadge({ source, live }: { source: string; live?: boolean }) {
   const { adapter } = useApp();
-  const mock = adapter.mode !== 'live';
+  // `live` forces the badge to reflect a real backend regardless of the base
+  // adapter mode — used by the Cargo panel, which is sourced from the POC-3
+  // shared Cargo API even while the rest of the board runs on the simulator.
+  const mock = !live && adapter.mode !== 'live';
   return (
     <div
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 8px' }}
