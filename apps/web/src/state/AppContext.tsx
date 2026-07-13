@@ -41,13 +41,65 @@ const GATEWAY_BASE = '/gateway';
 const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | undefined) || '/poc3';
 const CARGO_FROM_POC3 = (import.meta.env?.VITE_CARGO_SOURCE ?? 'poc3') !== 'mock';
 
+// POC-3 authentication (the Cargo API returns 401 when the gateway runs with
+// AUTH_ENABLED=true). POC-2 mints a POC-3-issued JWT from POC-3's own `/api/auth`
+// surface — INDEPENDENT of DATA_MODE, because the cargo adapter runs in every
+// mode. A pre-issued token can be injected verbatim via VITE_CARGO_API_TOKEN
+// (skips minting). Otherwise POC-2 mints one: `/api/auth/dev-token` in dev/demo,
+// falling back to `/api/auth/login` when credentials are configured (production,
+// where dev-tokens are disabled and that route 404s).
+const CARGO_STATIC_TOKEN = (import.meta.env?.VITE_CARGO_API_TOKEN as string | undefined) || undefined;
+const CARGO_AUTH_ROLE = (import.meta.env?.VITE_CARGO_AUTH_ROLE as string | undefined) || 'DTCCC_ADMIN';
+const CARGO_AUTH_USER = (import.meta.env?.VITE_CARGO_AUTH_USER as string | undefined) || undefined;
+const CARGO_AUTH_PASS = (import.meta.env?.VITE_CARGO_AUTH_PASS as string | undefined) || undefined;
+
+/** POC-3 `/api/auth` TokenResponse (access_token is the JWT; note: NOT `token`). */
+interface CargoTokenResponse {
+  access_token?: string;
+}
+
+/**
+ * Mint a POC-3-issued JWT via POC-3's `/api/auth`. Prefers the password-less
+ * `/dev-token` (enabled in the demo profile); if that route is disabled (404 in
+ * production-like envs) and credentials are configured, falls back to `/login`.
+ * Returns undefined if no token could be obtained (caller degrades gracefully).
+ */
+async function mintCargoToken(): Promise<string | undefined> {
+  const base = CARGO_API_BASE.replace(/\/$/, '');
+  const post = async (path: string, body: unknown): Promise<string | undefined> => {
+    try {
+      const res = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return undefined;
+      return ((await res.json()) as CargoTokenResponse).access_token;
+    } catch {
+      return undefined;
+    }
+  };
+  const dev = await post('/api/auth/dev-token', { role: CARGO_AUTH_ROLE });
+  if (dev) return dev;
+  if (CARGO_AUTH_USER && CARGO_AUTH_PASS) {
+    return post('/api/auth/login', { username: CARGO_AUTH_USER, password: CARGO_AUTH_PASS });
+  }
+  return undefined;
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>('DTCCC_ADMIN');
   const [lang, setLang] = useState<Lang>('en');
-  const [authReady, setAuthReady] = useState(MODE === 'mock');
+  // Readiness is tracked per credential so neither blocks the other: the live
+  // gateway token (base adapter) and the POC-3 cargo token are independent.
+  const [gatewayReady, setGatewayReady] = useState(MODE === 'mock');
+  const [cargoReady, setCargoReady] = useState(!CARGO_FROM_POC3);
 
-  // Latest JWT, read by the LiveAdapter via getToken().
+  // Latest gateway JWT, read by the LiveAdapter via getToken().
   const tokenRef = useRef<string | undefined>(undefined);
+  // Latest POC-3-issued JWT, read by the Poc3CargoAdapter via getToken(). Kept
+  // separate from the gateway token — POC-3 validates its own issuer/audience.
+  const cargoTokenRef = useRef<string | undefined>(undefined);
 
   const adapter = useMemo<DataAdapter>(() => {
     const base =
@@ -60,17 +112,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Re-source cargo from the POC-3 shared Cargo API (single source of truth);
     // all other panels keep the mock/live base. Skipped when VITE_CARGO_SOURCE=mock.
     const withCargo = CARGO_FROM_POC3
-      ? new Poc3CargoAdapter(base, { cargoBaseUrl: CARGO_API_BASE, getToken: () => tokenRef.current })
+      ? new Poc3CargoAdapter(base, {
+          cargoBaseUrl: CARGO_API_BASE,
+          getToken: () => cargoTokenRef.current,
+          setToken: (t) => { cargoTokenRef.current = t; },
+          // On a 401 the adapter re-mints the POC-3 JWT and retries once, so an
+          // absent/expired token self-heals. A pre-issued static token opts out.
+          refreshToken: CARGO_STATIC_TOKEN ? undefined : mintCargoToken,
+        })
       : base;
     // Wrap so the live-data Simulator's overrides flow into every tab + the map.
     return new SimAdapter(withCargo);
+  }, []);
+
+  // Mint the POC-3 cargo token on mount, regardless of DATA_MODE (the cargo
+  // adapter runs in every mode). Role-agnostic for cargo (POC-3 accepts any
+  // valid stakeholder role), so it is minted once — not re-minted per UI role.
+  // On failure the dashboard still proceeds (cargoReady flips true) so non-cargo
+  // panels are never blocked by POC-3 auth; the Cargo panel shows its error state.
+  useEffect(() => {
+    if (!CARGO_FROM_POC3) return;
+    if (CARGO_STATIC_TOKEN) {
+      cargoTokenRef.current = CARGO_STATIC_TOKEN;
+      setCargoReady(true);
+      return;
+    }
+    let cancelled = false;
+    setCargoReady(false);
+    mintCargoToken()
+      .then((tok) => {
+        if (cancelled) return;
+        cargoTokenRef.current = tok;
+        setCargoReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCargoReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Live mode: (re)mint a dev token whenever the role changes.
   useEffect(() => {
     if (MODE !== 'live') return;
     let cancelled = false;
-    setAuthReady(false);
+    setGatewayReady(false);
     fetch(`${GATEWAY_BASE}/auth/dev-token`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -80,15 +167,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((d: { token?: string }) => {
         if (cancelled) return;
         tokenRef.current = d.token;
-        setAuthReady(Boolean(d.token));
+        setGatewayReady(Boolean(d.token));
       })
       .catch(() => {
-        if (!cancelled) setAuthReady(false);
+        if (!cancelled) setGatewayReady(false);
       });
     return () => {
       cancelled = true;
     };
   }, [role]);
+
+  // The dashboard is ready once BOTH credentials are settled (each defaults
+  // ready when its source isn't in use). Gating cargo fetches on this avoids an
+  // initial unauthenticated 401 before the POC-3 token lands.
+  const authReady = gatewayReady && cargoReady;
 
   const value = useMemo(
     () => ({ adapter, role, setRole, lang, setLang, authReady }),

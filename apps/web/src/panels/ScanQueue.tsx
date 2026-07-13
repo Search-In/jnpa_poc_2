@@ -17,6 +17,7 @@ import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
+import { cargoErrorMessage } from '../state/cargoError.js';
 
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
@@ -28,7 +29,7 @@ const preDocColor = (p?: string) =>
 /**
  * Release confirmation — releases a container from the port by updating the live
  * POC-3 cargo record via the existing Poc3CargoAdapter write
- * (`PATCH /api/cargo/{id} { is_released: true }`). Reuses the app's role="dialog"
+ * (`PUT /api/cargo/{id} { is_released: true }`). Reuses the app's role="dialog"
  * overlay + CalciteNotice feedback. On success it bumps cargoRefreshStore so the
  * Scan Queue + Movement + Yard/Pendency refetch through the existing adapter flow.
  */
@@ -46,7 +47,7 @@ function ReleaseDialog({ containerNo, onClose }: { containerNo: string; onClose:
       cargoRefreshStore.bump(); // refresh Scan + Movement + Yard/Pendency
       setDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cargoErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -116,9 +117,10 @@ export function ScanQueue() {
       {(scans) => (
         <>
           <ImportExportToolbar data={scans} filename="scan-queue.csv" />
-          {/* CUSTOMS_FLAG / SCAN_* events from ICEGATE; e-seal read + pre-doc from
-              the universal e-seal reader (ESEAL events, see sim cargo.ts). */}
-          <div><SourceBadge source="ICEGATE · e-Seal" /></div>
+          {/* Re-sourced from the POC-3 shared Cargo API: the queue is the set of
+              in-port (not-yet-released) containers, customs_status → scan result,
+              so Release writes back to a real cargo record via PUT. */}
+          <div><SourceBadge source="POC-3 Cargo · ICEGATE" live /></div>
           <CalciteTable caption="scan queue">
           <CalciteTableRow slot="table-header">
             <CalciteTableHeader heading="Container" />

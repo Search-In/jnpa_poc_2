@@ -13,7 +13,7 @@
  * NOT surfaced by the migrated panel — the raw record rides along on
  * `dto.cargo` so the UI reads cargo-native fields directly.
  */
-import type { Container, ContainerStatus, SourceSystem } from '@jnpa/schemas';
+import type { Container, ContainerStatus, ScanEvent, ScanResult, SourceSystem } from '@jnpa/schemas';
 import { parseContainerNo } from '@jnpa/schemas';
 import type { CargoRecord, ContainerMovementDTO } from './interface.js';
 
@@ -70,6 +70,41 @@ function deriveTrail(c: CargoRecord): ContainerMovementDTO['trail'] {
     trail.push({ eventType: 'GATE_OUT', ts: c.updated_at, facilityId: c.gate ?? at, sourceSystem: 'TOS' as SourceSystem });
   }
   return trail;
+}
+
+/** Customs status → scan result: HELD holds, UNDER_INSPECTION means an exam is
+ * under way, CLEARED clears; PENDING has no result yet (scan not concluded). */
+function scanResultFor(status: CargoRecord['customs_status']): ScanResult | undefined {
+  switch (status) {
+    case 'HELD':
+      return 'HOLD';
+    case 'UNDER_INSPECTION':
+      return 'EXAM';
+    case 'CLEARED':
+      return 'CLEAR';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Project a POC-3 cargo record into a canonical {@link ScanEvent} for the customs
+ * scan queue. The queue is the set of in-port (not-yet-released) containers; each
+ * carries its customs state as the scan result so the panel — and its Release
+ * action — operate on REAL cargo records, never simulated ones. Fields POC-3 does
+ * not model (e-seal, pre-doc) are left for the panel to render as "—".
+ */
+export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
+  const result = scanResultFor(c.customs_status);
+  return {
+    scanId: `SCAN-${c.container_number}`,
+    containerNo: c.container_number,
+    scannerId: c.camera_id ?? c.gate ?? 'CUSTOMS-SCANNER',
+    flaggedBy: 'CUSTOMS',
+    startTs: c.updated_at ?? c.created_at,
+    ...(c.customs_status === 'CLEARED' ? { endTs: c.updated_at } : {}),
+    ...(result ? { result } : {}),
+  };
 }
 
 /** Project one POC-3 cargo record into the canonical movement DTO. */

@@ -1,14 +1,23 @@
 /**
  * Poc3CargoAdapter — a transparent decorator around the real DataAdapter (mock
- * or live) that re-sources ONLY the cargo read (`getContainerMovements`) from
- * the POC-3 shared Cargo API (`GET /api/cargo`). Every other method delegates to
- * the wrapped base adapter, so the non-cargo panels (gate, rail, KPIs, …) keep
- * their existing behaviour while cargo becomes a single source of truth.
+ * or live) that re-sources the entire cargo lifecycle from the POC-3 shared Cargo
+ * API. Reads (`GET /api/cargo`, `GET /api/cargo/{id}`) and writes (`POST`, `PUT`,
+ * `DELETE /api/cargo/{id}`) all go to the single common backend; every other
+ * method delegates to the wrapped base adapter, so the non-cargo panels (gate,
+ * rail, KPIs, …) keep their existing behaviour while cargo becomes a single
+ * source of truth. POC-2 owns no cargo store.
  *
- * POC-2 owns no cargo store: this adapter simply calls the POC-3 gateway and maps
- * its `CargoOut` record into the canonical DTO via {@link mapCargoToMovement}.
- * The URL/auth plumbing mirrors {@link LiveAdapter} (same `buildUrl` + bearer
- * token pattern) so there is one fetch idiom in the codebase, not two.
+ * Contract (POC-3 gateway/routers/cargo.py — do NOT change on the backend):
+ *   POST   /api/cargo                    → 201 (409 on duplicate)
+ *   GET    /api/cargo                    → 200 list (filter + paginate)
+ *   GET    /api/cargo/{container_number} → 200 one (404 if absent)
+ *   PUT    /api/cargo/{container_number} → 200 updated (404 if absent)  [NOT PATCH]
+ *   DELETE /api/cargo/{container_number} → 200 deleted (404 if absent)
+ *
+ * Every request carries `Authorization: Bearer <POC-3 JWT>` when a token is
+ * available (the deployed gateway runs with AUTH_ENABLED). On a 401 the adapter
+ * re-mints the token once (via {@link Poc3CargoAdapterDeps.refreshToken}) and
+ * retries, so an expired/absent token self-heals instead of surfacing as an error.
  */
 import type {
   Facility, IntegrationHealth, ITRHOMovement, KpiResult, Notification, Role,
@@ -16,7 +25,9 @@ import type {
 } from '@jnpa/schemas';
 import { isValidContainerNo } from '@jnpa/schemas';
 import type {
+  CargoCreateInput,
   CargoRecord,
+  CargoUpdateInput,
   ContainerMovementDTO,
   ContainerMovementFilter,
   DataAdapter,
@@ -30,13 +41,56 @@ import type {
   ScenarioResultDTO,
   TimeWindow,
 } from './interface.js';
-import { mapCargoToMovement } from './cargo-mapper.js';
+import { mapCargoToMovement, mapCargoToScanEvent } from './cargo-mapper.js';
+
+/**
+ * Typed error for every non-2xx response from the POC-3 Cargo API. Carries the
+ * HTTP `status` so the UI can render a specific message per case (401/404/409/500)
+ * and `userMessage` gives that ready-made, human-readable string.
+ */
+export class CargoApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly detail?: string;
+
+  constructor(status: number, path: string, detail?: string) {
+    super(`POC-3 Cargo API ${path} → ${status}${detail ? ` (${detail})` : ''}`);
+    this.name = 'CargoApiError';
+    this.status = status;
+    this.path = path;
+    this.detail = detail;
+  }
+
+  /** A human-readable message for the panel notices, keyed on the HTTP status. */
+  get userMessage(): string {
+    switch (this.status) {
+      case 401:
+        return 'Not authorised — the Cargo API session could not be established. Reload to re-authenticate with POC-3.';
+      case 403:
+        return 'Your role is not permitted to perform this Cargo operation.';
+      case 404:
+        return 'Container not found in the shared Cargo backend.';
+      case 409:
+        return 'A cargo record with this container number already exists.';
+      case 400:
+        return this.detail || 'Invalid cargo details — check the container number (ISO-6346) and field values.';
+      case 500:
+        return 'The shared Cargo backend encountered an error. Please retry.';
+      default:
+        return this.detail || `Cargo request failed (HTTP ${this.status}).`;
+    }
+  }
+}
 
 export interface Poc3CargoAdapterDeps {
   /** Base URL of the POC-3 gateway. Relative (e.g. "/poc3" behind a dev proxy) or absolute. */
   cargoBaseUrl: string;
   /** Returns the current bearer token when the gateway runs with AUTH_ENABLED. */
   getToken?: () => string | undefined;
+  /** Persist a token freshly minted after a 401 so later calls reuse it. */
+  setToken?: (token: string | undefined) => void;
+  /** Re-mint a POC-3 JWT (called once on a 401 before retrying the request). */
+  refreshToken?: () => Promise<string | undefined>;
   fetchImpl?: typeof fetch;
 }
 
@@ -44,12 +98,16 @@ export class Poc3CargoAdapter implements DataAdapter {
   private base: DataAdapter;
   private cargoBase: string;
   private getToken: () => string | undefined;
+  private setToken: (token: string | undefined) => void;
+  private refreshToken?: () => Promise<string | undefined>;
   private fetchImpl: typeof fetch;
 
   constructor(base: DataAdapter, deps: Poc3CargoAdapterDeps) {
     this.base = base;
     this.cargoBase = deps.cargoBaseUrl.replace(/\/$/, '');
     this.getToken = deps.getToken ?? (() => undefined);
+    this.setToken = deps.setToken ?? (() => {});
+    this.refreshToken = deps.refreshToken;
     // Keep `fetch` bound to its global (a bare property call throws "Illegal
     // invocation" in the browser). Mirrors LiveAdapter.
     this.fetchImpl = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
@@ -60,7 +118,7 @@ export class Poc3CargoAdapter implements DataAdapter {
     return this.base.mode;
   }
 
-  // -- POC-3 fetch plumbing (mirrors LiveAdapter.buildUrl/get) ----------------
+  // -- POC-3 fetch plumbing ----------------------------------------------------
   private buildUrl(path: string, query?: Record<string, string | undefined>): string {
     const isAbsolute = /^https?:\/\//i.test(this.cargoBase);
     const origin =
@@ -72,20 +130,71 @@ export class Poc3CargoAdapter implements DataAdapter {
     return isAbsolute ? url.toString() : url.pathname + url.search;
   }
 
+  /**
+   * Single request entry point: attaches the bearer token to EVERY call, and on a
+   * 401 re-mints the token once and retries so an absent/expired token self-heals
+   * (this is what guarantees no cargo request is left permanently unauthenticated).
+   * Callers map the returned Response; a non-ok status becomes a {@link CargoApiError}.
+   */
+  private async request(
+    method: string,
+    path: string,
+    opts: { query?: Record<string, string | undefined>; body?: unknown } = {},
+  ): Promise<Response> {
+    const url = this.buildUrl(path, opts.query);
+    const send = (token: string | undefined) =>
+      this.fetchImpl(url, {
+        method,
+        headers: {
+          ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+      });
+
+    let res = await send(this.getToken());
+    // Self-heal a 401: re-mint the POC-3 JWT once, store it, and retry the request
+    // with the fresh bearer. Covers the initial-race and token-expiry cases.
+    if (res.status === 401 && this.refreshToken) {
+      const fresh = await this.refreshToken();
+      if (fresh) {
+        this.setToken(fresh);
+        res = await send(fresh);
+      }
+    }
+    return res;
+  }
+
+  /** Throw a typed error for a non-ok response, extracting the backend `detail`. */
+  private static async fail(res: Response, path: string): Promise<never> {
+    let detail: string | undefined;
+    try {
+      const body = (await res.json()) as { detail?: unknown };
+      detail = typeof body.detail === 'string' ? body.detail : body.detail ? JSON.stringify(body.detail) : undefined;
+    } catch {
+      /* non-JSON error body — status alone drives the message */
+    }
+    throw new CargoApiError(res.status, path, detail);
+  }
+
   private async getJson<T>(path: string, query?: Record<string, string | undefined>): Promise<T> {
-    const token = this.getToken();
-    const res = await this.fetchImpl(this.buildUrl(path, query), {
-      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    });
-    if (!res.ok) throw new Error(`POC-3 Cargo API ${path} → ${res.status} ${res.statusText}`);
+    const res = await this.request('GET', path, { query });
+    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
     return (await res.json()) as T;
   }
 
-  // -- the one re-sourced method ---------------------------------------------
+  /** POST/PUT with a JSON body; both return the affected CargoRecord. */
+  private async writeJson<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
+    const res = await this.request(method, path, { body });
+    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+    return (await res.json()) as T;
+  }
+
+  // -- reads (GET /api/cargo, GET /api/cargo/{id}) ----------------------------
   async getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
     // Container Search: an exact ISO-6346 lookup goes to the single-record
-    // endpoint (Phase 6 — never a local array scan). A 404 is an empty result,
-    // not an error, so the panel shows its graceful empty state.
+    // endpoint (never a local array scan). A 404 is an empty result, not an
+    // error, so the panel shows its graceful empty state.
     if (filter.containerNo) {
       const norm = filter.containerNo.trim().toUpperCase().replace(/\s+/g, '');
       if (!isValidContainerNo(norm)) return [];
@@ -93,7 +202,7 @@ export class Poc3CargoAdapter implements DataAdapter {
         const one = await this.getJson<CargoRecord>(`/api/cargo/${encodeURIComponent(norm)}`);
         return [mapCargoToMovement(one)];
       } catch (err) {
-        if (err instanceof Error && / → 404 /.test(err.message)) return [];
+        if (err instanceof CargoApiError && err.status === 404) return [];
         throw err;
       }
     }
@@ -109,40 +218,35 @@ export class Poc3CargoAdapter implements DataAdapter {
     return rows.map(mapCargoToMovement);
   }
 
-  // -- the one re-sourced WRITE (partial update of the existing cargo record) --
+  // -- create (POST /api/cargo → 201) -----------------------------------------
+  async createCargo(record: CargoCreateInput): Promise<ContainerMovementDTO> {
+    const body: CargoCreateInput = {
+      ...record,
+      container_number: record.container_number.trim().toUpperCase().replace(/\s+/g, ''),
+    };
+    const created = await this.writeJson<CargoRecord>('POST', '/api/cargo', body);
+    return mapCargoToMovement(created);
+  }
+
+  // -- update (PUT /api/cargo/{id} → 200) -------------------------------------
   /**
-   * Update the EXISTING `/api/cargo/{container_number}` record with only the
-   * required fields (e.g. `{ yard_block }` on discharge, `{ is_released: true }`
-   * on release) and return the updated record via the shared cargo mapper. No
-   * new endpoint/DTO/service is introduced — it writes to the same resource the
-   * reads use. See {@link writeJson} for verb negotiation.
+   * Update the EXISTING cargo record with only the required fields (e.g.
+   * `{ yard_block }` on discharge, `{ is_released: true }` on release). The
+   * backend exposes PUT for updates (PATCH is not supported), and applies a
+   * partial update via `exclude_unset`, so a single-field body works.
    */
-  async updateCargo(containerNo: string, patch: Partial<CargoRecord>): Promise<ContainerMovementDTO> {
+  async updateCargo(containerNo: string, patch: CargoUpdateInput): Promise<ContainerMovementDTO> {
     const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
-    const updated = await this.writeJson<CargoRecord>(`/api/cargo/${encodeURIComponent(norm)}`, patch);
+    const updated = await this.writeJson<CargoRecord>('PUT', `/api/cargo/${encodeURIComponent(norm)}`, patch);
     return mapCargoToMovement(updated);
   }
 
-  /**
-   * Partial-update the existing cargo resource. Prefers PATCH (partial update);
-   * if the backend's existing update verb is PUT instead (PATCH → 405), it retries
-   * once with PUT to the SAME resource with the SAME body, so it adapts to whichever
-   * update verb the endpoint already exposes without inventing a new one. Auth /
-   * URL plumbing mirrors {@link getJson}.
-   */
-  private async writeJson<T>(path: string, body: unknown): Promise<T> {
-    const send = (method: 'PATCH' | 'PUT') => {
-      const token = this.getToken();
-      return this.fetchImpl(this.buildUrl(path), {
-        method,
-        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(body),
-      });
-    };
-    let res = await send('PATCH');
-    if (res.status === 405) res = await send('PUT'); // existing resource exposes PUT, not PATCH
-    if (!res.ok) throw new Error(`POC-3 Cargo API ${path} → ${res.status} ${res.statusText}`);
-    return (await res.json()) as T;
+  // -- delete (DELETE /api/cargo/{id} → 200) ----------------------------------
+  async deleteCargo(containerNo: string): Promise<void> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    const path = `/api/cargo/${encodeURIComponent(norm)}`;
+    const res = await this.request('DELETE', path);
+    if (!res.ok) await Poc3CargoAdapter.fail(res, path);
   }
 
   // -- everything else passes straight through to the base adapter -----------
@@ -170,8 +274,19 @@ export class Poc3CargoAdapter implements DataAdapter {
   getITRHO(window: TimeWindow): Promise<ITRHOMovement[]> {
     return this.base.getITRHO(window);
   }
-  getScanQueue(): Promise<ScanEvent[]> {
-    return this.base.getScanQueue();
+  /**
+   * The customs scan queue is re-sourced from POC-3 cargo too (single source of
+   * truth): every row is a real, in-port (not-yet-released) container, so the
+   * panel's Release write (`PUT /api/cargo/{id} { is_released: true }`) always
+   * targets an existing record instead of a simulated one that 404s.
+   */
+  async getScanQueue(): Promise<ScanEvent[]> {
+    const rows = await this.getJson<CargoRecord[]>('/api/cargo', {
+      is_released: 'false',
+      limit: '100',
+      offset: '0',
+    });
+    return rows.map(mapCargoToScanEvent);
   }
   getEmptyPool(): Promise<EmptyPoolDTO> {
     return this.base.getEmptyPool();

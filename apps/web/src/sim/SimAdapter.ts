@@ -10,8 +10,8 @@
  * refetch while the clock runs. Writes/scenarios pass straight through.
  */
 import type {
-  DataAdapter, CargoRecord, ContainerMovementDTO, ContainerMovementFilter, GateOpsDTO,
-  GateQueueForecastDTO, PendencyDTO, RailSideDTO, RakeForecastDTO, EmptyPoolDTO,
+  DataAdapter, CargoCreateInput, CargoUpdateInput, ContainerMovementDTO, ContainerMovementFilter,
+  GateOpsDTO, GateQueueForecastDTO, PendencyDTO, RailSideDTO, RakeForecastDTO, EmptyPoolDTO,
   TimeWindow, ScenarioParams, ScenarioResultDTO,
 } from '@jnpa/data';
 import type {
@@ -40,10 +40,19 @@ export class SimAdapter implements DataAdapter {
   getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
     return this.base.getContainerMovements(filter);
   }
-  /** Cargo write passes straight through to the base (Poc3CargoAdapter). */
-  updateCargo(containerNo: string, patch: Partial<CargoRecord>): Promise<ContainerMovementDTO> {
+  /** Cargo writes pass straight through to the base (Poc3CargoAdapter) — the
+   *  simulator never overlays cargo, which is sourced solely from POC-3. */
+  createCargo(record: CargoCreateInput): Promise<ContainerMovementDTO> {
+    if (!this.base.createCargo) return Promise.reject(new Error('Cargo write is unavailable in this data mode.'));
+    return this.base.createCargo(record);
+  }
+  updateCargo(containerNo: string, patch: CargoUpdateInput): Promise<ContainerMovementDTO> {
     if (!this.base.updateCargo) return Promise.reject(new Error('Cargo write is unavailable in this data mode.'));
     return this.base.updateCargo(containerNo, patch);
+  }
+  deleteCargo(containerNo: string): Promise<void> {
+    if (!this.base.deleteCargo) return Promise.reject(new Error('Cargo write is unavailable in this data mode.'));
+    return this.base.deleteCargo(containerNo);
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
