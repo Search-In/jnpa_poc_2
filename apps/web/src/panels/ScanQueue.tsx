@@ -15,7 +15,7 @@ import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
-import { useSimDep } from '../sim/useSimStore.js';
+import { useSimStore } from '../sim/useSimStore.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 
@@ -106,10 +106,14 @@ function ReleaseDialog({ containerNo, onClose }: { containerNo: string; onClose:
 
 export function ScanQueue() {
   const { adapter, lang } = useApp();
-  const simDep = useSimDep();
+  // Refetch on the What-If scan lever (scanQueue) — NOT on the clock `tick` that
+  // `useSimDep` embeds — so the network-backed Scan tab stops refetching (and
+  // blinking) once per second while the sim clock runs. scanQueue is null when
+  // idle (stable) and only changes under a scan What-If, where a refresh is wanted.
+  const scanLever = useSimStore().scanQueue;
   // Bumped after any cargo write → the queue (and dependent panels) refetch.
   const cargoRev = useCargoRefresh();
-  const state = useAsync<ScanEvent[]>(() => adapter.getScanQueue(), [adapter, simDep, cargoRev]);
+  const state = useAsync<ScanEvent[]>(() => adapter.getScanQueue(), [adapter, scanLever, cargoRev]);
   // Container pending a release confirmation (null = no dialog).
   const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
   return (
@@ -134,7 +138,13 @@ export function ScanQueue() {
           {scans.slice(0, 25).map((s) => (
             <CalciteTableRow key={s.scanId}>
               <CalciteTableCell>{s.containerNo}</CalciteTableCell>
-              <CalciteTableCell>{(s as ScanEvent & { sealNo?: string }).sealNo ?? '—'}</CalciteTableCell>
+              <CalciteTableCell>
+                {/* e-Seal number from the POC-3 record; the seal status (ACTIVE /
+                    TAMPERED / …) rides along as a hover title when present. */}
+                <span title={(s as ScanEvent & { esealStatus?: string }).esealStatus ?? undefined}>
+                  {(s as ScanEvent & { sealNo?: string }).sealNo ?? '—'}
+                </span>
+              </CalciteTableCell>
               <CalciteTableCell>
                 {(() => {
                   const pd = (s as ScanEvent & { preDoc?: string }).preDoc ?? '—';

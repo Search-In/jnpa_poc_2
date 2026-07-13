@@ -61,6 +61,12 @@ export interface ContainerMovementFilter {
 /** Customs clearance status served by the POC-3 shared Cargo API. */
 export type CargoCustomsStatus = 'PENDING' | 'CLEARED' | 'HELD' | 'UNDER_INSPECTION';
 
+/** e-Seal reader status served by the POC-3 shared Cargo API (latest deployment). */
+export type CargoEsealStatus = 'ACTIVE' | 'ARMED' | 'TAMPERED' | 'REMOVED' | 'NONE';
+
+/** Pre-document processing status served by the POC-3 shared Cargo API (latest deployment). */
+export type CargoPreDocStatus = 'NOT_STARTED' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+
 /**
  * Request body for `POST /api/cargo` (POC-3 `CargoCreate`). Only
  * `container_number` is required; every other field defaults on the backend
@@ -103,6 +109,15 @@ export interface CargoRecord {
   camera_id?: string | null;
   /** ISO-8601 timestamp (estimated time of arrival). */
   eta?: string | null;
+  // ---- fields added by the latest POC-3 deployment (may be null when unset) ----
+  /** e-Seal reader status. */
+  eseal_status?: CargoEsealStatus | null;
+  /** e-Seal device/tag number (surfaced in the Scan tab's e-Seal column). */
+  eseal_number?: string | null;
+  /** Pre-document processing status (surfaced in the Scan tab's Pre-doc column). */
+  pre_document_status?: CargoPreDocStatus | null;
+  /** Origin stream (surfaced in the Movements tab's Stream column). */
+  origin_stream?: string | null;
   created_at: string;
   updated_at: string;
 }

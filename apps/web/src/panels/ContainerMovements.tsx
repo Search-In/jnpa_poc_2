@@ -115,7 +115,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 
         <div style={{ padding: '10px 14px', overflowY: 'auto', flex: 1 }}>
           <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 12px' }}>
-            {move.cargo ? 'N/A' : move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
+            {move.cargo ? (move.cargo.origin_stream ?? 'N/A') : move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
           </p>
 
           {rows.length === 0 ? (
@@ -551,7 +551,7 @@ export function ContainerMovements() {
                   'Line Owner': m.container.lineOwner,
                   'Seal No': m.container.currentSealNo,
                   'Current Status': m.container.status,
-                  'Origin Stream': m.container.originStream,
+                  'Origin Stream': m.cargo?.origin_stream ?? m.container.originStream,
                   'Facility': m.facilityId,
                   'Last Event': m.lastEventType,
                   'Last Event Time': m.lastEventTs,
@@ -593,9 +593,12 @@ export function ContainerMovements() {
               <CalciteTableRow key={m.container.containerNo}>
                 <CalciteTableCell>{m.container.containerNo}</CalciteTableCell>
                 <CalciteTableCell>
-                  {/* POC-3 does not model an origin stream → N/A (no redesign). */}
+                  {/* Origin stream from the POC-3 cargo record when present; the
+                      existing N/A fallback is kept when the backend value is null. */}
                   {m.cargo
-                    ? <span style={{ color: tokens.color.textMuted }}>N/A</span>
+                    ? (m.cargo.origin_stream
+                        ? <CalciteChip value={m.cargo.origin_stream}>{m.cargo.origin_stream}</CalciteChip>
+                        : <span style={{ color: tokens.color.textMuted }}>N/A</span>)
                     : <CalciteChip value={m.container.originStream}>{m.container.originStream}</CalciteChip>}
                 </CalciteTableCell>
                 <CalciteTableCell>{m.container.lineOwner}</CalciteTableCell>
