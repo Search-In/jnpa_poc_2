@@ -14,10 +14,11 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell,
   CalciteSelect, CalciteOption, CalciteChip, CalciteButton, CalciteIcon, CalciteNotice,
+  CalciteInput, CalciteLabel,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS } from '@jnpa/schemas';
-import type { ContainerMovementDTO } from '@jnpa/data';
+import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS, isValidContainerNo } from '@jnpa/schemas';
+import type { CargoCreateInput, CargoCustomsStatus, ContainerMovementDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
@@ -25,6 +26,7 @@ import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
+import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
@@ -166,7 +168,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 
 /**
  * Vessel Discharge modal — assigns a yard block to a live POC-3 cargo record via
- * the existing Poc3CargoAdapter write (`PATCH /api/cargo/{id} { yard_block }`).
+ * the existing Poc3CargoAdapter write (`PUT /api/cargo/{id} { yard_block }`).
  * Reuses the app's role="dialog" overlay pattern (see TimelineDrawer) + CalciteNotice
  * feedback. Yard options are the distinct yard blocks already in the live cargo —
  * no hardcoded yard names. On success it bumps cargoRefreshStore so Movement +
@@ -195,12 +197,12 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
     setBusy(true);
     setError(null);
     try {
-      // Existing Poc3CargoAdapter → PATCH /api/cargo/{id} { yard_block } → POC-3.
+      // Existing Poc3CargoAdapter → PUT /api/cargo/{id} { yard_block } → POC-3.
       await adapter.updateCargo(selected.container.containerNo, { yard_block: yard });
       cargoRefreshStore.bump(); // refetch Movement + Yard/Pendency via the existing flow
       setDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(cargoErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -297,6 +299,209 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
   );
 }
 
+const CUSTOMS_STATUSES: CargoCustomsStatus[] = ['PENDING', 'CLEARED', 'HELD', 'UNDER_INSPECTION'];
+
+/**
+ * Create Cargo modal — books a NEW cargo record into the POC-3 shared backend via
+ * `POST /api/cargo` (201). Only the container number (ISO-6346) is mandatory; the
+ * rest map 1:1 to the CargoCreate DTO and default on the backend. A duplicate
+ * surfaces as the 409 message; on success it bumps cargoRefreshStore so the grid
+ * refetches from the Cargo API.
+ */
+function CreateCargoModal({ onClose }: { onClose: () => void }) {
+  const { adapter } = useApp();
+  const [form, setForm] = useState<CargoCreateInput>({ container_number: '', customs_status: 'PENDING', is_released: false });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const set = (patch: Partial<CargoCreateInput>) => setForm((f) => ({ ...f, ...patch }));
+  const cn = form.container_number.trim().toUpperCase().replace(/\s+/g, '');
+  const cnValid = isValidContainerNo(cn);
+
+  const submit = async () => {
+    if (!adapter.createCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
+    if (!cnValid) { setError('Enter a valid ISO-6346 container number (e.g. MAEU6123458).'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await adapter.createCargo({
+        container_number: cn,
+        vessel_name: form.vessel_name?.trim() || undefined,
+        customs_status: form.customs_status,
+        yard_block: form.yard_block?.trim() || undefined,
+        is_released: form.is_released,
+        vehicle_number: form.vehicle_number?.trim() || undefined,
+        gate: form.gate?.trim() || undefined,
+        eta: form.eta || undefined,
+      });
+      cargoRefreshStore.bump(); // refetch the grid from POC-3
+      setDone(true);
+    } catch (e) {
+      setError(cargoErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
+      <div
+        role="dialog"
+        aria-label="Create cargo record"
+        style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: 'min(460px, 96vw)', maxHeight: '90vh', background: tokens.color.bgPanel,
+          border: `1px solid ${tokens.color.border}`, borderRadius: 12,
+          boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101, display: 'flex', flexDirection: 'column',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff', borderRadius: '12px 12px 0 0' }}>
+          <CalciteIcon icon="plus" scale="s" />
+          <strong style={{ fontSize: 14 }}>New Cargo Record</strong>
+          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
+            <CalciteIcon icon="x" scale="s" />
+          </button>
+        </div>
+
+        <div style={{ padding: '12px 14px', overflowY: 'auto' }}>
+          {done ? (
+            <CalciteNotice open kind="success" icon="check-circle" scale="s">
+              <div slot="title">Cargo created</div>
+              <div slot="message">{cn} was added to the shared Cargo backend.</div>
+            </CalciteNotice>
+          ) : (
+            <>
+              <CalciteLabel>Container number (ISO-6346)
+                <CalciteInput value={form.container_number} placeholder="MAEU6123458"
+                  status={form.container_number && !cnValid ? 'invalid' : 'idle'}
+                  onCalciteInputInput={(e) => set({ container_number: (e.target as unknown as { value: string }).value })} />
+              </CalciteLabel>
+              <CalciteLabel>Vessel name
+                <CalciteInput value={form.vessel_name ?? ''} placeholder="MAERSK SEMBAWANG"
+                  onCalciteInputInput={(e) => set({ vessel_name: (e.target as unknown as { value: string }).value })} />
+              </CalciteLabel>
+              <CalciteLabel>Customs status
+                <CalciteSelect label="Customs status" onCalciteSelectChange={(e) => set({ customs_status: (e.target as unknown as { value: CargoCustomsStatus }).value })}>
+                  {CUSTOMS_STATUSES.map((s) => (
+                    <CalciteOption key={s} value={s} selected={s === form.customs_status}>{s}</CalciteOption>
+                  ))}
+                </CalciteSelect>
+              </CalciteLabel>
+              <CalciteLabel>Yard block
+                <CalciteInput value={form.yard_block ?? ''} placeholder="A-12"
+                  onCalciteInputInput={(e) => set({ yard_block: (e.target as unknown as { value: string }).value })} />
+              </CalciteLabel>
+              <CalciteLabel>Vehicle number
+                <CalciteInput value={form.vehicle_number ?? ''} placeholder="MH04AB1234"
+                  onCalciteInputInput={(e) => set({ vehicle_number: (e.target as unknown as { value: string }).value })} />
+              </CalciteLabel>
+              <CalciteLabel>Gate
+                <CalciteInput value={form.gate ?? ''} placeholder="GATE-3"
+                  onCalciteInputInput={(e) => set({ gate: (e.target as unknown as { value: string }).value })} />
+              </CalciteLabel>
+
+              {error && (
+                <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
+                  <div slot="title">Create failed</div>
+                  <div slot="message">{error}</div>
+                </CalciteNotice>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
+          {done ? (
+            <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
+          ) : (
+            <>
+              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy}>Cancel</CalciteButton>
+              <CalciteButton scale="s" iconStart="plus" loading={busy} disabled={!cnValid || busy} onClick={submit}>Create</CalciteButton>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Delete confirmation — removes a cargo record from the POC-3 shared backend via
+ * `DELETE /api/cargo/{id}` (200). Reuses the role="dialog" overlay + CalciteNotice
+ * feedback. On success it bumps cargoRefreshStore so the grid refetches.
+ */
+function DeleteCargoDialog({ containerNo, onClose }: { containerNo: string; onClose: () => void }) {
+  const { adapter } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const confirm = async () => {
+    if (!adapter.deleteCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      await adapter.deleteCargo(containerNo);
+      cargoRefreshStore.bump(); // refetch the grid from POC-3
+      setDone(true);
+    } catch (e) {
+      setError(cargoErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
+      <div
+        role="dialog"
+        aria-label={`Delete ${containerNo}`}
+        style={{
+          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          width: 'min(400px, 96vw)', background: tokens.color.bgPanel, border: `1px solid ${tokens.color.border}`,
+          borderRadius: 12, boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.severity.CRIT, color: '#fff', borderRadius: '12px 12px 0 0' }}>
+          <CalciteIcon icon="trash" scale="s" />
+          <strong style={{ fontSize: 14 }}>Delete cargo record</strong>
+          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
+            <CalciteIcon icon="x" scale="s" />
+          </button>
+        </div>
+        <div style={{ padding: 14 }}>
+          {done ? (
+            <CalciteNotice open kind="success" icon="check-circle" scale="s">
+              <div slot="title">Deleted</div>
+              <div slot="message">{containerNo} was removed from the shared Cargo backend.</div>
+            </CalciteNotice>
+          ) : (
+            <p style={{ fontSize: 13, margin: 0 }}>
+              Permanently delete <strong>{containerNo}</strong> from the shared Cargo backend? This cannot be undone.
+            </p>
+          )}
+          {error && (
+            <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
+              <div slot="title">Delete failed</div>
+              <div slot="message">{error}</div>
+            </CalciteNotice>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
+          {done ? (
+            <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
+          ) : (
+            <>
+              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy}>Cancel</CalciteButton>
+              <CalciteButton scale="s" kind="danger" iconStart="trash" loading={busy} disabled={busy} onClick={confirm}>Confirm delete</CalciteButton>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function ContainerMovements() {
   const { adapter, role, lang } = useApp();
   const [stream, setStream] = useState<OriginStream | 'ALL'>('ALL');
@@ -304,6 +509,10 @@ export function ContainerMovements() {
   const [selected, setSelected] = useState<ContainerMovementDTO | null>(null);
   // Vessel Discharge modal open state.
   const [dischargeOpen, setDischargeOpen] = useState(false);
+  // Create Cargo modal open state.
+  const [createOpen, setCreateOpen] = useState(false);
+  // Container pending a delete confirmation (null = no dialog).
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   // Bumped after any cargo write → this list refetches from the Cargo API.
   const cargoRev = useCargoRefresh();
   const state = useAsync<ContainerMovementDTO[]>(
@@ -322,8 +531,12 @@ export function ContainerMovements() {
       {(moves) => (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            {/* Create a new cargo record in the POC-3 shared backend (POST). */}
+            <CalciteButton scale="s" iconStart="plus" onClick={() => setCreateOpen(true)}>
+              New Cargo
+            </CalciteButton>
             {/* Vessel Discharge — beside the existing Import / Export buttons. */}
-            <CalciteButton scale="s" iconStart="export" onClick={() => setDischargeOpen(true)}>
+            <CalciteButton scale="s" appearance="outline" iconStart="export" onClick={() => setDischargeOpen(true)}>
               Vessel Discharge
             </CalciteButton>
             <div style={{ marginLeft: 'auto' }}>
@@ -349,6 +562,8 @@ export function ContainerMovements() {
             </div>
           </div>
           {dischargeOpen && <VesselDischargeModal moves={moves} onClose={() => setDischargeOpen(false)} />}
+          {createOpen && <CreateCargoModal onClose={() => setCreateOpen(false)} />}
+          {deleteTarget && <DeleteCargoDialog containerNo={deleteTarget} onClose={() => setDeleteTarget(null)} />}
           {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
               FOIS rail, e-Seal). See the per-record Source column + timeline. */}
           <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>
@@ -372,6 +587,7 @@ export function ContainerMovements() {
               <CalciteTableHeader heading="Source" />
               <CalciteTableHeader heading="Events" />
               <CalciteTableHeader heading="Customs" />
+              <CalciteTableHeader heading="Manage" />
             </CalciteTableRow>
             {moves.slice(0, 50).map((m) => (
               <CalciteTableRow key={m.container.containerNo}>
@@ -431,6 +647,19 @@ export function ContainerMovements() {
                       Flag
                     </CalciteButton>
                   )}
+                </CalciteTableCell>
+                <CalciteTableCell>
+                  {/* Delete this cargo record from the shared backend (DELETE). */}
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="danger"
+                    iconStart="trash"
+                    title="Delete this cargo record from the shared Cargo backend"
+                    onClick={() => setDeleteTarget(m.container.containerNo)}
+                  >
+                    Delete
+                  </CalciteButton>
                 </CalciteTableCell>
               </CalciteTableRow>
             ))}

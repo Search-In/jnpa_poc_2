@@ -12,7 +12,7 @@ import { LiveAdapter } from './live-adapter.js';
 export * from './interface.js';
 export { MockAdapter } from './mock-adapter.js';
 export { LiveAdapter } from './live-adapter.js';
-export { Poc3CargoAdapter } from './poc3-cargo-adapter.js';
+export { Poc3CargoAdapter, CargoApiError } from './poc3-cargo-adapter.js';
 export type { Poc3CargoAdapterDeps } from './poc3-cargo-adapter.js';
 export { mapCargoToMovement } from './cargo-mapper.js';
 // The deterministic scenario engine is reused by services/scenarios over the bus.
