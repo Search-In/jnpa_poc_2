@@ -62,6 +62,29 @@ export interface ContainerMovementFilter {
 export type CargoCustomsStatus = 'PENDING' | 'CLEARED' | 'HELD' | 'UNDER_INSPECTION';
 
 /**
+ * Request body for `POST /api/cargo` (POC-3 `CargoCreate`). Only
+ * `container_number` is required; every other field defaults on the backend
+ * (customs_status→PENDING, is_released→false, the rest→null). Timestamps
+ * (`created_at`/`updated_at`) are server-assigned and never sent.
+ */
+export interface CargoCreateInput {
+  container_number: string;
+  vessel_name?: string | null;
+  customs_status?: CargoCustomsStatus;
+  yard_block?: string | null;
+  is_released?: boolean;
+  vehicle_number?: string | null;
+  gate?: string | null;
+  camera_id?: string | null;
+  eta?: string | null;
+}
+
+/** The mutable subset of a cargo record accepted by `PUT /api/cargo/{id}`
+ * (POC-3 `CargoUpdate`). All fields optional — only the provided ones are
+ * written. The PK (container_number) is immutable and comes from the path. */
+export type CargoUpdateInput = Partial<Omit<CargoCreateInput, 'container_number'>>;
+
+/**
  * The raw shared Cargo record as served by the POC-3 gateway (`CargoOut`,
  * `GET /api/cargo`). This is the single source of truth for cargo — POC-2 keeps
  * no cargo store of its own. Field names mirror the API (snake_case) so the
@@ -197,6 +220,35 @@ export interface DataAdapter {
   getNotifications(role: Role): Promise<Notification[]>;
   getIntegrationHealth(): Promise<IntegrationHealth[]>;
   runScenario(id: string, params: ScenarioParams): Promise<ScenarioResultDTO>;
+
+  /**
+   * Create a cargo record in the POC-3 shared backend (`POST /api/cargo` → 201).
+   * Returns the newly created record projected into the canonical
+   * {@link ContainerMovementDTO} via the same cargo mapper the reads use. A
+   * duplicate container number surfaces as a 409 {@link CargoApiError}. Optional:
+   * implemented only on the Poc3CargoAdapter path.
+   */
+  createCargo?(record: CargoCreateInput): Promise<ContainerMovementDTO>;
+
+  /**
+   * Write-through to the POC-3 shared Cargo resource: a partial or full update of
+   * the EXISTING `/api/cargo/{container_number}` record via **`PUT`** (the backend
+   * does not support PATCH — see gateway/routers/cargo.py). Only the provided
+   * fields are written (POC-3 uses `exclude_unset`), so `{ yard_block }` on a
+   * vessel discharge or `{ is_released: true }` on a gate release both work.
+   * Returns the updated record as a {@link ContainerMovementDTO}. A missing
+   * container surfaces as a 404 {@link CargoApiError}. Optional: implemented only
+   * on the Poc3CargoAdapter path (undefined when cargo is served from the mock/sim).
+   */
+  updateCargo?(containerNo: string, patch: CargoUpdateInput): Promise<ContainerMovementDTO>;
+
+  /**
+   * Delete a cargo record from the POC-3 shared backend
+   * (`DELETE /api/cargo/{container_number}` → 200). Resolves on success; a missing
+   * container surfaces as a 404 {@link CargoApiError}. Optional: implemented only
+   * on the Poc3CargoAdapter path.
+   */
+  deleteCargo?(containerNo: string): Promise<void>;
 
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';

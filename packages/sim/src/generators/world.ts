@@ -79,7 +79,7 @@ const SATELLITE_COORDS: Record<string, [number, number]> = {
   'DPD-CENTRAL': [72.9505, 18.9560], // Direct Port Delivery yard, central
   'ECD-1': [72.9640, 18.9420], // Empty container depot, JNPT SEZ road
   'ECD-2': [72.9670, 18.9385], // Empty container depot, JNPT SEZ road
-  'CPP-1': [72.9560, 18.9605], // Central Parking Plaza, port entry
+  'CPP-1': [72.9560, 18.9500], // Centralized Parking Plaza, port-entry landside (was 18.9605 — fell in the creek N of the port; moved S onto the developed yard band, same lng corridor)
 };
 
 /** Real coordinate for a satellite id, or a deterministic fallback near port. */

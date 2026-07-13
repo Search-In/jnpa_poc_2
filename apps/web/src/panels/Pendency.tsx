@@ -11,20 +11,24 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
-import { RULE_BY_ID } from '../workflow/workflowStore.js';
+import { workflowStore, RULE_BY_ID, type WorkflowRun } from '../workflow/workflowStore.js';
+import { useWorkflowStore } from '../workflow/useWorkflowStore.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
+import { useCargoRefresh } from '../state/cargoRefreshStore.js';
 
 const sev = (n: number) => (n > 150 ? tokens.congestion.RED : n > 50 ? tokens.congestion.AMBER : tokens.congestion.GREEN);
 
 /**
- * Yard Planning / Optimization info sections — reuse the existing automation
- * rules (workflowStore) as the step-by-step content. WF-PENDENCY governs
- * yard/CFS dwell planning; WF-RAKE-ETA covers rake-driven siding/yard placement
- * re-planning (UC2-R5: rake visibility for terminal-operator yard planning);
- * WF-REEFER-PLUG notifies the 'Yard Planner' role (yard plug allocation +
- * evacuation prioritisation).
+ * Yard Planning / Optimization workflow sections — each maps to a rule in the
+ * existing §8.3 automation engine (workflowStore). WF-PENDENCY governs yard/CFS
+ * dwell planning; WF-RAKE-ETA covers rake-driven siding/yard re-planning;
+ * WF-REEFER-PLUG covers reefer plug allocation + evacuation prioritisation.
+ * `liveTrigger` is null when the panel has no live data for that rule's trigger
+ * (rake ETA-slip and reefer-plug telemetry are NOT exposed by the read DTOs — see
+ * the task report), so no run is invented for those; the operator can still act
+ * on runs the What-If scenarios fire into the shared ledger.
  */
 const YARD_INFO_SECTIONS: Array<{ title: string; ruleId: string }> = [
   { title: 'Yard Planning', ruleId: 'WF-PENDENCY' },
@@ -32,12 +36,47 @@ const YARD_INFO_SECTIONS: Array<{ title: string; ruleId: string }> = [
   { title: 'Yard Operation Optimization', ruleId: 'WF-REEFER-PLUG' },
 ];
 
+/** Map the engine's real run status → the workflow display status + colour.
+ *  No run yet = Pending; awaiting-approval = Current; fired/approved = Completed;
+ *  dismissed = Blocked. (The engine has no Failed state — its actions are simulated
+ *  orchestrations, so there is no real backend failure to surface.) */
+function displayStatus(run?: WorkflowRun): { label: string; color: string } {
+  switch (run?.status) {
+    case 'PENDING_APPROVAL': return { label: 'Current', color: tokens.congestion.AMBER };
+    case 'FIRED':
+    case 'APPROVED': return { label: 'Completed', color: tokens.congestion.GREEN };
+    case 'DISMISSED': return { label: 'Blocked', color: tokens.congestion.RED };
+    default: return { label: 'Pending', color: tokens.color.textMuted };
+  }
+}
+
 /**
- * Slide-over info drawer (reuses the Container Movements timeline / Integration
- * Console pattern). Renders each section as a Step 1 ↓ Step 2 ↓ … breakdown
- * built from the reused rule `actions` — no invented content.
+ * Slide-over workflow drawer (reuses the Container Movements timeline / Integration
+ * Console overlay pattern). Each section is a live workflow: its status comes from
+ * the shared workflow ledger (useWorkflowStore), its steps from the rule (not
+ * hardcoded), and its actions drive the existing engine — Run (fire the rule with a
+ * live-data trigger, WF-PENDENCY only) and Approve / Dismiss for a pending run.
  */
-function YardInfoDrawer({ onClose }: { onClose: () => void }) {
+function YardInfoDrawer({ rows, onClose }: { rows: PendencyDTO[]; onClose: () => void }) {
+  const { mode, runs } = useWorkflowStore();
+  // Live WF-PENDENCY trigger: facilities above the existing pendency-severity
+  // threshold (reuses `sev`, no new hardcoded number), worst first.
+  const breaching = [...rows]
+    .filter((r) => sev(r.pendency) !== tokens.congestion.GREEN)
+    .sort((a, b) => b.pendency - a.pendency);
+  const liveTriggerFor = (ruleId: string): { trigger: string; location: string } | null => {
+    if (ruleId === 'WF-PENDENCY' && breaching[0]) {
+      const w = breaching[0];
+      return {
+        trigger: `Pendency breach: ${w.facilityName} = ${w.pendency}${breaching.length > 1 ? ` (+${breaching.length - 1} more)` : ''}`,
+        location: w.facilityId,
+      };
+    }
+    // WF-RAKE-ETA (ETA-slip) and WF-REEFER-PLUG (plug telemetry) have no live
+    // trigger in the read DTOs — do not fabricate one.
+    return null;
+  };
+
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
@@ -53,7 +92,8 @@ function YardInfoDrawer({ onClose }: { onClose: () => void }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff' }}>
           <CalciteIcon icon="information" scale="s" />
           <strong style={{ fontSize: 14 }}>Yard Planning &amp; Optimization</strong>
-          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
+          <CalciteChip scale="s" value={mode} title="Workflow engine mode" style={{ marginLeft: 'auto' }}>{mode}</CalciteChip>
+          <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
             <CalciteIcon icon="x" scale="s" />
           </button>
         </div>
@@ -61,23 +101,63 @@ function YardInfoDrawer({ onClose }: { onClose: () => void }) {
           {YARD_INFO_SECTIONS.map((sec, si) => {
             const rule = RULE_BY_ID[sec.ruleId];
             const steps = rule ? rule.actions.split(/;\s*/).filter(Boolean) : [];
+            // Latest run for this rule from the shared ledger (real status).
+            const latest = runs.find((r) => r.ruleId === sec.ruleId);
+            const st = displayStatus(latest);
+            const live = liveTriggerFor(sec.ruleId);
+            const pending = latest?.status === 'PENDING_APPROVAL';
             return (
               <div key={sec.ruleId} style={{ marginBottom: si < YARD_INFO_SECTIONS.length - 1 ? 22 : 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: tokens.color.text }}>{sec.title}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: tokens.color.text }}>{sec.title}</span>
+                  <CalciteChip scale="s" value={st.label} title="Workflow status" style={{ marginLeft: 'auto', ['--calcite-chip-text-color' as never]: st.color }}>
+                    {st.label}
+                  </CalciteChip>
+                </div>
                 {rule && (
-                  <div style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '2px 0 10px' }}>
+                  <div style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '2px 0 8px' }}>
                     {rule.when} — {rule.then}
                   </div>
                 )}
                 {steps.map((step, i) => (
                   <div key={i}>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: tokens.color.brand }}>Step {i + 1}</span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                      <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: st.color }}>Step {i + 1}</span>
                       <span style={{ fontSize: 12.5, color: tokens.color.text }}>{step}</span>
                     </div>
                     {i < steps.length - 1 && <div style={{ color: tokens.color.textMuted, fontSize: 14, margin: '2px 0 2px 8px' }}>↓</div>}
                   </div>
                 ))}
+
+                {/* Live trigger + actions. */}
+                <div style={{ marginTop: 8 }}>
+                  {live && (
+                    <div style={{ fontSize: 11.5, color: tokens.color.text, marginBottom: 6 }}>
+                      <strong>Live trigger:</strong> {live.trigger}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {pending && latest ? (
+                      <>
+                        <CalciteButton scale="s" kind="brand" iconStart="check" onClick={() => workflowStore.approveRun(latest.id)}>Approve</CalciteButton>
+                        <CalciteButton scale="s" appearance="outline" kind="neutral" iconStart="x" onClick={() => workflowStore.dismissRun(latest.id)}>Dismiss</CalciteButton>
+                      </>
+                    ) : live ? (
+                      <CalciteButton
+                        scale="s"
+                        iconStart="play"
+                        title={mode === 'AUTO' ? 'Run now (AUTO → fires immediately)' : 'Propose (ADVISORY → awaits approval)'}
+                        onClick={() => workflowStore.fireRule(sec.ruleId, { trigger: live.trigger, location: live.location })}
+                      >
+                        Run workflow
+                      </CalciteButton>
+                    ) : (
+                      <span style={{ fontSize: 11, color: tokens.color.textMuted }}>
+                        No live auto-trigger in the current data model — actions appear here when a What-If scenario fires this rule.
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
@@ -97,7 +177,9 @@ export function Pendency() {
   // Yard planning & optimization info drawer (ⓘ), mirroring the Container
   // Movements timeline info button.
   const [infoOpen, setInfoOpen] = useState(false);
-  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, simDep]);
+  // Refetch after a cargo write (discharge/release may change yard assignment).
+  const cargoRev = useCargoRefresh();
+  const state = useAsync<PendencyDTO[]>(() => adapter.getPendency(true), [adapter, simDep, cargoRev]);
   return (
     <>
     <Panel heading={t('panel_pendency', lang)} state={state} isEmpty={(d) => d.length === 0}>
@@ -158,10 +240,10 @@ export function Pendency() {
               </CalciteTableRow>
             ))}
           </CalciteTable>
+          {infoOpen && <YardInfoDrawer rows={rows} onClose={() => setInfoOpen(false)} />}
         </>
       )}
     </Panel>
-    {infoOpen && <YardInfoDrawer onClose={() => setInfoOpen(false)} />}
     </>
   );
 }

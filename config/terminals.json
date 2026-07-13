@@ -73,6 +73,6 @@
   ],
   "railSidings": [
     { "sidingId": "T1", "name": "Central Rail Yard Siding T1", "geom": { "type": "Point", "coordinates": [72.9505, 18.9435] } },
-    { "sidingId": "T2", "name": "BMCT Rail Yard Siding T2", "$geomNote": "T2 sits at the BMCT rail yard (~5.5 km SW). The ~5.5 km T1↔T2 gap is what ITT trailers shuttle across under ITRHO.", "geom": { "type": "Point", "coordinates": [72.9145, 18.9130] } }
+    { "sidingId": "T2", "name": "BMCT Rail Yard Siding T2", "$geomNote": "T2 sits at the BMCT rail yard on the developed BMCT terminal (landward of BMCT's berth [72.9383,18.9386], toward its gates [~72.9435,18.9377]). Previously [72.9145,18.9130] — the OLD in-channel BMCT position that was never updated when BMCT's berth geom was corrected onto land, so the marker fell in open water. The ~5.5 km T1↔T2 gap is what ITT trailers shuttle across under ITRHO.", "geom": { "type": "Point", "coordinates": [72.9410, 18.9380] } }
   ]
 }
