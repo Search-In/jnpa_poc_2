@@ -11,6 +11,7 @@ import type { ScanEvent } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { SuccessNotice } from '../components/SuccessNotice.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
@@ -21,6 +22,10 @@ import { cargoErrorMessage } from '../state/cargoError.js';
 
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
+
+/** Yard-Assignment eligibility: the scan row carries `yardBlock` (mapped from the
+ *  same GET /api/cargo the queue already fetched) once a yard has been assigned. */
+const isYardAssigned = (s: ScanEvent) => !!(s as ScanEvent & { yardBlock?: string }).yardBlock;
 
 // Pre-document-processing status colour (from the e-seal reader state).
 const preDocColor = (p?: string) =>
@@ -33,19 +38,23 @@ const preDocColor = (p?: string) =>
  * overlay + CalciteNotice feedback. On success it bumps cargoRefreshStore so the
  * Scan Queue + Movement + Yard/Pendency refetch through the existing adapter flow.
  */
-function ReleaseDialog({ containerNo, onClose }: { containerNo: string; onClose: () => void }) {
+function ReleaseDialog({ row, onClose, onReleased }: { row: ScanEvent; onClose: () => void; onReleased?: (row: ScanEvent) => void }) {
   const { adapter } = useApp();
+  const containerNo = row.containerNo;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const confirm = async () => {
     if (!adapter.updateCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
+    // Guard against a duplicate release (double-click / re-confirm).
+    if (busy || done) return;
     setBusy(true);
     setError(null);
     try {
       await adapter.updateCargo(containerNo, { is_released: true });
       cargoRefreshStore.bump(); // refresh Scan + Movement + Yard/Pendency
       setDone(true);
+      onReleased?.(row); // retain row (stays visible) + toast + disable duplicate release
     } catch (e) {
       setError(cargoErrorMessage(e));
     } finally {
@@ -73,10 +82,7 @@ function ReleaseDialog({ containerNo, onClose }: { containerNo: string; onClose:
         </div>
         <div style={{ padding: 14 }}>
           {done ? (
-            <CalciteNotice open kind="success" icon="check-circle" scale="s">
-              <div slot="title">Released</div>
-              <div slot="message">{containerNo} marked released from the port.</div>
-            </CalciteNotice>
+            <SuccessNotice title="Container released successfully." details={[{ label: 'Container', value: containerNo }]} />
           ) : (
             <p style={{ fontSize: 13, margin: 0 }}>
               Release <strong>{containerNo}</strong> from the port? This updates the Cargo record (<code>is_released</code>) via POC-3.
@@ -114,17 +120,61 @@ export function ScanQueue() {
   // Bumped after any cargo write → the queue (and dependent panels) refetch.
   const cargoRev = useCargoRefresh();
   const state = useAsync<ScanEvent[]>(() => adapter.getScanQueue(), [adapter, scanLever, cargoRev]);
-  // Container pending a release confirmation (null = no dialog).
-  const [releaseTarget, setReleaseTarget] = useState<string | null>(null);
+  // Row pending a release confirmation (null = no dialog).
+  const [releaseTarget, setReleaseTarget] = useState<ScanEvent | null>(null);
+  // Containers released in this session — disables a second Release (dedupe).
+  const [released, setReleased] = useState<Set<string>>(new Set());
+  // Rows released this session are RETAINED so the container STAYS VISIBLE in the
+  // queue for verification, even though the backend (is_released=false) filters it
+  // out on the next refetch. Nothing here changes the release API or its logic.
+  const [releasedRows, setReleasedRows] = useState<ScanEvent[]>([]);
+  // Panel-level success toast shown after a release succeeds.
+  const [toast, setToast] = useState<string | null>(null);
+  const onReleased = (row: ScanEvent) => {
+    setReleased((s) => new Set(s).add(row.containerNo));
+    setReleasedRows((rows) => [row, ...rows.filter((r) => r.containerNo !== row.containerNo)]);
+    setToast(row.containerNo); // container number → standardized success toast below
+  };
   return (
-    <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.length === 0}>
-      {(scans) => (
+    <>
+    <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.filter(isYardAssigned).length === 0 && releasedRows.length === 0}>
+      {(scans) => {
+        // Eligibility: only YARD-ASSIGNED containers (yard_block set) enter the
+        // Scan Queue. Newly-created / discharged-but-unassigned containers are
+        // excluded until Yard Assignment completes (which sets yard_block and
+        // bumps cargoRefreshStore → this list refetches and they appear). The
+        // yard_block is carried on the scan row itself (no extra network call).
+        const eligible = scans.filter(isYardAssigned);
+        // Merge with rows released this session so released containers stay visible
+        // for verification (the backend filters them out on refetch).
+        const shownNos = new Set(eligible.map((sc) => sc.containerNo));
+        const displayScans = [...eligible, ...releasedRows.filter((r) => !shownNos.has(r.containerNo))];
+        return (
         <>
-          <ImportExportToolbar data={scans} filename="scan-queue.csv" />
+          {/* Release success toast (standardized). Closable; the queue also refetches. */}
+          {toast && (
+            <SuccessNotice
+              title="Container released successfully."
+              details={[{ label: 'Container', value: toast }]}
+              closable
+              onClose={() => setToast(null)}
+              style={{ marginBottom: 8 }}
+            />
+          )}
+          <ImportExportToolbar data={displayScans} filename="scan-queue.csv" />
           {/* Re-sourced from the POC-3 shared Cargo API: the queue is the set of
               in-port (not-yet-released) containers, customs_status → scan result,
               so Release writes back to a real cargo record via PUT. */}
           <div><SourceBadge source="POC-3 Cargo · ICEGATE" live /></div>
+          {/* Retained-row explainer: the backend filters is_released=false, so a
+              released container leaves the live queue on reload. We keep it here,
+              clearly marked, purely so operators can verify the release succeeded. */}
+          {releasedRows.length > 0 && (
+            <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <CalciteIcon icon="information" scale="s" />
+              Rows marked <strong style={{ color: tokens.kpi.better }}>RELEASED</strong> are retained here for verification only and clear when the queue reloads.
+            </p>
+          )}
           <CalciteTable caption="scan queue">
           <CalciteTableRow slot="table-header">
             <CalciteTableHeader heading="Container" />
@@ -135,9 +185,20 @@ export function ScanQueue() {
             <CalciteTableHeader heading="Action" />
             <CalciteTableHeader heading="Result" />
           </CalciteTableRow>
-          {scans.slice(0, 25).map((s) => (
-            <CalciteTableRow key={s.scanId}>
-              <CalciteTableCell>{s.containerNo}</CalciteTableCell>
+          {displayScans.slice(0, 25).map((s) => {
+            const isReleased = released.has(s.containerNo);
+            return (
+            <CalciteTableRow key={s.scanId} style={isReleased ? { opacity: 0.72 } : undefined}>
+              <CalciteTableCell>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {s.containerNo}
+                  {isReleased && (
+                    <CalciteChip scale="s" icon="check" value="released" title="Retained for verification only" style={{ ['--calcite-chip-text-color' as never]: tokens.kpi.better }}>
+                      Released
+                    </CalciteChip>
+                  )}
+                </span>
+              </CalciteTableCell>
               <CalciteTableCell>
                 {/* e-Seal number from the POC-3 record; the seal status (ACTIVE /
                     TAMPERED / …) rides along as a hover title when present. */}
@@ -156,29 +217,56 @@ export function ScanQueue() {
               <CalciteTableCell>{s.flaggedBy}</CalciteTableCell>
               <CalciteTableCell>{new Date(s.startTs).toLocaleString()}</CalciteTableCell>
               <CalciteTableCell>
-                {/* Release the container from the port via the Cargo write API. */}
-                <CalciteButton
-                  scale="s"
-                  appearance="outline"
-                  kind="brand"
-                  iconStart="unlock"
-                  title="Release this container from the port (updates the Cargo record)"
-                  onClick={() => setReleaseTarget(s.containerNo)}
-                >
-                  Release
-                </CalciteButton>
+                {/* Release the container from the port via the Cargo write API.
+                    Once released this session the button is DISABLED (dedupe) and the
+                    row is retained (see releasedRows) so it stays visible. */}
+                {released.has(s.containerNo) ? (
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="neutral"
+                    iconStart="check"
+                    disabled
+                    title="Container already released"
+                  >
+                    Released
+                  </CalciteButton>
+                ) : (
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="brand"
+                    iconStart="unlock"
+                    title="Release this container from the port (updates the Cargo record)"
+                    onClick={() => setReleaseTarget(s)}
+                  >
+                    Release
+                  </CalciteButton>
+                )}
               </CalciteTableCell>
               <CalciteTableCell>
-                <CalciteChip value={s.result ?? 'PENDING'} style={{ ['--calcite-chip-text-color' as never]: resultColor(s.result) }}>
-                  {s.result ?? 'PENDING'}
-                </CalciteChip>
+                {released.has(s.containerNo) ? (
+                  <CalciteChip scale="s" icon="check" value="RELEASED" style={{ ['--calcite-chip-text-color' as never]: tokens.kpi.better }}>
+                    RELEASED
+                  </CalciteChip>
+                ) : (
+                  <CalciteChip value={s.result ?? 'PENDING'} style={{ ['--calcite-chip-text-color' as never]: resultColor(s.result) }}>
+                    {s.result ?? 'PENDING'}
+                  </CalciteChip>
+                )}
               </CalciteTableCell>
             </CalciteTableRow>
-          ))}
+            );
+          })}
           </CalciteTable>
-          {releaseTarget && <ReleaseDialog containerNo={releaseTarget} onClose={() => setReleaseTarget(null)} />}
         </>
-      )}
+        );
+      }}
     </Panel>
+    {/* Mounted OUTSIDE the Panel so the dialog survives the post-release refetch
+        (the Panel unmounts its children while useAsync reloads, which would reset
+        the dialog's success state and re-show the confirmation UI). */}
+    {releaseTarget && <ReleaseDialog row={releaseTarget} onClose={() => setReleaseTarget(null)} onReleased={onReleased} />}
+    </>
   );
 }

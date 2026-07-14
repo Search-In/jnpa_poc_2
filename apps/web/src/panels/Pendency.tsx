@@ -13,6 +13,7 @@ import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { workflowStore, RULE_BY_ID, type WorkflowRun } from '../workflow/workflowStore.js';
 import { useWorkflowStore } from '../workflow/useWorkflowStore.js';
+import { YardBackendPlanning } from './YardBackendPlanning.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
@@ -241,6 +242,10 @@ export function Pendency() {
             ))}
           </CalciteTable>
           {infoOpen && <YardInfoDrawer rows={rows} onClose={() => setInfoOpen(false)} />}
+          {/* Additive: POC-3 yard optimization + yard/reefer planning APIs
+              (Jayesh handover). The pendency table + local workflow drawer above
+              are unchanged. */}
+          <YardBackendPlanning />
         </>
       )}
     </Panel>

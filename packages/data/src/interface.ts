@@ -214,6 +214,174 @@ export interface ScenarioResultDTO {
   mapOverlay?: unknown;
 }
 
+// ---- POC-3 extended Cargo APIs (Jayesh handover — additive integration) -----
+//
+// These map 1:1 to the newly-deployed POC-3 Cargo endpoints. POC-3 remains the
+// single owner of all cargo business logic; POC-2 only consumes them. The shapes
+// mirror the handover's field descriptions and the 0016–0018 migrations; response
+// types keep every field optional so the adapter degrades gracefully if the
+// backend omits or renames a field (the same faithful/defensive posture the base
+// cargo mapper uses). Exact request/response schemas are owned by POC-3.
+
+/** Severity for a stakeholder notification (POC-3 `POST /api/cargo/notifications`). */
+export type CargoNotificationSeverity = 'INFO' | 'WARN' | 'CRIT';
+
+/** Request body for `POST /api/cargo/notifications` — raise a stakeholder notification. */
+export interface CargoNotificationCreateInput {
+  /** Human title/subject. */
+  title?: string;
+  /** Notification body. */
+  message: string;
+  /** INFO | WARN | CRIT. */
+  severity?: CargoNotificationSeverity;
+  /** Stakeholder audience (roles/parties) to notify. */
+  stakeholders?: string[];
+  /** Container context, when the notification is about one box. */
+  container_number?: string | null;
+  /** Free-text category/type (e.g. GATE_IN, CUSTOMS_FLAG). */
+  type?: string;
+  /** Lifecycle status (e.g. OPEN). Backend defaults when omitted. */
+  status?: string;
+}
+
+/** One stakeholder notification as served by `GET /api/cargo/notifications`. */
+export interface CargoNotification {
+  id?: string | number;
+  title?: string | null;
+  message?: string | null;
+  severity?: CargoNotificationSeverity | null;
+  stakeholders?: string[] | null;
+  status?: string | null;
+  container_number?: string | null;
+  type?: string | null;
+  created_at?: string | null;
+}
+
+/** Query filters for `GET /api/cargo/notifications`. */
+export interface CargoNotificationFilter {
+  severity?: string;
+  status?: string;
+  stakeholder?: string;
+  container_number?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Workflow transition requested by `POST /api/cargo/{container_number}/workflow`. */
+export type CargoWorkflowAction = 'TRIGGER' | 'APPROVE' | 'REJECT';
+
+/** Request body for `POST /api/cargo/{container_number}/workflow`. */
+export interface CargoWorkflowActionInput {
+  action: CargoWorkflowAction;
+  /** Which workflow is being driven (e.g. RELEASE_APPROVAL). Optional per backend. */
+  workflow_type?: string;
+  /** Operator note recorded on the transition. */
+  note?: string;
+  /** Actor performing the transition (falls back to the token subject on the backend). */
+  actor?: string;
+}
+
+/** Current workflow state returned by the workflow POST / read. */
+export interface CargoWorkflowState {
+  container_number?: string;
+  status?: string | null;
+  workflow_type?: string | null;
+  updated_at?: string | null;
+}
+
+/** One append-only entry from `GET /api/cargo/{container_number}/workflow/history`. */
+export interface CargoWorkflowHistoryEntry {
+  id?: string | number;
+  container_number?: string;
+  action?: string | null;
+  status?: string | null;
+  actor?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+}
+
+/** Request body for `POST /api/cargo/yard-planning` — allocate a planned yard position.
+ *  The deployed POC-3 backend requires `preferred_block` (verified from the API's
+ *  422 "Field required: preferred_block" response), NOT `yard_block`. This is the
+ *  yard-planning REQUEST contract only; the yard-assignment / cargo-update APIs
+ *  continue to use `yard_block` and are unchanged. */
+export interface YardPlanningInput {
+  container_number: string;
+  /** Preferred yard block for the planned position (POC-3 `preferred_block`). */
+  preferred_block?: string;
+  slot?: string;
+  priority?: number;
+}
+
+/** Result of a yard-planning allocation. */
+export interface YardPlanningResult {
+  container_number?: string;
+  yard_block?: string | null;
+  slot?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+}
+
+/** `GET /api/cargo/yard-optimization` — congestion, priority containers, suggested moves. */
+export interface YardOptimization {
+  congestion?: Array<{ yard_block?: string; utilization?: number; level?: string }> | null;
+  priority_containers?: Array<{ container_number?: string; reason?: string }> | null;
+  suggested_moves?: Array<{ container_number?: string; from?: string; to?: string; reason?: string }> | null;
+}
+
+/** Request body for `POST /api/cargo/rake-planning` — create a rake plan. */
+export interface RakePlanInput {
+  rake_id: string;
+  siding?: string;
+  container_numbers?: string[];
+  /** ISO-8601 planned placement time. */
+  planned_placement?: string;
+  /** ISO-8601 planned departure time. */
+  planned_departure?: string;
+}
+
+/** One rake plan as served by `GET /api/cargo/rake-planning`. */
+export interface RakePlan {
+  id?: string | number;
+  rake_id?: string;
+  siding?: string | null;
+  container_numbers?: string[] | null;
+  planned_placement?: string | null;
+  planned_departure?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+}
+
+/** Request body for `POST /api/cargo/reefer-planning` — allocate a reefer slot. */
+export interface ReeferPlanInput {
+  container_number: string;
+  /** Set-point temperature (°C). */
+  temperature_c?: number;
+  /** Power requirement (kW). */
+  power_kw?: number;
+  slot?: string;
+}
+
+/** One reefer allocation as returned by the reefer-planning API. */
+export interface ReeferPlan {
+  id?: string | number;
+  container_number?: string;
+  temperature_c?: number | null;
+  power_kw?: number | null;
+  slot?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+}
+
+/** One cargo lifecycle event from `GET /api/cargo/events` (cargo.created, cargo.gate_in, …). */
+export interface CargoLifecycleEvent {
+  id?: string | number;
+  event_type?: string | null;
+  container_number?: string | null;
+  payload?: unknown;
+  created_at?: string | null;
+}
+
 // ---- the interface ---------------------------------------------------------
 
 export interface DataAdapter {
@@ -264,6 +432,36 @@ export interface DataAdapter {
    * on the Poc3CargoAdapter path.
    */
   deleteCargo?(containerNo: string): Promise<void>;
+
+  // -- POC-3 extended Cargo APIs (Jayesh handover). All optional: implemented on
+  //    the Poc3CargoAdapter path and delegated by SimAdapter; undefined when cargo
+  //    is served from the mock/sim, so callers guard with `if (!adapter.x) …`. -----
+
+  /** Raise a stakeholder notification (`POST /api/cargo/notifications`). */
+  createCargoNotification?(input: CargoNotificationCreateInput): Promise<CargoNotification>;
+  /** List stakeholder notifications (`GET /api/cargo/notifications`). */
+  getCargoNotifications?(filter?: CargoNotificationFilter): Promise<CargoNotification[]>;
+
+  /** Trigger / approve / reject a container's workflow (`POST /api/cargo/{id}/workflow`). */
+  triggerCargoWorkflow?(containerNo: string, input: CargoWorkflowActionInput): Promise<CargoWorkflowState>;
+  /** Append-only workflow history (`GET /api/cargo/{id}/workflow/history`). */
+  getCargoWorkflowHistory?(containerNo: string): Promise<CargoWorkflowHistoryEntry[]>;
+
+  /** Allocate a planned yard position (`POST /api/cargo/yard-planning`). */
+  createYardPlan?(input: YardPlanningInput): Promise<YardPlanningResult>;
+  /** Yard optimization snapshot (`GET /api/cargo/yard-optimization`). */
+  getYardOptimization?(): Promise<YardOptimization>;
+
+  /** Create a rake plan (`POST /api/cargo/rake-planning`). */
+  createRakePlan?(input: RakePlanInput): Promise<RakePlan>;
+  /** List rake plans (`GET /api/cargo/rake-planning`). */
+  getRakePlans?(): Promise<RakePlan[]>;
+
+  /** Allocate a reefer slot with temperature/power requirements (`POST /api/cargo/reefer-planning`). */
+  createReeferPlan?(input: ReeferPlanInput): Promise<ReeferPlan>;
+
+  /** Cargo lifecycle events (`GET /api/cargo/events`), optionally scoped to one container. */
+  getCargoEvents?(containerNo?: string): Promise<CargoLifecycleEvent[]>;
 
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';

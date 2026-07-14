@@ -10,6 +10,7 @@ import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { SourceBadge } from './SourceBadge.js';
+import { StakeholderNotifications } from './StakeholderNotifications.js';
 import { useCustomsFlags } from '../state/customsFlagStore.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
@@ -23,6 +24,7 @@ export function Notifications() {
   const [acked, setAcked] = useState<Set<string>>(new Set());
 
   return (
+    <>
     <Panel heading={t('panel_notifications', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(notifs) => (
         <>
@@ -61,5 +63,12 @@ export function Notifications() {
         </>
       )}
     </Panel>
+    {/* Additive: POC-3 stakeholder notifications + cargo lifecycle events (Jayesh
+        handover). Rendered as a sibling so it stays visible regardless of the
+        simulator-derived list's empty state; that list above is unchanged. */}
+    <div style={{ padding: '0 12px 12px' }}>
+      <StakeholderNotifications />
+    </div>
+    </>
   );
 }

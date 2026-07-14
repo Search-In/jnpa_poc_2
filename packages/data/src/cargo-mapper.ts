@@ -98,7 +98,7 @@ function scanResultFor(status: CargoRecord['customs_status']): ScanResult | unde
  */
 export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
   const result = scanResultFor(c.customs_status);
-  const event: ScanEvent & { sealNo?: string; esealStatus?: string; preDoc?: string } = {
+  const event: ScanEvent & { sealNo?: string; esealStatus?: string; preDoc?: string; yardBlock?: string } = {
     scanId: `SCAN-${c.container_number}`,
     containerNo: c.container_number,
     scannerId: c.camera_id ?? c.gate ?? 'CUSTOMS-SCANNER',
@@ -109,6 +109,9 @@ export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
     ...(c.eseal_number ? { sealNo: c.eseal_number } : {}),
     ...(c.eseal_status ? { esealStatus: c.eseal_status } : {}),
     ...(c.pre_document_status ? { preDoc: c.pre_document_status } : {}),
+    // Carry the yard block (already present on this record) so the Scan Queue can
+    // derive Yard-Assignment eligibility WITHOUT a second GET /api/cargo request.
+    ...(c.yard_block ? { yardBlock: c.yard_block } : {}),
   };
   return event;
 }
