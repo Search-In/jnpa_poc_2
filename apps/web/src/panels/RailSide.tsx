@@ -21,6 +21,7 @@ import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
+import { RakePlanning } from './RakePlanning.js';
 import { t } from '../i18n/strings.js';
 import { useSimDep } from '../sim/useSimStore.js';
 
@@ -181,6 +182,10 @@ export function RailSide({ window }: { window: { from: string; to: string } }) {
           <p style={{ fontSize: 12, color: 'var(--calcite-color-text-3)' }}>
             {rail.rakes.length} rakes · {rail.wagons.length} wagons on {siding} in window.
           </p>
+          {/* Additive: POC-3 rake-planning APIs (Jayesh handover). The rake/wagon
+              tables + next-24h forecast above are unchanged. Real rail rake IDs are
+              passed so the Create Rake Plan dropdown lists existing rakes (no hardcoding). */}
+          <RakePlanning siding={siding} rakeIds={Array.from(new Set(rail.rakes.map((r) => r.rakeId)))} />
         </>
       )}
     </Panel>

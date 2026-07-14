@@ -26,8 +26,15 @@ import type {
 import { isValidContainerNo } from '@jnpa/schemas';
 import type {
   CargoCreateInput,
+  CargoLifecycleEvent,
+  CargoNotification,
+  CargoNotificationCreateInput,
+  CargoNotificationFilter,
   CargoRecord,
   CargoUpdateInput,
+  CargoWorkflowActionInput,
+  CargoWorkflowHistoryEntry,
+  CargoWorkflowState,
   ContainerMovementDTO,
   ContainerMovementFilter,
   DataAdapter,
@@ -37,9 +44,16 @@ import type {
   PendencyDTO,
   RailSideDTO,
   RakeForecastDTO,
+  RakePlan,
+  RakePlanInput,
+  ReeferPlan,
+  ReeferPlanInput,
   ScenarioParams,
   ScenarioResultDTO,
   TimeWindow,
+  YardOptimization,
+  YardPlanningInput,
+  YardPlanningResult,
 } from './interface.js';
 import { mapCargoToMovement, mapCargoToScanEvent } from './cargo-mapper.js';
 
@@ -247,6 +261,106 @@ export class Poc3CargoAdapter implements DataAdapter {
     const path = `/api/cargo/${encodeURIComponent(norm)}`;
     const res = await this.request('DELETE', path);
     if (!res.ok) await Poc3CargoAdapter.fail(res, path);
+  }
+
+  // -- POC-3 extended Cargo APIs (Jayesh handover — additive) ----------------
+  //
+  // Every method below reuses the SAME request()/getJson()/writeJson() plumbing
+  // as the core cargo CRUD, so each call carries the bearer token and self-heals a
+  // 401 exactly like the reads/writes above. POC-3 owns all the business logic;
+  // these are thin, faithful consumers. GET list endpoints tolerate either a bare
+  // array or a `{ items | data | results: [...] }` envelope so a paginated wrapper
+  // does not break the panels.
+
+  /** Normalise a list response that may be a bare array or a common list envelope. */
+  private static asList<T>(body: unknown): T[] {
+    if (Array.isArray(body)) return body as T[];
+    if (body && typeof body === 'object') {
+      const o = body as Record<string, unknown>;
+      for (const key of ['items', 'data', 'results', 'notifications', 'events', 'plans', 'history']) {
+        if (Array.isArray(o[key])) return o[key] as T[];
+      }
+    }
+    return [];
+  }
+
+  private async getList<T>(path: string, query?: Record<string, string | undefined>): Promise<T[]> {
+    const res = await this.request('GET', path, { query });
+    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+    return Poc3CargoAdapter.asList<T>(await res.json());
+  }
+
+  // 1) Stakeholder Notification APIs (UC2 intended-use 2) ---------------------
+  async createCargoNotification(input: CargoNotificationCreateInput): Promise<CargoNotification> {
+    return this.writeJson<CargoNotification>('POST', '/api/cargo/notifications', input);
+  }
+  async getCargoNotifications(filter: CargoNotificationFilter = {}): Promise<CargoNotification[]> {
+    return this.getList<CargoNotification>('/api/cargo/notifications', {
+      severity: filter.severity,
+      status: filter.status,
+      stakeholder: filter.stakeholder,
+      container_number: filter.container_number,
+      limit: filter.limit == null ? undefined : String(filter.limit),
+      offset: filter.offset == null ? undefined : String(filter.offset),
+    });
+  }
+
+  // 2) Workflow APIs (UC2 automated workflows) --------------------------------
+  async triggerCargoWorkflow(containerNo: string, input: CargoWorkflowActionInput): Promise<CargoWorkflowState> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.writeJson<CargoWorkflowState>('POST', `/api/cargo/${encodeURIComponent(norm)}/workflow`, input);
+  }
+  async getCargoWorkflowHistory(containerNo: string): Promise<CargoWorkflowHistoryEntry[]> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.getList<CargoWorkflowHistoryEntry>(`/api/cargo/${encodeURIComponent(norm)}/workflow/history`);
+  }
+
+  // 3) + 4) Yard Planning / Optimization (UC2-R5 yard planning) ---------------
+  /**
+   * The deployed POC-3 yard-planning contract expects `preferred_block` to be the
+   * ZONE LETTER only (e.g. "B"), not a full block/slot value like "A-12" (verified
+   * from the API's "expected a letter zone" validation error). This reduces the
+   * incoming block value to its leading zone letter(s) in the REQUEST PAYLOAD ONLY —
+   * the UI is untouched, and every other API (yard-assignment, cargo update, etc.)
+   * keeps using the full `yard_block` value.
+   */
+  private static yardZone(block: string): string {
+    const norm = block.trim().toUpperCase();
+    return norm.match(/^[A-Z]+/)?.[0] ?? norm; // "A-12" → "A", "B" → "B"
+  }
+  async createYardPlan(input: YardPlanningInput): Promise<YardPlanningResult> {
+    const body: YardPlanningInput = {
+      ...input,
+      container_number: input.container_number.trim().toUpperCase().replace(/\s+/g, ''),
+      ...(input.preferred_block != null ? { preferred_block: Poc3CargoAdapter.yardZone(input.preferred_block) } : {}),
+    };
+    return this.writeJson<YardPlanningResult>('POST', '/api/cargo/yard-planning', body);
+  }
+  async getYardOptimization(): Promise<YardOptimization> {
+    return this.getJson<YardOptimization>('/api/cargo/yard-optimization');
+  }
+
+  // 5) Rail Rake Planning APIs (UC2-R5 CTO/FOIS rake visibility) --------------
+  async createRakePlan(input: RakePlanInput): Promise<RakePlan> {
+    return this.writeJson<RakePlan>('POST', '/api/cargo/rake-planning', input);
+  }
+  async getRakePlans(): Promise<RakePlan[]> {
+    return this.getList<RakePlan>('/api/cargo/rake-planning');
+  }
+
+  // 6) Reefer Planning API ----------------------------------------------------
+  async createReeferPlan(input: ReeferPlanInput): Promise<ReeferPlan> {
+    const body: ReeferPlanInput = {
+      ...input,
+      container_number: input.container_number.trim().toUpperCase().replace(/\s+/g, ''),
+    };
+    return this.writeJson<ReeferPlan>('POST', '/api/cargo/reefer-planning', body);
+  }
+
+  // 7) Cargo Lifecycle Events -------------------------------------------------
+  async getCargoEvents(containerNo?: string): Promise<CargoLifecycleEvent[]> {
+    const norm = containerNo?.trim().toUpperCase().replace(/\s+/g, '');
+    return this.getList<CargoLifecycleEvent>('/api/cargo/events', norm ? { container_number: norm } : undefined);
   }
 
   // -- everything else passes straight through to the base adapter -----------

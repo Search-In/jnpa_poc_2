@@ -91,12 +91,14 @@ function scanResultFor(status: CargoRecord['customs_status']): ScanResult | unde
  * Project a POC-3 cargo record into a canonical {@link ScanEvent} for the customs
  * scan queue. The queue is the set of in-port (not-yet-released) containers; each
  * carries its customs state as the scan result so the panel — and its Release
- * action — operate on REAL cargo records, never simulated ones. Fields POC-3 does
- * not model (e-seal, pre-doc) are left for the panel to render as "—".
+ * action — operate on REAL cargo records, never simulated ones. e-Seal number and
+ * pre-doc status (added by the latest POC-3 deployment) are mapped to the panel's
+ * e-Seal / Pre-doc columns; when the backend returns null they are omitted, so the
+ * panel keeps rendering "—" (no fabricated values).
  */
 export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
   const result = scanResultFor(c.customs_status);
-  return {
+  const event: ScanEvent & { sealNo?: string; esealStatus?: string; preDoc?: string; yardBlock?: string } = {
     scanId: `SCAN-${c.container_number}`,
     containerNo: c.container_number,
     scannerId: c.camera_id ?? c.gate ?? 'CUSTOMS-SCANNER',
@@ -104,7 +106,14 @@ export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
     startTs: c.updated_at ?? c.created_at,
     ...(c.customs_status === 'CLEARED' ? { endTs: c.updated_at } : {}),
     ...(result ? { result } : {}),
+    ...(c.eseal_number ? { sealNo: c.eseal_number } : {}),
+    ...(c.eseal_status ? { esealStatus: c.eseal_status } : {}),
+    ...(c.pre_document_status ? { preDoc: c.pre_document_status } : {}),
+    // Carry the yard block (already present on this record) so the Scan Queue can
+    // derive Yard-Assignment eligibility WITHOUT a second GET /api/cargo request.
+    ...(c.yard_block ? { yardBlock: c.yard_block } : {}),
   };
+  return event;
 }
 
 /** Project one POC-3 cargo record into the canonical movement DTO. */

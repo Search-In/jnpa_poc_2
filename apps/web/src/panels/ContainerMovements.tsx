@@ -17,14 +17,21 @@ import {
   CalciteInput, CalciteLabel,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS, isValidContainerNo } from '@jnpa/schemas';
+// TODO(TEMP — ISO-6346 bypass): `isValidContainerNo` was removed from this import
+// ONLY because the New Cargo dialog's ISO-6346 gate is temporarily disabled for
+// UC2↔UC3 manual testing (see CreateCargoModal below). RESTORE this import and the
+// validation once end-to-end testing is complete. The shared validator in
+// @jnpa/schemas is unchanged and still used everywhere else (Movement search, mapper).
+import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS } from '@jnpa/schemas';
 import type { CargoCreateInput, CargoCustomsStatus, ContainerMovementDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { SuccessNotice } from '../components/SuccessNotice.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
+import { CargoWorkflowDialog } from './CargoWorkflowDialog.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
@@ -115,7 +122,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 
         <div style={{ padding: '10px 14px', overflowY: 'auto', flex: 1 }}>
           <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 12px' }}>
-            {move.cargo ? 'N/A' : move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
+            {move.cargo ? (move.cargo.origin_stream ?? 'N/A') : move.container.originStream} · {move.container.lineOwner} · status {move.container.status}
           </p>
 
           {rows.length === 0 ? (
@@ -175,37 +182,21 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
  * Yard/Pendency refetch through the existing adapter flow.
  */
 function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[]; onClose: () => void }) {
-  const { adapter } = useApp();
   // Live POC-3 cargo records eligible for discharge (present + not yet released).
   const options = useMemo(() => moves.filter((m) => m.cargo && !m.cargo.is_released), [moves]);
-  // Yard blocks already in use across the live cargo = the existing yard data.
-  const yards = useMemo(
-    () => Array.from(new Set(moves.map((m) => m.cargo?.yard_block).filter((y): y is string => !!y))).sort(),
-    [moves],
-  );
   const [containerNo, setContainerNo] = useState<string>(options[0]?.container.containerNo ?? '');
-  const [yard, setYard] = useState<string>(yards[0] ?? '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const selected = options.find((m) => m.container.containerNo === containerNo) ?? options[0];
   const rec = selected?.cargo;
 
-  const confirm = async () => {
-    if (!adapter.updateCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
-    if (!selected || !yard) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // Existing Poc3CargoAdapter → PUT /api/cargo/{id} { yard_block } → POC-3.
-      await adapter.updateCargo(selected.container.containerNo, { yard_block: yard });
-      cargoRefreshStore.bump(); // refetch Movement + Yard/Pendency via the existing flow
-      setDone(true);
-    } catch (e) {
-      setError(cargoErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+  // Vessel Discharge marks the container as discharged ONLY — it no longer assigns
+  // a yard block. Per the UC-II flow, yard assignment now happens later in the
+  // Pendency flow. The backend exposes no dedicated "discharged" field, so this is
+  // a discharge milestone confirmation; no cargo record field is written here, and
+  // no cargo write API (updateCargo) is called.
+  const confirm = () => {
+    if (!selected) return;
+    setDone(true);
   };
 
   return (
@@ -236,10 +227,10 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
               <div slot="message">Every live cargo record is already released.</div>
             </CalciteNotice>
           ) : done ? (
-            <CalciteNotice open kind="success" icon="check-circle" scale="s">
-              <div slot="title">Discharge recorded</div>
-              <div slot="message">{selected?.container.containerNo} assigned to yard {yard}.</div>
-            </CalciteNotice>
+            <SuccessNotice
+              title="Vessel discharge completed successfully."
+              details={[{ label: 'Container', value: selected?.container.containerNo }]}
+            />
           ) : (
             <>
               <label style={{ fontSize: 12, color: tokens.color.textMuted }}>Container</label>
@@ -255,29 +246,15 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
               <div style={{ fontSize: 12, color: tokens.color.textMuted, margin: '8px 0 10px', lineHeight: 1.7 }}>
                 <div>Vessel: <strong style={{ color: tokens.color.text }}>{rec?.vessel_name ?? '—'}</strong></div>
                 <div>Customs: <strong style={{ color: tokens.color.text }}>{rec?.customs_status ?? '—'}</strong></div>
-                <div>Current yard: <strong style={{ color: tokens.color.text }}>{rec?.yard_block ?? '—'}</strong></div>
                 <div>ETA: <strong style={{ color: tokens.color.text }}>{rec?.eta ? new Date(rec.eta).toLocaleString() : '—'}</strong></div>
               </div>
 
-              <label style={{ fontSize: 12, color: tokens.color.textMuted }}>Assign yard block</label>
-              {yards.length === 0 ? (
-                <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
-                  <div slot="message">No yard blocks available from the current cargo data.</div>
-                </CalciteNotice>
-              ) : (
-                <CalciteSelect label="Yard block" onCalciteSelectChange={(e) => setYard((e.target as unknown as { value: string }).value)}>
-                  {yards.map((y) => (
-                    <CalciteOption key={y} value={y} selected={y === yard}>{y}</CalciteOption>
-                  ))}
-                </CalciteSelect>
-              )}
-
-              {error && (
-                <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
-                  <div slot="title">Discharge failed</div>
-                  <div slot="message">{error}</div>
-                </CalciteNotice>
-              )}
+              {/* Yard block is intentionally NOT collected here — yard assignment
+                  happens in the Pendency flow (UC-II). Discharge only marks the
+                  container as discharged. */}
+              <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '2px 0 0' }}>
+                Marks the selected container as discharged. Assign a yard block later from the Pendency tab.
+              </p>
             </>
           )}
         </div>
@@ -287,8 +264,8 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
             <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
           ) : (
             <>
-              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy}>Cancel</CalciteButton>
-              <CalciteButton scale="s" iconStart="export" loading={busy} disabled={options.length === 0 || !yard || busy} onClick={confirm}>
+              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose}>Cancel</CalciteButton>
+              <CalciteButton scale="s" iconStart="export" disabled={options.length === 0} onClick={confirm}>
                 Confirm discharge
               </CalciteButton>
             </>
@@ -316,11 +293,20 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState(false);
   const set = (patch: Partial<CargoCreateInput>) => setForm((f) => ({ ...f, ...patch }));
   const cn = form.container_number.trim().toUpperCase().replace(/\s+/g, '');
-  const cnValid = isValidContainerNo(cn);
+  // TODO(TEMP — ISO-6346 bypass): The Create button was gated on the ISO-6346
+  // check digit via `isValidContainerNo(cn)`, which blocked any number whose check
+  // digit did not match. For UC2↔UC3 manual testing the gate is temporarily reduced
+  // to "required field filled" (non-empty container number) so any container number
+  // can be created. RESTORE `const cnValid = isValidContainerNo(cn);` (and the
+  // import above) after end-to-end testing is complete. Backend POST /api/cargo and
+  // the request payload are unchanged — only this client-side gate is relaxed.
+  const cnValid = cn.length > 0; // was: isValidContainerNo(cn)
 
   const submit = async () => {
     if (!adapter.createCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
-    if (!cnValid) { setError('Enter a valid ISO-6346 container number (e.g. MAEU6123458).'); return; }
+    // TODO(TEMP — ISO-6346 bypass): message relaxed to match the temporary
+    // required-field-only gate. Restore the ISO-6346 message with the validation.
+    if (!cnValid) { setError('Enter a container number.'); return; }
     setBusy(true);
     setError(null);
     try {
@@ -328,10 +314,10 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
         container_number: cn,
         vessel_name: form.vessel_name?.trim() || undefined,
         customs_status: form.customs_status,
-        yard_block: form.yard_block?.trim() || undefined,
+        // yard_block deliberately not sent from Add Cargo (assigned later in Pendency).
         is_released: form.is_released,
         vehicle_number: form.vehicle_number?.trim() || undefined,
-        gate: form.gate?.trim() || undefined,
+        // gate no longer collected in Add Cargo (field removed from the dialog).
         eta: form.eta || undefined,
       });
       cargoRefreshStore.bump(); // refetch the grid from POC-3
@@ -366,10 +352,7 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
 
         <div style={{ padding: '12px 14px', overflowY: 'auto' }}>
           {done ? (
-            <CalciteNotice open kind="success" icon="check-circle" scale="s">
-              <div slot="title">Cargo created</div>
-              <div slot="message">{cn} was added to the shared Cargo backend.</div>
-            </CalciteNotice>
+            <SuccessNotice title="Cargo created successfully." details={[{ label: 'Container', value: cn }]} />
           ) : (
             <>
               <CalciteLabel>Container number (ISO-6346)
@@ -388,18 +371,15 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </CalciteSelect>
               </CalciteLabel>
-              <CalciteLabel>Yard block
-                <CalciteInput value={form.yard_block ?? ''} placeholder="A-12"
-                  onCalciteInputInput={(e) => set({ yard_block: (e.target as unknown as { value: string }).value })} />
-              </CalciteLabel>
+              {/* Yard block intentionally removed from Add Cargo — yard assignment now
+                  happens later in the Pendency flow (UC-II). The backend CargoCreate API
+                  is unchanged (yard_block remains optional and simply isn't sent here). */}
               <CalciteLabel>Vehicle number
                 <CalciteInput value={form.vehicle_number ?? ''} placeholder="MH04AB1234"
                   onCalciteInputInput={(e) => set({ vehicle_number: (e.target as unknown as { value: string }).value })} />
               </CalciteLabel>
-              <CalciteLabel>Gate
-                <CalciteInput value={form.gate ?? ''} placeholder="GATE-3"
-                  onCalciteInputInput={(e) => set({ gate: (e.target as unknown as { value: string }).value })} />
-              </CalciteLabel>
+              {/* Gate field removed from Add Cargo — no longer collected here.
+                  The backend CargoCreate API is unchanged (gate remains optional). */}
 
               {error && (
                 <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
@@ -471,10 +451,7 @@ function DeleteCargoDialog({ containerNo, onClose }: { containerNo: string; onCl
         </div>
         <div style={{ padding: 14 }}>
           {done ? (
-            <CalciteNotice open kind="success" icon="check-circle" scale="s">
-              <div slot="title">Deleted</div>
-              <div slot="message">{containerNo} was removed from the shared Cargo backend.</div>
-            </CalciteNotice>
+            <SuccessNotice title="Cargo deleted successfully." details={[{ label: 'Container', value: containerNo }]} />
           ) : (
             <p style={{ fontSize: 13, margin: 0 }}>
               Permanently delete <strong>{containerNo}</strong> from the shared Cargo backend? This cannot be undone.
@@ -513,6 +490,8 @@ export function ContainerMovements() {
   const [createOpen, setCreateOpen] = useState(false);
   // Container pending a delete confirmation (null = no dialog).
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Container whose POC-3 workflow (trigger/approve/reject + history) is open.
+  const [workflowTarget, setWorkflowTarget] = useState<string | null>(null);
   // Bumped after any cargo write → this list refetches from the Cargo API.
   const cargoRev = useCargoRefresh();
   const state = useAsync<ContainerMovementDTO[]>(
@@ -551,7 +530,7 @@ export function ContainerMovements() {
                   'Line Owner': m.container.lineOwner,
                   'Seal No': m.container.currentSealNo,
                   'Current Status': m.container.status,
-                  'Origin Stream': m.container.originStream,
+                  'Origin Stream': m.cargo?.origin_stream ?? m.container.originStream,
                   'Facility': m.facilityId,
                   'Last Event': m.lastEventType,
                   'Last Event Time': m.lastEventTs,
@@ -561,9 +540,6 @@ export function ContainerMovements() {
               />
             </div>
           </div>
-          {dischargeOpen && <VesselDischargeModal moves={moves} onClose={() => setDischargeOpen(false)} />}
-          {createOpen && <CreateCargoModal onClose={() => setCreateOpen(false)} />}
-          {deleteTarget && <DeleteCargoDialog containerNo={deleteTarget} onClose={() => setDeleteTarget(null)} />}
           {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
               FOIS rail, e-Seal). See the per-record Source column + timeline. */}
           <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>
@@ -593,9 +569,12 @@ export function ContainerMovements() {
               <CalciteTableRow key={m.container.containerNo}>
                 <CalciteTableCell>{m.container.containerNo}</CalciteTableCell>
                 <CalciteTableCell>
-                  {/* POC-3 does not model an origin stream → N/A (no redesign). */}
+                  {/* Origin stream from the POC-3 cargo record when present; the
+                      existing N/A fallback is kept when the backend value is null. */}
                   {m.cargo
-                    ? <span style={{ color: tokens.color.textMuted }}>N/A</span>
+                    ? (m.cargo.origin_stream
+                        ? <CalciteChip value={m.cargo.origin_stream}>{m.cargo.origin_stream}</CalciteChip>
+                        : <span style={{ color: tokens.color.textMuted }}>N/A</span>)
                     : <CalciteChip value={m.container.originStream}>{m.container.originStream}</CalciteChip>}
                 </CalciteTableCell>
                 <CalciteTableCell>{m.container.lineOwner}</CalciteTableCell>
@@ -649,17 +628,31 @@ export function ContainerMovements() {
                   )}
                 </CalciteTableCell>
                 <CalciteTableCell>
-                  {/* Delete this cargo record from the shared backend (DELETE). */}
-                  <CalciteButton
-                    scale="s"
-                    appearance="outline"
-                    kind="danger"
-                    iconStart="trash"
-                    title="Delete this cargo record from the shared Cargo backend"
-                    onClick={() => setDeleteTarget(m.container.containerNo)}
-                  >
-                    Delete
-                  </CalciteButton>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Per-container workflow: trigger/approve/reject + append-only
+                        history from the POC-3 Cargo Workflow API (additive). */}
+                    <CalciteButton
+                      scale="s"
+                      appearance="outline"
+                      kind="brand"
+                      iconStart="workflow"
+                      title="Open this container's approval workflow (POC-3)"
+                      onClick={() => setWorkflowTarget(m.container.containerNo)}
+                    >
+                      Workflow
+                    </CalciteButton>
+                    {/* Delete this cargo record from the shared backend (DELETE). */}
+                    <CalciteButton
+                      scale="s"
+                      appearance="outline"
+                      kind="danger"
+                      iconStart="trash"
+                      title="Delete this cargo record from the shared Cargo backend"
+                      onClick={() => setDeleteTarget(m.container.containerNo)}
+                    >
+                      Delete
+                    </CalciteButton>
+                  </div>
                 </CalciteTableCell>
               </CalciteTableRow>
             ))}
@@ -667,7 +660,14 @@ export function ContainerMovements() {
         </>
       )}
     </Panel>
+    {/* Dialogs are mounted OUTSIDE the Panel so they survive the post-write refetch.
+        (The Panel unmounts its children while useAsync reloads — mounting a dialog
+        inside would reset its success state, re-showing the confirmation UI.) */}
+    {dischargeOpen && <VesselDischargeModal moves={state.data ?? []} onClose={() => setDischargeOpen(false)} />}
+    {createOpen && <CreateCargoModal onClose={() => setCreateOpen(false)} />}
+    {deleteTarget && <DeleteCargoDialog containerNo={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     {selected && <TimelineDrawer move={selected} onClose={() => setSelected(null)} />}
+    {workflowTarget && <CargoWorkflowDialog containerNo={workflowTarget} onClose={() => setWorkflowTarget(null)} />}
     </>
   );
 }

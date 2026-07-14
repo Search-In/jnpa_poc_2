@@ -13,6 +13,10 @@ import type {
   DataAdapter, CargoCreateInput, CargoUpdateInput, ContainerMovementDTO, ContainerMovementFilter,
   GateOpsDTO, GateQueueForecastDTO, PendencyDTO, RailSideDTO, RakeForecastDTO, EmptyPoolDTO,
   TimeWindow, ScenarioParams, ScenarioResultDTO,
+  CargoNotification, CargoNotificationCreateInput, CargoNotificationFilter,
+  CargoWorkflowActionInput, CargoWorkflowHistoryEntry, CargoWorkflowState,
+  YardPlanningInput, YardPlanningResult, YardOptimization,
+  RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -53,6 +57,43 @@ export class SimAdapter implements DataAdapter {
   deleteCargo(containerNo: string): Promise<void> {
     if (!this.base.deleteCargo) return Promise.reject(new Error('Cargo write is unavailable in this data mode.'));
     return this.base.deleteCargo(containerNo);
+  }
+
+  /** POC-3 extended Cargo APIs pass straight through to the base (Poc3CargoAdapter);
+   *  the simulator never overlays cargo, which is sourced solely from POC-3. Each
+   *  guards the optional base method so mock/sim mode rejects with a clear message. */
+  private static unavailable(): Promise<never> {
+    return Promise.reject(new Error('Cargo API is unavailable in this data mode.'));
+  }
+  createCargoNotification(input: CargoNotificationCreateInput): Promise<CargoNotification> {
+    return this.base.createCargoNotification ? this.base.createCargoNotification(input) : SimAdapter.unavailable();
+  }
+  getCargoNotifications(filter?: CargoNotificationFilter): Promise<CargoNotification[]> {
+    return this.base.getCargoNotifications ? this.base.getCargoNotifications(filter) : SimAdapter.unavailable();
+  }
+  triggerCargoWorkflow(containerNo: string, input: CargoWorkflowActionInput): Promise<CargoWorkflowState> {
+    return this.base.triggerCargoWorkflow ? this.base.triggerCargoWorkflow(containerNo, input) : SimAdapter.unavailable();
+  }
+  getCargoWorkflowHistory(containerNo: string): Promise<CargoWorkflowHistoryEntry[]> {
+    return this.base.getCargoWorkflowHistory ? this.base.getCargoWorkflowHistory(containerNo) : SimAdapter.unavailable();
+  }
+  createYardPlan(input: YardPlanningInput): Promise<YardPlanningResult> {
+    return this.base.createYardPlan ? this.base.createYardPlan(input) : SimAdapter.unavailable();
+  }
+  getYardOptimization(): Promise<YardOptimization> {
+    return this.base.getYardOptimization ? this.base.getYardOptimization() : SimAdapter.unavailable();
+  }
+  createRakePlan(input: RakePlanInput): Promise<RakePlan> {
+    return this.base.createRakePlan ? this.base.createRakePlan(input) : SimAdapter.unavailable();
+  }
+  getRakePlans(): Promise<RakePlan[]> {
+    return this.base.getRakePlans ? this.base.getRakePlans() : SimAdapter.unavailable();
+  }
+  createReeferPlan(input: ReeferPlanInput): Promise<ReeferPlan> {
+    return this.base.createReeferPlan ? this.base.createReeferPlan(input) : SimAdapter.unavailable();
+  }
+  getCargoEvents(containerNo?: string): Promise<CargoLifecycleEvent[]> {
+    return this.base.getCargoEvents ? this.base.getCargoEvents(containerNo) : SimAdapter.unavailable();
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
