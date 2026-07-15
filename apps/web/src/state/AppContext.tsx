@@ -45,11 +45,11 @@ const CARGO_FROM_POC3 = (import.meta.env?.VITE_CARGO_SOURCE ?? 'poc3') !== 'mock
 // AUTH_ENABLED=true). POC-2 mints a POC-3-issued JWT from POC-3's own `/api/auth`
 // surface — INDEPENDENT of DATA_MODE, because the cargo adapter runs in every
 // mode. A pre-issued token can be injected verbatim via VITE_CARGO_API_TOKEN
-// (skips minting). Otherwise POC-2 mints one: `/api/auth/dev-token` in dev/demo,
-// falling back to `/api/auth/login` when credentials are configured (production,
-// where dev-tokens are disabled and that route 404s).
+// (skips minting). Otherwise POC-2 mints one via POC-3's documented
+// `POST /api/auth/login` with the configured credentials. (The legacy
+// `/api/auth/dev-token` endpoint is no longer served by POC-3 — it 404s — so it
+// has been removed from this flow.)
 const CARGO_STATIC_TOKEN = (import.meta.env?.VITE_CARGO_API_TOKEN as string | undefined) || undefined;
-const CARGO_AUTH_ROLE = (import.meta.env?.VITE_CARGO_AUTH_ROLE as string | undefined) || 'DTCCC_ADMIN';
 const CARGO_AUTH_USER = (import.meta.env?.VITE_CARGO_AUTH_USER as string | undefined) || undefined;
 const CARGO_AUTH_PASS = (import.meta.env?.VITE_CARGO_AUTH_PASS as string | undefined) || undefined;
 
@@ -59,10 +59,10 @@ interface CargoTokenResponse {
 }
 
 /**
- * Mint a POC-3-issued JWT via POC-3's `/api/auth`. Prefers the password-less
- * `/dev-token` (enabled in the demo profile); if that route is disabled (404 in
- * production-like envs) and credentials are configured, falls back to `/login`.
- * Returns undefined if no token could be obtained (caller degrades gracefully).
+ * Mint a POC-3-issued JWT via POC-3's documented `POST /api/auth/login` using the
+ * configured credentials — the same in local dev and production. (The legacy
+ * `/api/auth/dev-token` endpoint is no longer served by POC-3 and has been removed
+ * from this flow.) Returns undefined if no token could be obtained (caller degrades).
  */
 async function mintCargoToken(): Promise<string | undefined> {
   const base = CARGO_API_BASE.replace(/\/$/, '');
@@ -79,8 +79,6 @@ async function mintCargoToken(): Promise<string | undefined> {
       return undefined;
     }
   };
-  const dev = await post('/api/auth/dev-token', { role: CARGO_AUTH_ROLE });
-  if (dev) return dev;
   if (CARGO_AUTH_USER && CARGO_AUTH_PASS) {
     return post('/api/auth/login', { username: CARGO_AUTH_USER, password: CARGO_AUTH_PASS });
   }
