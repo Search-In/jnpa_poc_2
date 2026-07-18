@@ -14,7 +14,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell,
   CalciteSelect, CalciteOption, CalciteChip, CalciteButton, CalciteIcon, CalciteNotice,
-  CalciteInput, CalciteLabel,
+  CalciteInput, CalciteLabel, CalciteLoader, CalciteList, CalciteListItem,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
 // TODO(TEMP — ISO-6346 bypass): `isValidContainerNo` was removed from this import
@@ -23,7 +23,7 @@ import type { OriginStream } from '@jnpa/schemas';
 // validation once end-to-end testing is complete. The shared validator in
 // @jnpa/schemas is unchanged and still used everywhere else (Movement search, mapper).
 import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS } from '@jnpa/schemas';
-import type { CargoCreateInput, CargoCustomsStatus, ContainerMovementDTO } from '@jnpa/data';
+import type { CargoCreateInput, CargoCustomsStatus, CargoLifecycleEvent, ContainerMovementDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
@@ -60,6 +60,16 @@ const FLAG_STATUS: Record<string, { label: string; color: string }> = {
  * pattern (see console/IntegrationConsole.tsx). No fabricated/future events.
  */
 function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose: () => void }) {
+  // Real per-container Cargo Events (POC-3 `GET /api/cargo/events?container_number=`),
+  // shown as an ADDITIONAL section below the derived milestone trail. Reuses the
+  // existing getCargoEvents adapter method + CargoLifecycleEvent DTO; degrades
+  // gracefully (method absent in mock mode / error / empty → a quiet notice).
+  const { adapter } = useApp();
+  const containerNo = move.container.containerNo;
+  const events = useAsync<CargoLifecycleEvent[]>(
+    () => (adapter.getCargoEvents ? adapter.getCargoEvents(containerNo) : Promise.resolve([])),
+    [adapter, containerNo],
+  );
   const trail = move.trail; // already ordered by ts in the adapter
   const lastIdx = trail.length - 1;
   // Remaining workflow = the canonical CONTAINER_STATUSES order (schemas) beyond
@@ -167,6 +177,44 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
               ))}
             </div>
           )}
+
+          {/* ── Real Cargo Events (POC-3) — ADDITIVE section; the derived timeline
+              above is unchanged. Surfaces the authoritative lifecycle event stream
+              for THIS container (Appendix-C UC-II IU-2 + handover Cargo Lifecycle
+              Events). Reuses getCargoEvents + CargoLifecycleEvent + the existing
+              list render pattern (see StakeholderNotifications). ─────────────── */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: tokens.color.textMuted, textTransform: 'uppercase', letterSpacing: 0.4, margin: '18px 0 6px' }}>
+            Cargo events (POC-3)
+          </div>
+          {events.loading ? (
+            <CalciteLoader scale="s" label="Loading cargo events" />
+          ) : events.error ? (
+            <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
+              <div slot="message">{events.error}</div>
+            </CalciteNotice>
+          ) : (() => {
+            // Scope to THIS container client-side (backend may or may not honour the
+            // container_number filter), newest-first when created_at is present.
+            const list = (events.data ?? [])
+              .filter((ev) => !ev.container_number || ev.container_number === containerNo)
+              .slice()
+              .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+            return list.length === 0 ? (
+              <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: '2px 0' }}>
+                No cargo events recorded for this container yet.
+              </p>
+            ) : (
+              <CalciteList label="cargo events">
+                {list.slice(0, 40).map((ev, i) => (
+                  <CalciteListItem
+                    key={ev.id ?? i}
+                    label={ev.event_type ?? 'event'}
+                    description={ev.created_at ? new Date(ev.created_at).toLocaleString() : undefined}
+                  />
+                ))}
+              </CalciteList>
+            );
+          })()}
         </div>
       </aside>
     </>
@@ -492,11 +540,28 @@ export function ContainerMovements() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   // Container whose POC-3 workflow (trigger/approve/reject + history) is open.
   const [workflowTarget, setWorkflowTarget] = useState<string | null>(null);
+  // Container Search + POC-3 list filters (Appendix-C UC-II R1 "visibility of
+  // container movements … container details" + R3 customs-flagged real-time status).
+  // ADDITIVE: reuses the existing ContainerMovementFilter the adapter already honours
+  // (containerNo → GET /api/cargo/{id}; customsStatus/isReleased → GET /api/cargo
+  // query params). `searchInput` is the field; `searchApplied` is what the fetch uses
+  // (applied on the Search button so the list doesn't churn per keystroke). The
+  // existing Stream filter and every row action are unchanged.
+  const [searchInput, setSearchInput] = useState('');
+  const [searchApplied, setSearchApplied] = useState('');
+  const [customsStatus, setCustomsStatus] = useState<CargoCustomsStatus | 'ALL'>('ALL');
+  const [released, setReleased] = useState<'ALL' | 'IN_PORT' | 'RELEASED'>('ALL');
   // Bumped after any cargo write → this list refetches from the Cargo API.
   const cargoRev = useCargoRefresh();
   const state = useAsync<ContainerMovementDTO[]>(
-    () => adapter.getContainerMovements({ role, ...(stream !== 'ALL' ? { originStream: stream } : {}) }),
-    [adapter, role, stream, cargoRev],
+    () => adapter.getContainerMovements({
+      role,
+      ...(searchApplied ? { containerNo: searchApplied } : {}),
+      ...(stream !== 'ALL' ? { originStream: stream } : {}),
+      ...(customsStatus !== 'ALL' ? { customsStatus } : {}),
+      ...(released !== 'ALL' ? { isReleased: released === 'RELEASED' } : {}),
+    }),
+    [adapter, role, stream, customsStatus, released, searchApplied, cargoRev],
   );
   // Reflect the manual customs flag (customsFlagStore) so the Flag action visibly
   // transitions the container's Customs cell to a "Flagged" state. Raw snapshot
@@ -543,6 +608,62 @@ export function ContainerMovements() {
           {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
               FOIS rail, e-Seal). See the per-record Source column + timeline. */}
           <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>
+          {/* Container Search + POC-3 filters (additive; the Stream filter below is
+              unchanged). Search = exact ISO-6346 lookup (GET /api/cargo/{id});
+              Customs status / Release state map to the existing GET /api/cargo params. */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', margin: '4px 0 8px' }}>
+            <CalciteLabel scale="s" style={{ minWidth: 220 }}>Search container (ISO-6346)
+              <div style={{ display: 'flex', gap: 6 }}>
+                <CalciteInput
+                  scale="s"
+                  value={searchInput}
+                  placeholder="MAEU6123458"
+                  onCalciteInputInput={(e) => setSearchInput((e.target as unknown as { value: string }).value)}
+                />
+                <CalciteButton
+                  scale="s"
+                  iconStart="search"
+                  onClick={() => setSearchApplied(searchInput.trim().toUpperCase().replace(/\s+/g, ''))}
+                >
+                  Search
+                </CalciteButton>
+                {searchApplied && (
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="neutral"
+                    iconStart="x"
+                    onClick={() => { setSearchInput(''); setSearchApplied(''); }}
+                  >
+                    Clear
+                  </CalciteButton>
+                )}
+              </div>
+            </CalciteLabel>
+            <CalciteLabel scale="s" style={{ minWidth: 150 }}>Customs status
+              <CalciteSelect
+                label="Customs status filter"
+                scale="s"
+                onCalciteSelectChange={(e) => setCustomsStatus((e.target as unknown as { value: CargoCustomsStatus | 'ALL' }).value)}
+              >
+                <CalciteOption value="ALL" selected={customsStatus === 'ALL'}>All</CalciteOption>
+                {CUSTOMS_STATUSES.map((s) => (
+                  <CalciteOption key={s} value={s} selected={s === customsStatus}>{s}</CalciteOption>
+                ))}
+              </CalciteSelect>
+            </CalciteLabel>
+            <CalciteLabel scale="s" style={{ minWidth: 130 }}>Release state
+              <CalciteSelect
+                label="Release state filter"
+                scale="s"
+                onCalciteSelectChange={(e) => setReleased((e.target as unknown as { value: 'ALL' | 'IN_PORT' | 'RELEASED' }).value)}
+              >
+                <CalciteOption value="ALL" selected={released === 'ALL'}>All</CalciteOption>
+                <CalciteOption value="IN_PORT" selected={released === 'IN_PORT'}>In-port</CalciteOption>
+                <CalciteOption value="RELEASED" selected={released === 'RELEASED'}>Released</CalciteOption>
+              </CalciteSelect>
+            </CalciteLabel>
+          </div>
           <CalciteSelect
             label="Stream filter"
             onCalciteSelectChange={(e) => setStream((e.target as unknown as { value: OriginStream | 'ALL' }).value)}
