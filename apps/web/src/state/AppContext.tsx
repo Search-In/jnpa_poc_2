@@ -9,14 +9,15 @@
  * adapter's getToken() reading the latest token without rebuilding the adapter.
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { DataAdapter } from '@jnpa/data';
-import { LiveAdapter, MockAdapter, Poc3CargoAdapter } from '@jnpa/data';
+import type { DataAdapter, ReferenceCargoOverride } from '@jnpa/data';
+import { LiveAdapter, MockAdapter, Poc3CargoAdapter, ReferenceCargoAdapter } from '@jnpa/data';
 import type { Role } from '@jnpa/schemas';
 import type { BaselinesConfig } from '@jnpa/kpi';
 import terminalsConfig from '../../../../config/terminals.json';
 import baselinesConfig from '../../../../config/baselines.json';
 import type { Lang } from '../i18n/strings.js';
 import { SimAdapter } from '../sim/SimAdapter.js';
+import { cargoRefreshStore } from './cargoRefreshStore.js';
 
 interface AppState {
   adapter: DataAdapter;
@@ -39,7 +40,16 @@ const GATEWAY_BASE = '/gateway';
 // avoiding CORS); set VITE_CARGO_API_BASE to the gateway origin for a deployed
 // build. Set VITE_CARGO_SOURCE=mock to opt out and keep cargo on the simulator.
 const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | undefined) || '/poc3';
-const CARGO_FROM_POC3 = (import.meta.env?.VITE_CARGO_SOURCE ?? 'poc3') !== 'mock';
+// Cargo source, cargo-only (never changes the base adapter or non-cargo panels):
+//   'poc3'      (default) — wrap cargo with the POC-3 client.
+//   'mock'      — keep cargo on the synthetic simulator (pure base adapter).
+//   'reference' — layer a cargo-only decorator that serves container movements
+//                 from the JNPA reference dataset, fetched at runtime (below).
+const CARGO_SOURCE = (import.meta.env?.VITE_CARGO_SOURCE as string | undefined) ?? 'poc3';
+const CARGO_FROM_POC3 = CARGO_SOURCE === 'poc3';
+const CARGO_FROM_REFERENCE = CARGO_SOURCE === 'reference';
+/** Runtime path of the generated reference dataset (served from public/, not bundled). */
+const REFERENCE_DATASET_URL = '/reference-dataset.json';
 
 // POC-3 authentication (the Cargo API returns 401 when the gateway runs with
 // AUTH_ENABLED=true). POC-2 mints a POC-3-issued JWT from POC-3's own `/api/auth`
@@ -98,8 +108,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Latest POC-3-issued JWT, read by the Poc3CargoAdapter via getToken(). Kept
   // separate from the gateway token — POC-3 validates its own issuer/audience.
   const cargoTokenRef = useRef<string | undefined>(undefined);
+  // Reference dataset, fetched at runtime in reference mode only (see effect
+  // below). Read lazily by the ReferenceCargoAdapter via getOverride().
+  const referenceRef = useRef<ReferenceCargoOverride | undefined>(undefined);
 
   const adapter = useMemo<DataAdapter>(() => {
+    // The base adapter is chosen by DATA_MODE ALONE — cargo source never changes
+    // it, so gate/rail/KPI/dashboard panels are identical across cargo sources.
     const base =
       MODE === 'live'
         ? new LiveAdapter({ gatewayBaseUrl: GATEWAY_BASE, getToken: () => tokenRef.current })
@@ -107,8 +122,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             terminalsConfig: terminalsConfig as unknown as ConstructorParameters<typeof MockAdapter>[0]['terminalsConfig'],
             baselines: baselinesConfig as unknown as BaselinesConfig,
           });
-    // Re-source cargo from the POC-3 shared Cargo API (single source of truth);
-    // all other panels keep the mock/live base. Skipped when VITE_CARGO_SOURCE=mock.
+    // Layer a cargo-only decorator per VITE_CARGO_SOURCE: POC-3 client ('poc3'),
+    // the reference-dataset decorator ('reference'), or nothing ('mock'). Each
+    // re-sources ONLY cargo and delegates every other method to `base`.
     const withCargo = CARGO_FROM_POC3
       ? new Poc3CargoAdapter(base, {
           cargoBaseUrl: CARGO_API_BASE,
@@ -118,9 +134,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // absent/expired token self-heals. A pre-issued static token opts out.
           refreshToken: CARGO_STATIC_TOKEN ? undefined : mintCargoToken,
         })
-      : base;
+      : CARGO_FROM_REFERENCE
+        ? new ReferenceCargoAdapter(base, {
+            terminalsConfig: terminalsConfig as unknown as ConstructorParameters<typeof MockAdapter>[0]['terminalsConfig'],
+            baselines: baselinesConfig as unknown as BaselinesConfig,
+            getOverride: () => referenceRef.current,
+          })
+        : base;
     // Wrap so the live-data Simulator's overrides flow into every tab + the map.
     return new SimAdapter(withCargo);
+  }, []);
+
+  // Reference mode only: fetch the generated reference dataset at runtime (it is
+  // served from public/, never bundled, so mock/poc3 builds don't contain it).
+  // On success, populate the ref and bump the cargo refresh so the Container
+  // Movement panel refetches. Failure degrades to an empty cargo list.
+  useEffect(() => {
+    if (!CARGO_FROM_REFERENCE) return;
+    let cancelled = false;
+    fetch(REFERENCE_DATASET_URL)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: { containers?: unknown[]; events?: unknown[] }) => {
+        if (cancelled) return;
+        referenceRef.current = {
+          containers: (data.containers ?? []) as ReferenceCargoOverride['containers'],
+          events: (data.events ?? []) as ReferenceCargoOverride['events'],
+        };
+        cargoRefreshStore.bump();
+      })
+      .catch(() => { /* no reference dataset present → cargo shows empty */ });
+    return () => { cancelled = true; };
   }, []);
 
   // Mint the POC-3 cargo token on mount, regardless of DATA_MODE (the cargo

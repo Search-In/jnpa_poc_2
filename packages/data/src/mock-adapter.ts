@@ -38,6 +38,7 @@ import type {
   ScenarioResultDTO,
   TimeWindow,
 } from './interface.js';
+import type { ReferenceCargoOverride } from './reference/index.js';
 import { roleVisibleFacilityIds } from './rbac-scope.js';
 import { simpleGateQueueForecast } from './forecasts.js';
 import { buildNotifications } from './notifications-derive.js';
@@ -47,6 +48,13 @@ export interface MockAdapterDeps {
   terminalsConfig: ConstructorParameters<typeof SimWorld>[0];
   baselines: BaselinesConfig;
   seed?: number;
+  /**
+   * Optional JNPA reference-package cargo override. When present, the mock
+   * dataset's container set + a prepended reference event stream come from the
+   * reference data (via SimWorld's cargoOverride seam) instead of the synthetic
+   * generator; all other domains stay synthetic. Absent → pure synthetic mock.
+   */
+  cargoOverride?: ReferenceCargoOverride;
 }
 
 const HOUR = 3_600_000;
@@ -58,7 +66,10 @@ export class MockAdapter implements DataAdapter {
   private asOf: string;
 
   constructor(deps: MockAdapterDeps) {
-    this.sim = new SimWorld(deps.terminalsConfig, { seed: deps.seed ?? 20260615 });
+    this.sim = new SimWorld(deps.terminalsConfig, {
+      seed: deps.seed ?? 20260615,
+      ...(deps.cargoOverride ? { cargoOverride: deps.cargoOverride } : {}),
+    });
     this.baselines = deps.baselines;
     this.asOf = new Date(this.sim.startMs + this.sim.windowHours * HOUR).toISOString();
   }
