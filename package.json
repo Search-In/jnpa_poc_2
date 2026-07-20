@@ -19,6 +19,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "poc-selftest": "tsx scripts/poc-selftest/index.ts",
+    "ingest:reference": "pnpm --filter @jnpa/sim build && pnpm --filter @jnpa/data build && node scripts/ingest-reference/index.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
   },
   "devDependencies": {
