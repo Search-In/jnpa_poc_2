@@ -75,8 +75,8 @@ const SATELLITE_COORDS: Record<string, [number, number]> = {
   'ICD-CENTRAL-1': [79.0490, 21.1180], // central hinterland (Nagpur region)
   'ICD-SOUTH-1': [77.5946, 12.9716], // southern hinterland (Karnataka region)
   // On/near-port JNPA facilities — clustered around the port road network.
-  'DPE-WEST': [72.9430, 18.9490], // Direct Port Entry, west of the terminals
-  'DPD-CENTRAL': [72.9505, 18.9560], // Direct Port Delivery yard, central
+  'DPE-WEST': [72.9480, 18.9464], // Direct Port Entry (was [72.9430,18.9490] — sat ~300 m SEAWARD of the quay line, i.e. in Thane Creek; a land-side facility, so nudged ESE onto the landward port band, same corridor — cf. CPP-1)
+  'DPD-CENTRAL': [72.9550, 18.9537], // Direct Port Delivery yard (was [72.9505,18.9560] — sat ~240 m seaward in the creek; nudged ESE onto the developed land band east of the quay)
   'ECD-1': [72.9640, 18.9420], // Empty container depot, JNPT SEZ road
   'ECD-2': [72.9670, 18.9385], // Empty container depot, JNPT SEZ road
   'CPP-1': [72.9560, 18.9500], // Centralized Parking Plaza, port-entry landside (was 18.9605 — fell in the creek N of the port; moved S onto the developed yard band, same lng corridor)
