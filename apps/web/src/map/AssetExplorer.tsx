@@ -181,7 +181,11 @@ function buildGroups(
       // Live truck route (the driving trucks' loop). id → asset3dPosition('route:<T>').
       routes.push({ id: `route:${t.terminalId}`, label: `${t.terminalId} truck route`, kind: 'route', meta: `${t.terminalId} · live`, pkey: `truckroute:${t.terminalId}` });
     }
-    // STS cranes — count/pkey MUST match craneLayer's rule (quay/200, clamped 3..9).
+    // STS cranes — one row per surveyed crane ANCHOR; count/pkey MUST match
+    // craneLayer's rule (quay/200, clamped 3..9). Each anchor renders as a berth
+    // cluster of 3–4 cranes (see cranePlacements in scene3d.ts); moving the anchor
+    // here moves its whole cluster, and the individual cranes in a cluster stay
+    // selectable by clicking them in the 3D scene.
     const quay = t.quayLengthM ?? 800;
     const nCranes = Math.max(3, Math.min(9, Math.round(quay / 200)));
     for (let i = 0; i < nCranes; i++) {

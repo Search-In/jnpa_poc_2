@@ -29,6 +29,7 @@ import {
   vesselLayer,
   gate3dLayer,
   cctvLayer,
+  apronCargoLayer,
   truckLayer,
   channelLayer,
   congestionLayer,
@@ -399,6 +400,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     // is derived from the gate anchors, so it never changes on a sim tick — added
     // as a standalone layer (not part of the in-place data diff above).
     map.add(cctvLayer(p0.gateOps, p0.terminals));
+
+    // Decorative cargo on the quay apron, derived from the crane clusters. Like
+    // the CCTV towers it carries no live data, so it stays out of the diff path.
+    map.add(apronCargoLayer(p0.terminals));
 
     const spotlight = spotlight3dLayer(p0.highlights ?? [], p0.facilities, p0.terminals);
     spotlightRef.current = spotlight;

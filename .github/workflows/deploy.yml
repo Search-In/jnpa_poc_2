@@ -29,6 +29,14 @@ jobs:
         run: pnpm -r build
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
+          # Vite inlines VITE_* at BUILD time (import.meta.env). The root .env is
+          # gitignored and absent on the runner, so these must come from repo
+          # secrets here — setting them on the server at runtime has no effect.
+          # Unset secrets resolve to "" and fall back to the in-app defaults.
+          VITE_CARGO_API_BASE: ${{ secrets.VITE_CARGO_API_BASE }}
+          VITE_CARGO_AUTH_USER: ${{ secrets.VITE_CARGO_AUTH_USER }}
+          VITE_CARGO_AUTH_PASS: ${{ secrets.VITE_CARGO_AUTH_PASS }}
+          VITE_CARGO_API_TOKEN: ${{ secrets.VITE_CARGO_API_TOKEN }}
 
       - name: Configure SSH Key
         run: |
