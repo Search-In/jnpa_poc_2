@@ -10,7 +10,7 @@
  * an explorer tree stays in sync. Here that selection is exposed via an imperative
  * handle so the AssetExplorer tree (rendered by the dashboard) can drive the camera.
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Map from '@arcgis/core/Map';
 import SceneView from '@arcgis/core/views/SceneView';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
@@ -20,13 +20,14 @@ import Legend from '@arcgis/core/widgets/Legend';
 import Expand from '@arcgis/core/widgets/Expand';
 import { initialBasemap, installBasemapFallback, isOfflineRequested } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
-import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
+import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
 import { applyGraphics } from './layers.js';
 import {
   terminalDeckLayer,
   yardStackLayer,
   craneLayer,
   vesselLayer,
+  liveVesselLayer,
   gate3dLayer,
   cctvLayer,
   apronCargoLayer,
@@ -47,6 +48,17 @@ import { buildSceneAnim, type SceneAnim } from './sceneAnim.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
 
+/** Gateway base URL — same as VITE_GATEWAY_URL or falls back to relative /api. */
+const env = (import.meta as unknown as { env: Record<string, string> }).env;
+const GATEWAY_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_GATEWAY_URL?.replace(/\/$/, '') ?? '';
+
+async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
+  const url = `${GATEWAY_BASE}/api/marine/vessels/live`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
+  return res.json() as Promise<LiveVesselDTO[]>;
+}
+
 /** Respect the OS "reduce motion" setting — freeze the animation clock if set. */
 const REDUCED_MOTION =
   typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -56,6 +68,8 @@ interface PortSceneProps {
   terminals: Terminal[];
   gateOps: GateOpsDTO[];
   pendency: PendencyDTO[];
+  /** Live vessel positions from marine API (MMSI, name, lat, lon, course). */
+  liveVessels?: Array<{ mmsi: string; vessel_name: string; lat: number; lon: number; course: number }>;
   /** Asset ids the simulator is driving — drawn with a 3D spotlight beam. */
   highlights?: string[];
   /**
@@ -152,6 +166,8 @@ function makeValueOf(gateOps: GateOpsDTO[], pendency: PendencyDTO[]): (id: strin
 }
 
 export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function PortScene(props, ref) {
+  const [showLiveVessels, setShowLiveVessels] = useState(false);
+  const [liveVesselError, setLiveVesselError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<SceneView | null>(null);
   const layersRef = useRef<{
@@ -159,6 +175,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     yards: FeatureLayer;
     cranes: FeatureLayer;
     vessels: FeatureLayer;
+    liveVessels: GraphicsLayer;
     gates: FeatureLayer;
     trucks: FeatureLayer;
     channel: FeatureLayer;
@@ -285,6 +302,33 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     const view = viewRef.current;
     const sel = selectionRef.current;
     if (!view) return;
+
+    // Handle live vessels (from API data)
+    if (assetId.startsWith('LIVE-')) {
+      const liveLayer = layersRef.current?.liveVessels;
+      if (liveLayer) {
+        for (const graphic of liveLayer.graphics) {
+          if (graphic.attributes?.vesselId === assetId) {
+            const pt = graphic.geometry as { longitude: number; latitude: number };
+            const lng = pt.longitude;
+            const lat = pt.latitude;
+            if (sel) {
+              sel.removeAll();
+              sel.add(selectionRing(lng, lat));
+            }
+            void view
+              .goTo({ target: { type: 'point', longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } }, tilt: 62, zoom: 17 } as never, {
+                duration: 900,
+                easing: 'ease-in-out',
+              })
+              .catch(() => { /* interrupted — fine */ });
+            return;
+          }
+        }
+      }
+      return;
+    }
+
     const pos = asset3dPosition(propsRef.current.facilities, propsRef.current.terminals);
     const p = pos.get(assetId);
     if (!p) return;
@@ -385,6 +429,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       yards: yardStackLayer(p0.terminals, p0.pendency),
       cranes: craneLayer(p0.terminals),
       vessels: vesselLayer(p0.terminals),
+      liveVessels: liveVesselLayer(),
       gates: gate3dLayer(p0.gateOps, p0.terminals),
       trucks: truckLayer(p0.gateOps, p0.terminals),
       congestion: congestionLayer(p0.gateOps, p0.terminals),
@@ -394,7 +439,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     // Order matters for readability: channel + congestion + decks under
     // stacks/cranes/ships (the heatmap is a ground wash, drawn early). The pick
     // markers go LAST so they sit on top and hitTest picks them first.
-    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks, layers.picks]);
+    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.liveVessels, layers.gates, layers.trucks, layers.picks]);
 
     // Static CCTV surveillance towers beside each toll plaza (gate3d). Position
     // is derived from the gate anchors, so it never changes on a sim tick — added
@@ -529,7 +574,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       void view.hitTest(event).then((res) => {
         const hit = resolveHit(res);
         if (hit?.id) {
-          focusAsset(hit.id);
+          // For live vessels, skip camera movement; just show the modal
+          if (!hit.id.startsWith('LIVE-')) {
+            focusAsset(hit.id);
+          }
           propsRef.current.onSelect?.(hit.id, hit.pkey);
         }
       });
@@ -581,6 +629,48 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     refreshRouteDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.drawRouteKey]);
+
+  // Fetch live vessel data from the backend, refreshing every 60 seconds (only when toggle is on).
+  useEffect(() => {
+    const liveLayer = layersRef.current?.liveVessels;
+    const vesselLayer = layersRef.current?.vessels;
+    if (!liveLayer || !vesselLayer) return;
+
+    if (!showLiveVessels) {
+      // Hide live vessels and show regular berthed vessels.
+      liveLayer.visible = false;
+      liveLayer.removeAll();
+      vesselLayer.visible = true;
+      setLiveVesselError(null);
+      return;
+    }
+
+    // Show live vessels and hide regular berthed vessels.
+    liveLayer.visible = true;
+    vesselLayer.visible = false;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const vessels = await fetchLiveVessels();
+        if (cancelled || !liveLayer) return;
+        const graphics = graphicsFor3d.liveVessels(vessels);
+        liveLayer.removeAll();
+        for (const graphic of graphics) liveLayer.add(graphic);
+        setLiveVesselError(null);
+      } catch (err) {
+        if (!cancelled) setLiveVesselError(err instanceof Error ? err.message : 'Fetch failed');
+      }
+    };
+
+    void load();
+    const interval = setInterval(() => { void load(); }, 300000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [showLiveVessels]);
+
 
   // ---- data: edit each 3D layer's features IN PLACE on change ----
   useEffect(() => {
@@ -634,11 +724,63 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
   }, [props.highlights, props.facilities, props.terminals, props.gateOps, props.pendency]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100%', minHeight: 480, background: tokens.color.bg }}
-      aria-label="JNPA 3D sea-port scene"
-      role="application"
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div
+        ref={containerRef}
+        style={{ width: '100%', height: '100%', minHeight: 480, background: tokens.color.bg }}
+        aria-label="JNPA 3D sea-port scene"
+        role="application"
+      />
+      {/* Live AIS vessels toggle — floating button in top-left */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+        }}
+      >
+        <button
+          id="live-vessels-toggle-3d"
+          onClick={() => setShowLiveVessels((v) => !v)}
+          title={showLiveVessels ? 'Hide live AIS vessels' : 'Show live AIS vessels'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: showLiveVessels ? '#00d4ff' : 'rgba(0,0,0,0.75)',
+            color: showLiveVessels ? '#003366' : '#fff',
+            border: '1px solid ' + (showLiveVessels ? '#003366' : 'rgba(255,255,255,0.25)'),
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            backdropFilter: 'blur(4px)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span style={{ fontSize: 14 }}>⚓</span>
+          {showLiveVessels ? 'Live AIS: ON' : 'Live AIS: OFF'}
+        </button>
+        {liveVesselError && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#ff6b6b',
+              background: 'rgba(0,0,0,0.75)',
+              padding: '4px 8px',
+              borderRadius: 4,
+              maxWidth: 200,
+            }}
+          >
+            {liveVesselError}
+          </div>
+        )}
+      </div>
+    </div>
   );
 });
