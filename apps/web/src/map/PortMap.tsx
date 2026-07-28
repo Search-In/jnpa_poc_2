@@ -288,7 +288,7 @@ export function PortMap(props: PortMapProps) {
         style={{
           position: 'absolute',
           top: 12,
-          left: 12,
+          left: 52,
           zIndex: 10,
           display: 'flex',
           flexDirection: 'column',

@@ -736,7 +736,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
         style={{
           position: 'absolute',
           top: 12,
-          left: 12,
+          left: 52,
           zIndex: 10,
           display: 'flex',
           flexDirection: 'column',
