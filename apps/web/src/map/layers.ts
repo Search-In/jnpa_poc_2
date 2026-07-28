@@ -9,7 +9,7 @@ import Graphic from '@arcgis/core/Graphic';
 import Point from '@arcgis/core/geometry/Point';
 import Polyline from '@arcgis/core/geometry/Polyline';
 import type { Facility, Terminal } from '@jnpa/schemas';
-import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
+import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
 import { tokens } from '../theme/tokens.js';
 
 /**
@@ -397,3 +397,73 @@ function attrsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boo
   for (const k of keys) if (a[k] !== b[k]) return false;
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Live AIS vessel layer (MarineTraffic proxy — 2D map)
+// ---------------------------------------------------------------------------
+
+function liveVesselGraphics(vessels: LiveVesselDTO[]): Graphic[] {
+  return vessels.map(
+    (v) =>
+      new Graphic({
+        geometry: new Point({ longitude: v.lon, latitude: v.lat }),
+        attributes: {
+          objectId: stableOid(`live-vessel:${v.mmsi}`),
+          mmsi: v.mmsi,
+          vesselName: v.vessel_name,
+          speedKnots: v.speed_knots,
+          course: v.course,
+          heading: v.heading ?? v.course,
+          shipTypeLabel: v.ship_type_label,
+          destination: v.destination ?? '',
+          flag: v.flag ?? '',
+        },
+      }),
+  );
+}
+
+/**
+ * Live vessel layer for the 2D PortMap — directional arrow markers rotated
+ * by the vessel's AIS course. Built empty initially and filled via
+ * applyGraphics when live data arrives.
+ */
+export function liveVesselsLayer(): FeatureLayer {
+  return new FeatureLayer({
+    title: 'Live Vessels (AIS)',
+    source: [],
+    objectIdField: 'objectId',
+    geometryType: 'point',
+    spatialReference: { wkid: 4326 },
+    visible: false, // off by default; toggle enables it
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'mmsi', type: 'string' },
+      { name: 'vesselName', type: 'string' },
+      { name: 'speedKnots', type: 'double' },
+      { name: 'course', type: 'integer' },
+      { name: 'heading', type: 'integer' },
+      { name: 'shipTypeLabel', type: 'string' },
+      { name: 'destination', type: 'string' },
+      { name: 'flag', type: 'string' },
+    ],
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'simple-marker',
+        style: 'triangle',
+        size: 10,
+        color: '#00d4ff',
+        outline: { color: '#003366', width: 1 },
+      },
+      visualVariables: [{ type: 'rotation', field: 'heading', rotationType: 'geographic' }],
+    } as never,
+    popupTemplate: {
+      title: '{vesselName}',
+      content: 'MMSI: {mmsi}<br/>Speed: {speedKnots} kn<br/>Course: {course}°<br/>Type: {shipTypeLabel}<br/>Destination: {destination}<br/>Flag: {flag}',
+    } as never,
+    labelsVisible: false,
+  });
+}
+
+/** Graphics builder for live vessel layer (used by applyGraphics in PortMap). */
+export const graphicsForLiveVessels = liveVesselGraphics;

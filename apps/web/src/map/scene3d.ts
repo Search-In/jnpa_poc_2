@@ -1525,6 +1525,62 @@ function pickGraphicsFor(terminals: Terminal[], gateOps: GateOpsDTO[]): Graphic[
   return pickMarkerGraphics(terminals, gateOps);
 }
 
+// ---- live vessel graphics ----
+
+function liveVesselGraphics(
+  vessels: Array<{ mmsi: string; vessel_name: string; lat: number; lon: number; course: number }>,
+): Graphic[] {
+  const out: Graphic[] = [];
+  for (const v of vessels) {
+    // Deterministic hull type based on MMSI (alternates a/b)
+    let hullHash = 0;
+    for (let i = 0; i < v.mmsi.length; i++) {
+      hullHash ^= v.mmsi.charCodeAt(i);
+      hullHash = Math.imul(hullHash, 16777619);
+    }
+    const hull = (hullHash & 1) === 0 ? 'a' : 'b';
+
+    out.push(
+      new Graphic({
+        geometry: new Point({
+          longitude: v.lon,
+          latitude: v.lat,
+          spatialReference: { wkid: 4326 },
+        }),
+        symbol: {
+          type: 'point-3d',
+          symbolLayers: [
+            {
+              type: 'object',
+              resource: { href: `${MODELS}/ship-cargo-${hull}.glb` },
+              height: 40,
+              anchor: 'bottom',
+              heading: v.course,
+            },
+          ],
+        } as never,
+        attributes: {
+          objectId: stableOid(`live-vessel:${v.mmsi}`),
+          vesselId: `LIVE-${v.mmsi}`,
+          mmsi: v.mmsi,
+          name: v.vessel_name,
+          course: v.course,
+        },
+      }),
+    );
+  }
+  return out;
+}
+
+/** Live vessel layer — empty initially, populated by direct add/remove in PortScene. */
+export function liveVesselLayer(): GraphicsLayer {
+  return new GraphicsLayer({
+    title: '3D · Live Vessels',
+    elevationInfo: { mode: 'on-the-ground' },
+    popupTemplate: { title: '{name}', content: 'MMSI: {mmsi}<br/>Course: {course}°' } as never,
+  });
+}
+
 // ---- per-kind builders for in-place diffing --------------------------------
 
 export const graphicsFor3d = {
@@ -1532,6 +1588,7 @@ export const graphicsFor3d = {
   yards: yardBlockGraphics,
   cranes: craneGraphics,
   vessels: vesselGraphics,
+  liveVessels: liveVesselGraphics,
   gates: gate3dGraphics,
   trucks: truckGraphics,
   channel: channelGraphics,
