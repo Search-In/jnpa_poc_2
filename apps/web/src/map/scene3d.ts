@@ -2191,6 +2191,7 @@ function liveVesselGraphics(
           name: v.vessel_name,
           course: v.course,
         },
+        popupTemplate: { title: '{name}', content: 'MMSI: {mmsi}<br/>Course: {course}°' } as never,
       }),
     );
   }
@@ -2202,7 +2203,6 @@ export function liveVesselLayer(): GraphicsLayer {
   return new GraphicsLayer({
     title: '3D · Live Vessels',
     elevationInfo: { mode: 'on-the-ground' },
-    popupTemplate: { title: '{name}', content: 'MMSI: {mmsi}<br/>Course: {course}°' } as never,
   });
 }
 

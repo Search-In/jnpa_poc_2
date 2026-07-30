@@ -61,7 +61,6 @@ const YARD_FOCUS_MS = 1400;
 /** Glide back out to the pre-focus camera when the yard is closed. */
 const YARD_RETURN_MS = 1200;
 /** Gateway base URL — same as VITE_GATEWAY_URL or falls back to relative /api. */
-const env = (import.meta as unknown as { env: Record<string, string> }).env;
 const GATEWAY_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_GATEWAY_URL?.replace(/\/$/, '') ?? '';
 
 async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {

@@ -5,7 +5,7 @@
  * data so it renders offline; if ARCGIS_WEBMAP_ID is set it would overlay the
  * real JNPA WebMap. Map tools (A.2): legend, layer list, time slider, basemap.
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
