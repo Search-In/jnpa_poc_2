@@ -5,7 +5,7 @@
  * data so it renders offline; if ARCGIS_WEBMAP_ID is set it would overlay the
  * real JNPA WebMap. Map tools (A.2): legend, layer list, time slider, basemap.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Map from '@arcgis/core/Map';
 import MapView from '@arcgis/core/views/MapView';
 import type FeatureLayer from '@arcgis/core/layers/FeatureLayer';
@@ -15,7 +15,7 @@ import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';
 import Expand from '@arcgis/core/widgets/Expand';
 import { initialBasemap, installBasemapFallback } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
-import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
+import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
 import {
   cargoFlowsLayer,
   facilitiesLayer,
@@ -25,9 +25,23 @@ import {
   graphicsFor,
   applyGraphics,
   highlightGraphics,
+  liveVesselsLayer,
+  graphicsForLiveVessels,
 } from './layers.js';
 import { traffic2dLayer, graphicsFor3d } from './scene3d.js';
 import { tokens } from '../theme/tokens.js';
+
+/** Gateway base URL — same as VITE_GATEWAY_URL or falls back to relative /api. */
+const env = (import.meta as unknown as { env: Record<string, string> }).env;
+console.log('env', env)
+const GATEWAY_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_GATEWAY_URL?.replace(/\/$/, '') ?? '';
+console.log('GATEWAY_BASE', GATEWAY_BASE)
+async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
+  const url = `${GATEWAY_BASE}/api/marine/vessels/live`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
+  return res.json() as Promise<LiveVesselDTO[]>;
+}
 
 interface PortMapProps {
   facilities: Facility[];
@@ -40,6 +54,7 @@ interface PortMapProps {
   /** Asset ids the simulator is driving — drawn with a highlight halo. */
   highlights?: string[];
 }
+
 
 /**
  * Build a resolver from a live id → short value string (e.g. a gate's queue, a
@@ -72,12 +87,17 @@ export function PortMap(props: PortMapProps) {
     traffic: FeatureLayer;
   } | null>(null);
   const highlightRef = useRef<FeatureLayer | null>(null);
+  const liveVesselLayerRef = useRef<FeatureLayer | null>(null);
   // Last spotlight id-set we zoomed to, so we only re-frame when it changes
   // (not on every sim tick that merely re-creates the highlights array).
   const lastZoomKey = useRef<string>('');
   // Latest props for the init effect's first layer build (init runs once).
   const propsRef = useRef(props);
   propsRef.current = props;
+
+  // ---- Live AIS vessel state ------------------------------------------------
+  const [showLiveVessels, setShowLiveVessels] = useState(false);
+  const [liveVesselError, setLiveVesselError] = useState<string | null>(null);
 
   // ---- init: create the view + layers + widgets ONCE (never on data change) ----
   // Re-creating the view every sim tick would tear down the basemap, zoom and
@@ -104,6 +124,11 @@ export function PortMap(props: PortMapProps) {
     };
     layersRef.current = layers;
     map.addMany([layers.traffic, layers.facilities, layers.pendency, layers.flows, layers.gates]);
+
+    // Live AIS vessel layer — starts empty & hidden; toggled by the button.
+    const liveLayer = liveVesselsLayer();
+    liveVesselLayerRef.current = liveLayer;
+    map.add(liveLayer);
 
     // Highlight layer created once (empty) and edited in place; always on top.
     const highlight = highlightedAssetsLayer(
@@ -173,6 +198,7 @@ export function PortMap(props: PortMapProps) {
       mapRef.current = null;
       layersRef.current = null;
       highlightRef.current = null;
+      liveVesselLayerRef.current = null;
     };
   }, []);
 
@@ -215,17 +241,106 @@ export function PortMap(props: PortMapProps) {
     } else if (next.length === 0) {
       lastZoomKey.current = '';
     }
-  // gateOps/pendency in deps so the map label refreshes the live value as it
-  // moves; the zoom is still guarded by lastZoomKey so it only re-frames on a
-  // spotlight change, not on every value tick.
+    // gateOps/pendency in deps so the map label refreshes the live value as it
+    // moves; the zoom is still guarded by lastZoomKey so it only re-frames on a
+    // spotlight change, not on every value tick.
   }, [props.highlights, props.facilities, props.terminals, props.gateOps, props.pendency]);
 
+  // ---- Live AIS fetch: runs when toggle turns on; auto-refreshes every 60 s ----
+  useEffect(() => {
+    const layer = liveVesselLayerRef.current;
+    if (!layer) return;
+
+    if (!showLiveVessels) {
+      // Hide the layer when toggled off; clear graphics.
+      layer.visible = false;
+      void applyGraphics(layer, []);
+      setLiveVesselError(null);
+      return;
+    }
+
+    layer.visible = true;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const vessels = await fetchLiveVessels();
+        if (cancelled || !layer) return;
+        void applyGraphics(layer, graphicsForLiveVessels(vessels));
+        setLiveVesselError(null);
+      } catch (err) {
+        if (!cancelled) setLiveVesselError(err instanceof Error ? err.message : 'Fetch failed');
+      }
+    }
+
+    void load();
+    const timer = setInterval(() => { void load(); }, 300000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [showLiveVessels]);
+
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100%', minHeight: 480, background: tokens.color.bg }}
-      aria-label="JNPA port operations map"
-      role="application"
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div
+        ref={containerRef}
+        style={{ width: '100%', height: '100%', minHeight: 480, background: tokens.color.bg }}
+        aria-label="JNPA port operations map"
+        role="application"
+      />
+      {/* Live AIS vessels toggle — floating button in top-left */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 12,
+          left: 52,
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+        }}
+      >
+        <button
+          id="live-vessels-toggle"
+          onClick={() => setShowLiveVessels((v) => !v)}
+          title={showLiveVessels ? 'Hide live AIS vessels' : 'Show live AIS vessels'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: showLiveVessels ? '#00d4ff' : 'rgba(0,0,0,0.75)',
+            color: showLiveVessels ? '#003366' : '#fff',
+            border: '1px solid ' + (showLiveVessels ? '#003366' : 'rgba(255,255,255,0.25)'),
+            borderRadius: 6,
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 600,
+            backdropFilter: 'blur(4px)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span style={{ fontSize: 14 }}>⚓</span>
+          {showLiveVessels ? 'Live AIS: ON' : 'Live AIS: OFF'}
+        </button>
+        {liveVesselError && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#ff6b6b',
+              background: 'rgba(0,0,0,0.75)',
+              padding: '4px 8px',
+              borderRadius: 4,
+              maxWidth: 200,
+            }}
+          >
+            {liveVesselError}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
+
+

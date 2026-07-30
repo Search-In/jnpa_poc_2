@@ -23,11 +23,30 @@ import type {
 
 // ---- filter / window DTOs --------------------------------------------------
 
+/** Live AIS vessel position as returned by GET /api/marine/vessels/live. */
+export interface LiveVesselDTO {
+  mmsi: string;
+  vessel_name: string;
+  imo_no?: string | null;
+  lat: number;
+  lon: number;
+  speed_knots: number;
+  course: number;
+  heading?: number | null;
+  ship_type_code: number;
+  ship_type_label: string;
+  destination?: string | null;
+  flag?: string | null;
+  length?: number | null;
+  elapsed_seconds?: number | null;
+}
+
 export interface TimeWindow {
   /** ISO start (inclusive). */
   from: string;
   /** ISO end (exclusive). */
   to: string;
+
 }
 
 export interface ContainerMovementFilter {
