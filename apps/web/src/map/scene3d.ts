@@ -17,8 +17,6 @@
  * Models actually rendered here (all CC0/CC-BY — see public/models/CREDITS.md):
  *   • ship-cargo-a.glb / -b         — berthed container vessels (Kenney Watercraft)
  *   • yard-container-red/green/blue — the stacked ISO boxes of each yard block
- *   • cargo-pile-a/b.glb,
- *     cargo-container-a/b/c.glb     — loose cargo decorating the quay apron
  *   • toll-naka.glb                 — the gate / toll-plaza structure
  *   • truck-realistic.glb,
  *     container-truck.glb           — the trucks queued at each gate
@@ -29,7 +27,7 @@
  * higher-detail hull whose geometry sits partly below its origin, so swapping it
  * in needs a re-tuned symbol height + waterline offset), gate.glb,
  * gate-realistic.glb, gate-boom.glb, shipping-port.glb, truck.glb, delivery.glb,
- * pickup-realistic.glb.
+ * pickup-realistic.glb, cargo-pile-a/b.glb, cargo-container-a/b/c.glb.
  *
  * Colours still come from theme tokens (§14). Live updates reuse the stable
  * objectId + applyGraphics diff from layers.ts (in-place, no blink).
@@ -223,26 +221,41 @@ export function terminalDeckLayer(terminals: Terminal[]): FeatureLayer {
 
 const YARD_ROWS = 3;
 const YARD_COLS = 4;
-const CONTAINER_H_M = 5.8; // ISO container ≈ 2.6 m; we stack a touch taller for legibility
+// ISO container ≈ 2.6 m; we stack a touch taller for legibility. Trimmed from
+// 5.8 m so each stack renders ~10.1 × 4.5 m instead of ~12.7 × 5.7 m — a 37%
+// smaller footprint, which opens up real aisles between the compacted blocks.
+const CONTAINER_H_M = 4.6;
 const YARD_MODELS = ['red', 'green', 'blue'] as const;
+
+/**
+ * Anchor position (override-aware) of one yard block — the base of its stack.
+ * These twelve points per terminal are the ONLY ground in the scene that is known
+ * to be paved container yard, so they are also what the loose yard cargo is
+ * derived from.
+ */
+function yardBlockPos(t: Terminal, i: number): [number, number] {
+  const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
+  const quay = t.quayLengthM ?? 800;
+  const r = Math.floor(i / YARD_COLS);
+  const c = i % YARD_COLS;
+  const alongM = (c - (YARD_COLS - 1) / 2) * (quay / YARD_COLS);
+  const offsetM = 230 + r * 70; // landward rows
+  return withOverride(`yard:${t.terminalId}:${i}`, place(lng, lat, alongM, offsetM));
+}
 
 function yardBlockGraphics(terminals: Terminal[], pendency: PendencyDTO[]): Graphic[] {
   const pendById = new Map(pendency.map((p) => [p.facilityId, p.pendency] as const));
   const out: Graphic[] = [];
   for (const t of terminals) {
     if (t.geom.type !== 'Point') continue;
-    const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
     const cap = t.capacityTEU ?? 6000;
     const totalPend = pendById.get(t.terminalId) ?? cap * 0.35;
-    const quay = t.quayLengthM ?? 800;
     for (let r = 0; r < YARD_ROWS; r++) {
       for (let c = 0; c < YARD_COLS; c++) {
-        const alongM = (c - (YARD_COLS - 1) / 2) * (quay / YARD_COLS);
-        const offsetM = 230 + r * 70; // landward rows
         const i = r * YARD_COLS + c;
         const pkey = `yard:${t.terminalId}:${i}`;
         // The whole stack sits at the block anchor (honours a placement override).
-        const [bx, by] = withOverride(pkey, place(lng, lat, alongM, offsetM));
+        const [bx, by] = yardBlockPos(t, i);
         const jitter = 0.5 + rand01(t.terminalId, `blk${i}`) * 1.0;
         const frac = Math.max(0.05, Math.min(1, (totalPend / (cap * 0.9)) * jitter));
         // 1..6 container tiers driven by pendency (reference: h = 2 + …).
@@ -329,20 +342,29 @@ export function yardStackLayer(terminals: Terminal[], pendency: PendencyDTO[]): 
 // length. The crane model's long footprint is on Z, so heading orients its boom
 // toward the water.
 //
-// v3 — CRANE CLUSTERS. A working container berth runs 3–4 STS cranes side by side
-// on ONE rail, not a single lonely gantry (see the JNPA reference imagery). So each
-// surveyed ANCHOR crane (`crane:<T>:<i>`, positioned from data/positions.json)
-// keeps its exact coordinate and heading, and 2–3 SIBLINGS are derived beside it
-// along its own rail — the axis perpendicular to its boom, i.e. heading ± 90°,
-// which is the quay line. Nothing else moves: terminals, ships, yards and gates
-// are untouched.
+// v4 — REFERENCE-MATCHED CRANE GROUPS. Each surveyed ANCHOR crane
+// (`crane:<T>:<i>`, positioned from data/positions.json) keeps its exact
+// coordinate and heading; SIBLINGS are derived beside it along its own rail —
+// the axis perpendicular to its boom, i.e. heading ± 90°, which is the quay line.
+// Nothing else moves: terminals, ships, yards, gates, roads and truck routes are
+// untouched, and every crane stays on the berth's rail.
+//
+// The group SIZES come from the JNPA scale-model reference photographs, not from
+// a uniform rule (v3's flat "3–4 everywhere" read as an artificial stamp):
+//   • GTIPL          — three groups of 3 · 2 · 4 with clear gaps between them
+//   • BMCT PSA (T4)  — tight runs of 2–3 broken up by lone cranes standing apart
+//   • NSFT / JNPCT   — 2 · 3 · 2
+//   • NSICT DP World — one long run with a smaller detached group beside it
+// so the quay shows singles, pairs, threes and fours, never one repeated block.
+// In-group pitch is jittered per cluster too, so no two groups measure alike.
 //
 // Non-overlap is budgeted, not guessed: a cluster may only spread within
 // (nearestAnchorDistance / 2 − CRANE_BODY_M) of its anchor. Because BOTH
 // neighbours obey the same bound, cranes of adjacent clusters always stay
 // ≥ 2 × CRANE_BODY_M (≈18 m) apart, and cranes inside one cluster ≥
 // CRANE_SPACING_MIN_M apart — both comfortably wider than the model's ~7.5 m
-// along-rail footprint.
+// along-rail footprint. A group is dropped one crane at a time until it fits, so
+// a berth never gets more cranes than its rail can actually hold.
 // ---------------------------------------------------------------------------
 
 /**
@@ -350,12 +372,34 @@ export function yardStackLayer(terminals: Terminal[], pendency: PendencyDTO[]): 
  * (68 m / 14.607 u) scale ≈ 7.5 m, rounded up so neighbours keep an air gap.
  */
 const CRANE_BODY_M = 9;
-/** Preferred centre-to-centre spacing of STS cranes working one berth (m). */
-const CRANE_SPACING_PREF_M = 42;
+/** In-group pitch (m) is drawn from this range per cluster, then jittered again
+ *  per step — real STS cranes park 30–50 m apart and never at one exact pitch. */
+const CRANE_PITCH_MIN_M = 28;
+const CRANE_PITCH_MAX_M = 48;
 /** Hard floor for in-cluster spacing (m) — still well clear of CRANE_BODY_M. */
 const CRANE_SPACING_MIN_M = 15;
 /** Room assumed around an anchor with no neighbouring crane at all (m). */
 const CRANE_ISOLATED_NN_M = 400;
+
+/**
+ * Crane group SIZE at each berth position, in along-quay order, traced off the
+ * JNPA reference photographs (one entry per surveyed anchor on that quay). The
+ * 1s are the lone cranes standing apart from the working groups in the reference.
+ */
+const CRANE_GROUP_PATTERN: Record<string, number[]> = {
+  // Long run + a smaller detached group (NSICT DP World photo).
+  NSICT: [4, 3, 2],
+  // 2 · 3 · 2 rhythm of the adjacent DP World quay.
+  NSIGT: [3, 2, 3],
+  // A lone crane, then the photo's 3 · 2 · 4 groups.
+  GTI: [1, 3, 2, 4],
+  // T4's long quay: a working group, tight pairs, and single cranes parked between.
+  BMCT: [3, 2, 1, 2, 2, 2, 1, 2, 1],
+  // NSFT photo: a pair, the main group of 3, and a pair.
+  JNPCT: [2, 3, 2],
+};
+/** Rhythm used for a quay with no reference photo — varied, never uniform. */
+const CRANE_GROUP_FALLBACK = [2, 3, 1, 4, 2, 3, 2, 1, 3];
 
 /** Derived crane count for a terminal — quay/200, clamped 3..9 (unchanged rule). */
 function craneAnchorCount(t: Terminal): number {
@@ -367,27 +411,107 @@ function metresBetween(a: [number, number], b: [number, number]): number {
   return Math.hypot((b[0] - a[0]) * M_PER_DEG_LON, (b[1] - a[1]) * M_PER_DEG_LAT);
 }
 
+// ---- per-terminal quay axis ------------------------------------------------
+// The port-wide QUAY_BEARING_DEG (208°) is the average of the whole wharf, but
+// each terminal's own quay runs at its own bearing — the surveyed crane anchors
+// fit a straight line to within ±3 m at every terminal, and those lines range
+// from 203.8° (NSIGT) to 221.4° (BMCT/GTI). Using the port-wide value left the
+// booms of the southern terminals up to 13° off square to their own quay.
+// So each terminal's crane heading is FITTED from its own anchors instead.
+
+/** The port-wide seaward bearing — used only to orient the fitted normal. */
+const SEAWARD_BEARING_DEG = (QUAY_BEARING_DEG + 90) % 360;
+/** An anchor further than this (m) off the fitted line is left out of the fit,
+ *  so one crane dragged off its rail can't swing the whole terminal's booms. */
+const QUAY_FIT_TOLERANCE_M = 60;
+
 /**
- * Along-rail offsets (m) for one crane cluster. Element 0 is ALWAYS 0 — the
- * surveyed anchor never moves. `budgetM` is how far a sibling may sit from the
- * anchor without encroaching on the neighbouring cluster (see the header note).
+ * Heading (deg) that points a crane's boom SEAWARD, square to the quay line
+ * fitted through `points` (a terminal's crane anchors). Total-least-squares, with
+ * one outlier-rejection pass. Falls back to the port-wide heading if there aren't
+ * enough anchors to fit a line.
  */
-function craneClusterOffsets(pkey: string, budgetM: number): number[] {
-  if (budgetM < CRANE_SPACING_MIN_M) return [0]; // no room — the anchor stands alone
-  // 3 or 4 cranes per berth group, deterministic per anchor (stable replays).
-  const want = rand01(pkey, 'clusterN') < 0.45 ? 3 : 4;
-  if (want === 4) {
-    // A 4th crane means two siblings stacked on one side (at d and 2d), so each
-    // step may only use half the budget.
-    const d = Math.min(CRANE_SPACING_PREF_M, budgetM / 2);
-    if (d >= CRANE_SPACING_MIN_M) {
-      // Flip which side carries the pair per anchor, so a berth line of clusters
-      // doesn't read as the same stamp repeated.
-      return rand01(pkey, 'clusterSide') < 0.5 ? [0, -d, d, 2 * d] : [0, d, -d, -2 * d];
+function fitQuayHeading(points: [number, number][]): number {
+  if (points.length < 2) return QUAY_HEADING;
+  const origin = points[0]!;
+  const east = points.map((p) => (p[0] - origin[0]) * M_PER_DEG_LON);
+  const north = points.map((p) => (p[1] - origin[1]) * M_PER_DEG_LAT);
+  const fit = (idx: number[]) => {
+    const mx = idx.reduce((s, i) => s + east[i]!, 0) / idx.length;
+    const my = idx.reduce((s, i) => s + north[i]!, 0) / idx.length;
+    let sxx = 0;
+    let syy = 0;
+    let sxy = 0;
+    for (const i of idx) {
+      const dx = east[i]! - mx;
+      const dy = north[i]! - my;
+      sxx += dx * dx;
+      syy += dy * dy;
+      sxy += dx * dy;
     }
+    // Principal axis of the anchor scatter = the quay line.
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    return { dirE: Math.cos(th), dirN: Math.sin(th), mx, my };
+  };
+  const all = points.map((_, i) => i);
+  let f = fit(all);
+  const residual = (i: number, g: ReturnType<typeof fit>) =>
+    Math.abs((east[i]! - g.mx) * -g.dirN + (north[i]! - g.my) * g.dirE);
+  const kept = all.filter((i) => residual(i, f) <= QUAY_FIT_TOLERANCE_M);
+  if (kept.length >= 2 && kept.length < all.length) f = fit(kept);
+  // Of the axis's two normals, the boom takes the one pointing at the water.
+  const norm = (deg: number) => ((deg % 360) + 360) % 360;
+  const axis = norm((Math.atan2(f.dirE, f.dirN) * 180) / Math.PI);
+  const off = (a: number) => Math.abs(((a - SEAWARD_BEARING_DEG + 540) % 360) - 180);
+  const plus = norm(axis + 90);
+  const minus = norm(axis - 90);
+  return off(plus) <= off(minus) ? plus : minus;
+}
+
+/** Fitted seaward crane heading per terminalId (see {@link fitQuayHeading}). */
+export function quayHeadings(terminals: Terminal[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const t of terminals) {
+    if (t.geom.type !== 'Point') continue;
+    const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
+    const quay = t.quayLengthM ?? 800;
+    const n = craneAnchorCount(t);
+    const pts: [number, number][] = [];
+    for (let i = 0; i < n; i++) {
+      const pkey = `crane:${t.terminalId}:${i}`;
+      pts.push(withOverride(pkey, place(lng, lat, ((i + 0.5) / n - 0.5) * quay, 30)));
+    }
+    out.set(t.terminalId, fitQuayHeading(pts));
   }
-  const d3 = Math.min(CRANE_SPACING_PREF_M, budgetM);
-  return [0, -d3, d3];
+  return out;
+}
+
+/**
+ * Along-rail offsets (m) for one crane group. Element 0 is ALWAYS 0 — the
+ * surveyed anchor never moves. `budgetM` is how far a sibling may sit from the
+ * anchor without encroaching on the neighbouring group; `groupSize` is the size
+ * the reference pattern asks for, which is reduced if the rail is too short.
+ */
+function craneClusterOffsets(pkey: string, budgetM: number, groupSize: number): number[] {
+  // Every group gets its own base pitch, and every step inside it wobbles around
+  // that pitch, so two groups of the same size still measure differently.
+  const base = CRANE_PITCH_MIN_M + rand01(pkey, 'pitch') * (CRANE_PITCH_MAX_M - CRANE_PITCH_MIN_M);
+  const d = [0, 1, 2].map((i) => base * (0.85 + rand01(pkey, `step${i}`) * 0.3));
+  // Which side of the anchor the group grows towards, so the quay isn't mirrored.
+  const flip = rand01(pkey, 'side') < 0.5 ? 1 : -1;
+  for (let k = Math.max(1, Math.min(4, groupSize)); k > 1; k--) {
+    // 2 → one neighbour · 3 → one either side · 4 → a pair on one side.
+    const raw =
+      k === 2 ? [0, d[0]!] : k === 3 ? [0, d[0]!, -d[1]!] : [0, -d[0]!, d[1]!, d[1]! + d[2]!];
+    const extent = Math.max(...raw.map((v) => Math.abs(v)));
+    const fit = extent > budgetM ? budgetM / extent : 1;
+    const sorted = [...raw].sort((a, b) => a - b);
+    let minGap = Infinity;
+    for (let i = 1; i < sorted.length; i++) minGap = Math.min(minGap, (sorted[i]! - sorted[i - 1]!) * fit);
+    // Too tight for this rail — try the same group with one crane fewer.
+    if (minGap >= CRANE_SPACING_MIN_M) return raw.map((v) => v * fit * flip);
+  }
+  return [0]; // a lone crane, exactly as the reference shows at some berths
 }
 
 /** One rendered crane: an anchor (`crane:<T>:<i>`) or a sibling (`…:<i>:<j>`). */
@@ -407,26 +531,46 @@ interface CranePlacement {
 export function cranePlacements(terminals: Terminal[]): CranePlacement[] {
   // 1. The surveyed anchors — position/heading rule unchanged from v2.
   const anchors: CranePlacement[] = [];
+  // Group size the reference pattern asks for at each anchor, by pkey.
+  const groupSize = new Map<string, number>();
   for (const t of terminals) {
     if (t.geom.type !== 'Point') continue;
     const [lng, lat] = (t.geom as { coordinates: [number, number] }).coordinates;
     const quay = t.quayLengthM ?? 800;
     const n = craneAnchorCount(t);
+    const derived: [number, number][] = [];
     for (let i = 0; i < n; i++) {
-      const alongM = ((i + 0.5) / n - 0.5) * quay;
+      derived.push(withOverride(`crane:${t.terminalId}:${i}`, place(lng, lat, ((i + 0.5) / n - 0.5) * quay, 30)));
+    }
+    // Boom square to THIS terminal's quay, fitted from its own anchors — not the
+    // port-wide average bearing, which is up to 13° off at the southern quays.
+    const quayHeading = fitQuayHeading(derived);
+    const mine: CranePlacement[] = derived.map((pos, i) => {
       const pkey = `crane:${t.terminalId}:${i}`;
-      anchors.push({
+      return {
         pkey,
         terminalId: t.terminalId,
         craneId: `${t.terminalId}-STS${i + 1}`,
         // Cranes stand ~30 m inland of the waterline so the boom reaches over ships.
-        pos: withOverride(pkey, place(lng, lat, alongM, 30)),
-        heading: placementStore.get(pkey)?.heading ?? QUAY_HEADING,
-      });
-    }
+        pos,
+        heading: placementStore.get(pkey)?.heading ?? quayHeading,
+      };
+    });
+    // Read the reference pattern in ALONG-QUAY order, not index order, so the
+    // photographed sequence of group sizes lands in the photographed sequence of
+    // berths (the surveyed anchor indices are not sorted along the quay). Rank on
+    // the FITTED axis so the order follows this terminal's real quay.
+    const railRad = ((quayHeading + 90) * Math.PI) / 180;
+    const rankAlong = (p: [number, number]) =>
+      (p[0] - lng) * M_PER_DEG_LON * Math.sin(railRad) + (p[1] - lat) * M_PER_DEG_LAT * Math.cos(railRad);
+    const pattern = CRANE_GROUP_PATTERN[t.terminalId] ?? CRANE_GROUP_FALLBACK;
+    [...mine]
+      .sort((a, b) => rankAlong(a.pos) - rankAlong(b.pos))
+      .forEach((c, rank) => groupSize.set(c.pkey, pattern[rank % pattern.length]!));
+    anchors.push(...mine);
   }
 
-  // 2. Grow each anchor into a 3–4 crane cluster along its own rail.
+  // 2. Grow each anchor into its reference-sized group along its own rail.
   const out: CranePlacement[] = [];
   for (const a of anchors) {
     let nn = CRANE_ISOLATED_NN_M;
@@ -439,7 +583,7 @@ export function cranePlacements(terminals: Terminal[]): CranePlacement[] {
     // The rail runs perpendicular to the boom: the model's boom points along
     // `heading`, so siblings step along heading + 90° (negative offsets = −90°).
     const railBrg = (a.heading + 90) % 360;
-    craneClusterOffsets(a.pkey, budgetM).forEach((offM, j) => {
+    craneClusterOffsets(a.pkey, budgetM, groupSize.get(a.pkey) ?? 2).forEach((offM, j) => {
       if (j === 0) {
         out.push(a); // the anchor itself — exact surveyed position, untouched
         return;
@@ -614,6 +758,30 @@ function gatePosition(t: Terminal, gateIndex: number): [number, number] {
 // committed (override-aware) positions and assigns identity. It never moves a
 // gate — the placements in data/positions.json stay exactly as surveyed.
 
+/**
+ * Real JNPA gate names, by the gate id the rest of the system uses.
+ *
+ * The ids are deliberately NOT renamed: scenario definitions, the sim registry,
+ * the causal graph and the KPI / gateway / notification / scenario-engine tests
+ * all key off them. So the real-world name lives here as the DISPLAY label — it
+ * is what the 3D label, the popup and the asset tree show — while the id stays
+ * stable for everything downstream. Positions live in data/positions.json.
+ */
+export const GATE_NAMES: Record<string, string> = {
+  'JNPCT-G1': 'North Gate',
+  'JNPCT-G2': 'JNPCT Gate 2',
+  'GTI-G2': 'Central Gate',
+  'NSICT-G1': 'NSICT Entry Gate',
+  'NSIGT-G1': 'NSIGT Entry Gate',
+  'GTI-G1': 'GTI Entry Gate',
+  'BMCT-G1': 'BMCT Entry Gate',
+};
+
+/** Display name for a gate id, falling back to the id itself. */
+export function gateName(gateId: string): string {
+  return GATE_NAMES[gateId] ?? gateId;
+}
+
 /** IN = entering the port · OUT = leaving · BOTH = a single bidirectional gate. */
 export type GateRole = 'IN' | 'OUT' | 'BOTH';
 
@@ -724,16 +892,23 @@ export function pkeyPosition(pkey: string, terminals: Terminal[]): [number, numb
   return null;
 }
 
-/** Current heading (deg) for a movable pkey — the override's, else the quay default. */
-export function pkeyHeading(pkey: string): number {
+/** Current heading (deg) for a movable pkey — the override's, else the quay default.
+ *  Pass `terminals` to get a crane's FITTED per-terminal quay heading. */
+export function pkeyHeading(pkey: string, terminals?: Terminal[]): number {
   const o = placementStore.get(pkey);
   if (o?.heading != null) return o.heading;
   // Vessels default to quay bearing + 90 (hull along the quay).
   if (pkey.startsWith('vessel:')) return (QUAY_HEADING + 90) % 360;
-  // A crane cluster sibling (`crane:<T>:<i>:<j>`) shares its anchor's rail.
+  // Cranes (anchors and cluster siblings) point square to their OWN terminal's
+  // quay; a sibling inherits whatever its anchor is set to.
   const craneParts = pkey.startsWith('crane:') ? pkey.split(':') : [];
-  if (craneParts.length === 4) {
-    return placementStore.get(craneParts.slice(0, 3).join(':'))?.heading ?? QUAY_HEADING;
+  if (craneParts.length >= 3) {
+    if (craneParts.length === 4) {
+      const anchor = placementStore.get(craneParts.slice(0, 3).join(':'));
+      if (anchor?.heading != null) return anchor.heading;
+    }
+    const fitted = terminals ? quayHeadings(terminals).get(craneParts[1]!) : undefined;
+    return fitted ?? QUAY_HEADING;
   }
   // Live-mover anchors (route / rake / tug) run along the raw quay BEARING.
   if (pkey.startsWith('truckroute:') || pkey.startsWith('rake:') || pkey === 'tug') return QUAY_BEARING_DEG;
@@ -763,9 +938,12 @@ function gate3dGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[]
           queueLength: g.queueLength,
           avgTxnTimeMin: g.avgTxnTimeMin,
           // IN / OUT / BOTH — the direction this gate handles (see gateRoles).
-          // Labelled in 3D so the entry and exit sides read at a glance.
+          // Labelled in 3D so the entry and exit sides read at a glance, under
+          // the gate's REAL JNPA name rather than its internal id.
           role,
-          roleLabel: role === 'BOTH' ? `${g.gateId} · IN/OUT` : `${g.gateId} · ${role} GATE`,
+          gateName: gateName(g.gateId),
+          roleLabel:
+            role === 'BOTH' ? `${gateName(g.gateId)} · IN/OUT` : `${gateName(g.gateId)} · ${role} GATE`,
           // Rotation DELTA from the composite gate's default orientation, so a
           // rotation override spins both the boom and canopy together. 0 = default.
           headingDelta: (placementStore.get(`gate3d:${g.gateId}`)?.heading ?? QUAY_HEADING) - QUAY_HEADING,
@@ -789,6 +967,7 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
       { name: 'queueLength', type: 'integer' },
       { name: 'avgTxnTimeMin', type: 'double' },
       { name: 'role', type: 'string' },
+      { name: 'gateName', type: 'string' },
       { name: 'roleLabel', type: 'string' },
       { name: 'headingDelta', type: 'double' },
     ],
@@ -850,8 +1029,8 @@ export function gate3dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featu
       },
     ] as never,
     popupTemplate: {
-      title: 'Gate {gateId}',
-      content: 'Terminal: {terminalId}<br/>Direction: {role}<br/>Queue: {queueLength}<br/>Avg txn: {avgTxnTimeMin} min',
+      title: '{gateName}',
+      content: 'Gate id: {gateId}<br/>Terminal: {terminalId}<br/>Direction: {role}<br/>Queue: {queueLength}<br/>Avg txn: {avgTxnTimeMin} min',
     } as never,
   });
 }
@@ -975,84 +1154,77 @@ export function cctvLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic
 }
 
 // ---------------------------------------------------------------------------
-// Quay-apron cargo — decorative container stacks and box piles on the concrete
-// between the crane rail and the container yards, which on the JNPA imagery is
-// never bare: it is where boxes land off the ship before the straddle carriers
-// take them inland. It uses the CC0 cargo GLBs that already ship with the app
-// (cargo-pile-a/b, cargo-container-a/b/c) and were previously unreferenced.
+// Rail track — the physical permanent way the shunting rake runs on. Until now
+// the only railway in the scene was the moving train itself, so between shunts
+// there was nothing on the ground to show where the line goes.
 //
-// Everything is DERIVED from the crane cluster, so it can never drift: a stack
-// goes in the middle of the gap between two neighbouring cranes of the same
-// cluster, set back on the apron. Gaps narrower than APRON_MIN_GAP_M are skipped,
-// which keeps every stack at least that far from the next one. Like the CCTV
-// towers this is a plain decorative GraphicsLayer — no pkey, no sim coupling, so
-// the placement editor and the in-place data diff never touch it.
+// The corridor is the line marked in red on the JNPA reference image: a straight
+// 1509 m run from above the BMCT gates, ESE (140°) along the port's landward
+// boundary, ending on the JNPCT-G2 OUT gate. It stays at least 160 m clear of
+// every container stack and 229 m clear of every truck route, so the track never
+// crosses the container yard or a road.
+//
+// The port runs TWO lines, but only T1's rails are drawn here:
+//   • T1 — the reference corridor above (BMCT end → JNPCT-G2). No permanent way is
+//          visible on the basemap along it, so we lay our own.
+//   • T2 — the original central-yard siding. The basemap ALREADY shows that track,
+//          so drawing ours over it produced a visible double line. T2 therefore
+//          renders its rake only (see `drawTrack` in RAIL_LINES) and the train runs
+//          on the imagery's own rails.
+// Each drawn line's geometry is derived from the SAME `rake:<siding>` anchor + heading
+// its train uses, so the rails and that rake can never drift apart — dragging or
+// rotating an anchor in the placement editor moves both together. Drawn with the
+// line-3d symbol the channel layer already uses: a ballast band, a dashed dark
+// band that reads as sleepers, and a thin steel line for the rail heads. No new
+// model, no new asset.
 // ---------------------------------------------------------------------------
 
-/** Skip gaps tighter than this (m) so two stacks can never touch. */
-const APRON_MIN_GAP_M = 20;
-/** The two apron rows, in metres landward of the crane rail. */
-const APRON_ROWS_M = [46, 68];
-/** Cargo models cycled across the apron, with the height (m) each renders at. */
-const APRON_CARGO = [
-  { model: 'cargo-pile-a', height: 5 },
-  { model: 'cargo-container-a', height: 3.2 },
-  { model: 'cargo-pile-b', height: 5 },
-  { model: 'cargo-container-b', height: 3.2 },
-  { model: 'cargo-container-c', height: 3.2 },
+/**
+ * The rail lines, by siding. `behindM` / `aheadM` are how far the permanent way is
+ * drawn either side of that line's rake anchor, in metres.
+ *
+ * `drawTrack` is why T2 has no rails: the satellite basemap ALREADY shows the real
+ * permanent way along the central yard siding, so drawing our own over it rendered
+ * two tracks side by side. T2's rake still runs — only its duplicate rails are
+ * suppressed, and it rides the line that is already in the imagery. T1 keeps its
+ * rails because the reference corridor has none drawn on the basemap.
+ */
+export const RAIL_LINES = [
+  // The JNPA reference corridor: 200 m back to the BMCT end, 1309 m on to JNPCT-G2.
+  { siding: 'T1', name: 'JNPCT rail corridor', behindM: 200, aheadM: 1309, drawTrack: true },
+  // The original central-yard siding — rake only; the basemap draws this track.
+  { siding: 'T2', name: 'Central yard siding', behindM: 200, aheadM: 800, drawTrack: false },
 ] as const;
 
-export function apronCargoLayer(terminals: Terminal[]): GraphicsLayer {
-  const layer = new GraphicsLayer({ title: '3D · Quay apron cargo', elevationInfo: { mode: 'on-the-ground' } });
-  // Group the cranes back into their clusters so we only bridge gaps on one rail.
-  const clusters = new Map<string, CranePlacement[]>();
-  for (const c of cranePlacements(terminals)) {
-    const anchor = c.pkey.split(':').slice(0, 3).join(':');
-    clusters.set(anchor, [...(clusters.get(anchor) ?? []), c]);
-  }
-  let seq = 0;
-  for (const [anchorKey, members] of clusters) {
-    const anchor = members[0]!;
-    // Order the cluster along its own rail, then take each consecutive pair.
-    const railBrg = (anchor.heading + 90) % 360;
-    const rad = (railBrg * Math.PI) / 180;
-    const railE = Math.sin(rad);
-    const railN = Math.cos(rad);
-    const along = (c: CranePlacement) =>
-      (c.pos[0] - anchor.pos[0]) * M_PER_DEG_LON * railE + (c.pos[1] - anchor.pos[1]) * M_PER_DEG_LAT * railN;
-    const ordered = [...members].sort((a, b) => along(a) - along(b));
-    for (let i = 0; i < ordered.length - 1; i++) {
-      const gapM = along(ordered[i + 1]!) - along(ordered[i]!);
-      if (gapM < APRON_MIN_GAP_M) continue;
-      const mid: [number, number] = [
-        (ordered[i]!.pos[0] + ordered[i + 1]!.pos[0]) / 2,
-        (ordered[i]!.pos[1] + ordered[i + 1]!.pos[1]) / 2,
-      ];
-      const key = `${anchorKey}:apron${i}`;
-      const row = APRON_ROWS_M[Math.floor(rand01(key, 'row') * APRON_ROWS_M.length) % APRON_ROWS_M.length]!;
-      const cargo = APRON_CARGO[Math.floor(rand01(key, 'model') * APRON_CARGO.length) % APRON_CARGO.length]!;
-      const [lng, lat] = offsetFrom(mid[0], mid[1], 0, row);
-      layer.add(
-        new Graphic({
-          geometry: new Point({ longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } }),
-          // Boxes lie square to the quay, like the yard stacks; a small yaw wobble
-          // keeps the apron from reading as a stamped-out row.
-          symbol: {
-            type: 'point-3d',
-            symbolLayers: [
-              {
-                type: 'object',
-                resource: { href: `${MODELS}/${cargo.model}.glb` },
-                height: cargo.height,
-                anchor: 'bottom',
-                heading: (anchor.heading + (rand01(key, 'yaw') - 0.5) * 10 + 360) % 360,
-              },
-            ],
-          } as never,
-          attributes: { objectId: stableOid(`apron:${seq++}`), terminalId: anchor.terminalId, cargo: cargo.model },
-        }),
-      );
-    }
+/** The line-3d rails: ballast, sleepers, then the rail heads on top. */
+const RAIL_SYMBOL = {
+  type: 'line-3d',
+  symbolLayers: [
+    { type: 'line', size: 7, material: { color: [126, 116, 104, 0.85] }, cap: 'butt' },
+    { type: 'line', size: 5, material: { color: [72, 62, 54, 0.95] }, cap: 'butt', pattern: { type: 'style', style: 'dash' } },
+    { type: 'line', size: 1.4, material: { color: [188, 192, 196] }, cap: 'butt' },
+  ],
+} as never;
+
+export function railTrackLayer(terminals: Terminal[]): GraphicsLayer {
+  const layer = new GraphicsLayer({ title: '3D · Rail track', elevationInfo: { mode: 'on-the-ground' } });
+  for (const line of RAIL_LINES) {
+    // Lines whose permanent way is already visible on the basemap draw no rails —
+    // their rake runs on the track that is there (see RAIL_LINES).
+    if (!line.drawTrack) continue;
+    const pkey = `rake:${line.siding}`;
+    const anchor = pkeyPosition(pkey, terminals);
+    if (!anchor) continue;
+    const heading = pkeyHeading(pkey);
+    const back = metreOffset(anchor[0], anchor[1], (heading + 180) % 360, line.behindM);
+    const fwd = metreOffset(anchor[0], anchor[1], heading, line.aheadM);
+    layer.add(
+      new Graphic({
+        geometry: new Polyline({ paths: [[back, fwd]], spatialReference: { wkid: 4326 } }),
+        symbol: RAIL_SYMBOL,
+        attributes: { objectId: stableOid(`railtrack:${line.siding}`), siding: line.siding, name: line.name },
+      }),
+    );
   }
   return layer;
 }
@@ -1075,12 +1247,22 @@ export function apronCargoLayer(terminals: Terminal[]): GraphicsLayer {
 const MAX_TRUCKS_PER_GATE = 12;
 /** Parallel approach lanes at a gate (12 queued trucks → 3 × 4 deep). */
 const TRUCK_QUEUE_LANES = 3;
-/** Lane-to-lane spacing (m), lateral; stays well inside the 36 m canopy span. */
-const TRUCK_LANE_PITCH_M = 7;
+/**
+ * Lane-to-lane spacing (m), lateral; stays well inside the 36 m canopy span.
+ * Must clear the WIDEST vehicle: truck-realistic renders 7.5 m across at its 8 m
+ * symbol height, so the old 7 m pitch had neighbouring lanes interpenetrating by
+ * half a metre. 10 m leaves a 2.5 m gap between lanes.
+ */
+const TRUCK_LANE_PITCH_M = 10;
 /** Distance (m) the first row stops landward of the gate — clear of the canopy. */
 const TRUCK_QUEUE_STANDOFF_M = 22;
-/** Row-to-row spacing (m) — wider than the longest vehicle, so no interpenetration. */
-const TRUCK_QUEUE_PITCH_M = 26;
+/**
+ * Row-to-row spacing (m) — wider than the longest vehicle, so no interpenetration.
+ * Lane 0 is filled entirely with container-trucks, which render 23.1 m long, and
+ * the ±2 m stop-line slop can pull two rows 4 m closer together. At the old 26 m
+ * pitch that worst case left them exactly touching; 30 m keeps ~3 m of air.
+ */
+const TRUCK_QUEUE_PITCH_M = 30;
 
 function truckGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
   const out: Graphic[] = [];
@@ -1164,6 +1346,364 @@ export function truckLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): Featur
       visualVariables: [{ type: 'rotation', field: 'headingDelta' }],
     } as never,
     popupTemplate: { title: 'Truck at {gateId}', content: 'Waiting in the gate queue.' } as never,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Live traffic — Google-Maps-style congestion colouring ON the road network.
+//
+// The roads are the user-traced `truckroute:*` polylines. Each is cut into short
+// SEGMENTS and every segment gets a congestion score in 0..1, which the renderer
+// maps green → amber → red → dark red. Nothing about the roads themselves changes:
+// this is a coloured overlay laid on the same geometry.
+//
+// The score is DERIVED FROM VEHICLES, never random:
+//   1. vehicle density — every truck within TRAFFIC_CATCH_M of the segment counts,
+//      taken from the live gate queues (which are driven by gateOps.queueLength)
+//      plus, when the caller passes them, the positions of the moving trucks;
+//      count ÷ TRAFFIC_JAM_VEHICLES gives the raw load.
+//   2. gate friction — a gate is a choke point, so a share of its queue length is
+//      added to nearby segments with a linear falloff over TRAFFIC_GATE_REACH_M.
+// The two are summed and clamped, so a quiet road stays green, a road with a few
+// trucks goes amber, and the approach to a gate with a long queue goes red.
+//
+// Two smoothing passes stop the overlay looking like a barcode:
+//   • SPATIAL — a [1,2,1] kernel along each road, so neighbouring segments blend
+//     instead of jumping from green to red across one joint.
+//   • TEMPORAL — each rebuild eases toward the new value (TRAFFIC_EASING) instead
+//     of snapping, so a queue change ramps in over a few updates.
+// The eased state lives in `trafficState`, keyed by segment, and is the only
+// mutable module state here.
+//
+// Cost: ~30 segments for the whole port, recomputed only when the caller asks
+// (on a sim tick, or the periodic refresh in PortScene) — never per frame.
+// ---------------------------------------------------------------------------
+
+/** Length (m) of one coloured road segment. */
+const TRAFFIC_SEGMENT_M = 50;
+/** A vehicle within this distance (m) of a segment counts toward its load. */
+const TRAFFIC_CATCH_M = 60;
+/** Distance-weighted vehicle count that saturates one segment's density term. */
+const TRAFFIC_JAM_VEHICLES = 9;
+/** Ceiling on the density term alone, so vehicles never pin a segment at severe. */
+const TRAFFIC_DENSITY_CAP = 0.75;
+/** How far (m) a gate's queue bleeds congestion back down its approach road. */
+const TRAFFIC_GATE_REACH_M = 170;
+/** Queue length treated as a fully congested gate. */
+const TRAFFIC_GATE_JAM_QUEUE = 14;
+/** Ceiling on the gate-friction term alone. */
+const TRAFFIC_GATE_CAP = 0.72;
+/** Ends within this distance (m) are treated as one junction. */
+const TRAFFIC_JUNCTION_M = 40;
+/** Relaxation passes that walk congestion back up the approach (~50 m each). */
+const TRAFFIC_SPREAD_PASSES = 4;
+/** Share a segment inherits from its worst neighbour on each spread pass. */
+const TRAFFIC_SPREAD_DECAY = 0.82;
+/** A segment may sit at most this far above everything it touches. */
+const TRAFFIC_DESPECKLE_DELTA = 0.18;
+/** Fraction of the way the overlay moves toward its new value per rebuild. */
+const TRAFFIC_EASING = 0.35;
+/** Slower rate used when congestion is CLEARING — jams build fast, clear slowly. */
+const TRAFFIC_RECOVERY_EASING = 0.14;
+
+/** Eased congestion per segment key — the only mutable state in this module. */
+const trafficState = new Map<string, number>();
+
+/** Reset the eased traffic state (used by tests so runs are independent). */
+export function resetTrafficState(): void {
+  trafficState.clear();
+}
+
+/** Distance (m) from `p` to segment `a`–`b`. */
+function pointToSegmentM(p: [number, number], a: [number, number], b: [number, number]): number {
+  const ax = (a[0] - p[0]) * M_PER_DEG_LON;
+  const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
+  const bx = (b[0] - p[0]) * M_PER_DEG_LON;
+  const by = (b[1] - p[1]) * M_PER_DEG_LAT;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = dx * dx + dy * dy || 1;
+  const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+  return Math.hypot(ax + u * dx, ay + u * dy);
+}
+
+/** One coloured piece of road, with its neighbours in the road graph. */
+interface RoadSegment {
+  key: string;
+  routeId: string;
+  a: [number, number];
+  b: [number, number];
+  /** Indices of segments this one flows into — along its road AND across junctions. */
+  neighbours: number[];
+}
+
+/**
+ * Cut every traced road into ~TRAFFIC_SEGMENT_M pieces and link them into a graph.
+ *
+ * Roads are discovered by scanning the placement store for EVERY `truckroute:*`
+ * key that carries a path, rather than by walking the terminal list — so a route
+ * traced for a new road, or for anything that isn't a terminal id, is picked up
+ * with no code change.
+ *
+ * Two segments are neighbours when they are consecutive on the same road, or when
+ * their ends meet within TRAFFIC_JUNCTION_M — that second case is what lets a
+ * junction inherit congestion from every road feeding it.
+ */
+function roadSegments(): RoadSegment[] {
+  const out: RoadSegment[] = [];
+  for (const [key, placement] of Object.entries(placementStore.all())) {
+    if (!key.startsWith('truckroute:')) continue;
+    const path = placement.path;
+    if (!path || path.length < 2) continue;
+    const routeId = key.slice('truckroute:'.length);
+    let n = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i]!;
+      const b = path[i + 1]!;
+      const steps = Math.max(1, Math.round(metresBetween(a, b) / TRAFFIC_SEGMENT_M));
+      for (let s = 0; s < steps; s++) {
+        const u0 = s / steps;
+        const u1 = (s + 1) / steps;
+        out.push({
+          key: `traffic:${routeId}:${n++}`,
+          routeId,
+          a: [a[0] + (b[0] - a[0]) * u0, a[1] + (b[1] - a[1]) * u0],
+          b: [a[0] + (b[0] - a[0]) * u1, a[1] + (b[1] - a[1]) * u1],
+          neighbours: [],
+        });
+      }
+    }
+  }
+  // Link the graph: consecutive on one road, plus any ends that meet at a junction.
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      const p = out[i]!;
+      const q = out[j]!;
+      const sameRoadRun = p.routeId === q.routeId && j === i + 1;
+      const meets =
+        Math.min(
+          metresBetween(p.b, q.a),
+          metresBetween(p.a, q.b),
+          metresBetween(p.a, q.a),
+          metresBetween(p.b, q.b),
+        ) <= TRAFFIC_JUNCTION_M;
+      if (!sameRoadRun && !meets) continue;
+      p.neighbours.push(j);
+      q.neighbours.push(i);
+    }
+  }
+  return out;
+}
+
+/**
+ * Congestion graphics for the road network. `vehicles` are extra live vehicle
+ * positions (the moving trucks); omit them and the score still reflects the gate
+ * queues, which is what drives the hotspots.
+ */
+function trafficGraphics(
+  gateOps: GateOpsDTO[],
+  terminals: Terminal[],
+  vehicles: [number, number][] = [],
+): Graphic[] {
+  const segs = roadSegments();
+  if (segs.length === 0) return [];
+
+  // Every vehicle the scene knows about: the queued trucks (already a function of
+  // the live gateOps) plus whatever movers the caller sampled.
+  const queued = truckGraphics(gateOps, terminals).map((g) => {
+    const geo = g.geometry as unknown as { longitude: number; latitude: number };
+    return [geo.longitude, geo.latitude] as [number, number];
+  });
+  const allVehicles = [...queued, ...vehicles];
+
+  // Gate positions + their live queue length — the choke points.
+  const gatePoints: Array<{ p: [number, number]; queue: number }> = [];
+  const byId = new Map(gateOps.map((g) => [g.gateId, g] as const));
+  for (const t of terminals) {
+    if (t.geom.type !== 'Point') continue;
+    t.gates.forEach((gateId, i) => {
+      const op = byId.get(gateId);
+      if (op) gatePoints.push({ p: gatePosition(t, i), queue: op.queueLength });
+    });
+  }
+
+  // ---- 1. raw load per segment ----
+  const raw = segs.map((s) => {
+    // (a) vehicle density — nearer vehicles weigh more, so the field is smooth
+    // rather than flicking as a truck crosses the catch radius.
+    let weighted = 0;
+    for (const v of allVehicles) {
+      const d = pointToSegmentM(v, s.a, s.b);
+      if (d < TRAFFIC_CATCH_M) weighted += 1 - d / TRAFFIC_CATCH_M;
+    }
+    const density = Math.min(TRAFFIC_DENSITY_CAP, weighted / TRAFFIC_JAM_VEHICLES);
+
+    // (b) gate friction — strongest at the gate, easing off down the approach.
+    let gate = 0;
+    for (const g of gatePoints) {
+      const d = pointToSegmentM(g.p, s.a, s.b);
+      if (d >= TRAFFIC_GATE_REACH_M) continue;
+      const falloff = (1 - d / TRAFFIC_GATE_REACH_M) ** 1.6;
+      gate = Math.max(gate, (g.queue / TRAFFIC_GATE_JAM_QUEUE) * falloff);
+    }
+    gate = Math.min(TRAFFIC_GATE_CAP, gate);
+
+    // Combine as independent causes rather than a plain sum: either alone can
+    // colour a road, both together tip it into severe, and neither can pin it at
+    // the cap on its own — which is what kept whole roads solid dark red.
+    return Math.max(0, Math.min(1, 1 - (1 - density) * (1 - gate)));
+  });
+
+  // ---- 2. spread congestion BACKWARD along the road graph ----
+  // A queue doesn't stop at the gate; it tails back up the approach. Each pass
+  // lets a segment inherit a decayed share of its worst neighbour, so congestion
+  // walks along the carriageway (~one segment per pass) instead of only fading
+  // radially. Because the graph includes junction links, a busy road also bleeds
+  // into the roads that feed it — which is how junctions inherit their colour.
+  const spread = [...raw];
+  for (let pass = 0; pass < TRAFFIC_SPREAD_PASSES; pass++) {
+    const prev = [...spread];
+    for (let i = 0; i < segs.length; i++) {
+      let inherited = 0;
+      for (const j of segs[i]!.neighbours) inherited = Math.max(inherited, prev[j]! * TRAFFIC_SPREAD_DECAY);
+      spread[i] = Math.max(spread[i]!, inherited);
+    }
+  }
+
+  // ---- 3. spatial smoothing across the GRAPH, [1,2,1] in spirit ----
+  // Same weighting as before — the segment counts double, its neighbours share
+  // the other half — but neighbours now come from the graph, so the gradient runs
+  // continuously through a junction instead of stopping at the road boundary.
+  const smooth = spread.map((v, i) => {
+    const nb = segs[i]!.neighbours;
+    if (nb.length === 0) return v;
+    const mean = nb.reduce((sum, j) => sum + spread[j]!, 0) / nb.length;
+    return (2 * v + 2 * mean) / 4;
+  });
+
+  // ---- 4. despeckle: no isolated red island in a green road ----
+  // If a segment sits far above everything touching it, it is an artefact of one
+  // parked truck rather than a real jam; pull it down toward its neighbourhood.
+  const clean = smooth.map((v, i) => {
+    const nb = segs[i]!.neighbours;
+    if (nb.length === 0) return v;
+    const peak = Math.max(...nb.map((j) => smooth[j]!));
+    return v - peak > TRAFFIC_DESPECKLE_DELTA ? peak + TRAFFIC_DESPECKLE_DELTA : v;
+  });
+
+  // ---- 5. temporal easing, so colours ramp rather than snap ----
+  return segs.map((s, i) => {
+    const target = clean[i]!;
+    const prev = trafficState.get(s.key) ?? target;
+    // Asymmetric, like real traffic: a jam forms quickly, and clears slowly, so a
+    // road recovers red → orange → green over several updates rather than
+    // flicking back to green the instant a queue empties.
+    const rate = target > prev ? TRAFFIC_EASING : TRAFFIC_RECOVERY_EASING;
+    const eased = prev + (target - prev) * rate;
+    trafficState.set(s.key, eased);
+    return new Graphic({
+      geometry: new Polyline({ paths: [[s.a, s.b]], spatialReference: { wkid: 4326 } }),
+      attributes: {
+        objectId: stableOid(s.key),
+        segmentId: s.key,
+        routeId: s.routeId,
+        // 0 = free flowing … 1 = jammed. Drives the colour ramp.
+        congestion: Math.round(eased * 1000) / 1000,
+        level:
+          eased < 0.25 ? 'Free flowing' : eased < 0.5 ? 'Moderate' : eased < 0.75 ? 'Heavy' : 'Severe',
+      },
+    });
+  });
+}
+
+/**
+ * Google-Maps-style traffic ramp: free flowing → moderate → heavy → severe.
+ * Alpha climbs with congestion so a clear road reads as a light hint over the
+ * imagery while a jam is solid and unmissable.
+ */
+const TRAFFIC_STOPS = [
+  { value: 0.0, color: [30, 168, 79, 0.62] }, // green, light
+  { value: 0.4, color: [247, 181, 41, 0.86] }, // amber
+  { value: 0.7, color: [219, 68, 55, 0.96] }, // red
+  { value: 1.0, color: [138, 24, 20, 1.0] }, // dark red, solid
+];
+/** The ribbon thickens as it congests — thin when free flowing, fat when jammed. */
+const TRAFFIC_WIDTH_STOPS = [
+  { value: 0.0, size: 4 },
+  { value: 0.4, size: 6 },
+  { value: 1.0, size: 10 },
+];
+
+export function trafficLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): FeatureLayer {
+  return new FeatureLayer({
+    title: '3D · Live traffic',
+    source: trafficGraphics(gateOps, terminals) as unknown as Graphic[],
+    objectIdField: 'objectId',
+    geometryType: 'polyline',
+    spatialReference: { wkid: 4326 },
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'segmentId', type: 'string' },
+      { name: 'routeId', type: 'string' },
+      { name: 'congestion', type: 'double' },
+      { name: 'level', type: 'string' },
+    ],
+    elevationInfo: { mode: 'on-the-ground' },
+    renderer: {
+      type: 'simple',
+      symbol: {
+        type: 'line-3d',
+        symbolLayers: [
+          // A dark casing under the colour so the ribbon stays legible over
+          // satellite imagery, exactly like a map traffic overlay on the road.
+          { type: 'line', size: 6, material: { color: [22, 24, 27, 0.55] }, cap: 'round', join: 'round' },
+          { type: 'line', size: 6, material: { color: TRAFFIC_STOPS[0]!.color }, cap: 'round', join: 'round' },
+        ],
+      },
+      visualVariables: [
+        { type: 'color', field: 'congestion', stops: TRAFFIC_STOPS },
+        // Heavier traffic draws a wider ribbon, so a jam reads even zoomed out.
+        { type: 'size', field: 'congestion', stops: TRAFFIC_WIDTH_STOPS },
+      ],
+    } as never,
+    popupTemplate: {
+      title: 'Traffic — {level}',
+      content: 'Road: {routeId}<br/>Congestion index: {congestion}',
+    } as never,
+  });
+}
+
+/**
+ * The same traffic model rendered for the FLAT map (PortMap). Identical graphics
+ * and identical colour ramp — only the symbol differs, because a 2D MapView needs
+ * `simple-line` rather than `line-3d`.
+ */
+export function traffic2dLayer(gateOps: GateOpsDTO[], terminals: Terminal[]): FeatureLayer {
+  return new FeatureLayer({
+    title: 'Live traffic',
+    source: trafficGraphics(gateOps, terminals) as unknown as Graphic[],
+    objectIdField: 'objectId',
+    geometryType: 'polyline',
+    spatialReference: { wkid: 4326 },
+    fields: [
+      { name: 'objectId', type: 'oid' },
+      { name: 'segmentId', type: 'string' },
+      { name: 'routeId', type: 'string' },
+      { name: 'congestion', type: 'double' },
+      { name: 'level', type: 'string' },
+    ],
+    renderer: {
+      type: 'simple',
+      symbol: { type: 'simple-line', width: 4, color: TRAFFIC_STOPS[0]!.color, cap: 'round', join: 'round' },
+      visualVariables: [
+        { type: 'color', field: 'congestion', stops: TRAFFIC_STOPS },
+        { type: 'size', field: 'congestion', stops: TRAFFIC_WIDTH_STOPS },
+      ],
+    } as never,
+    popupTemplate: {
+      title: 'Traffic — {level}',
+      content: 'Road: {routeId}<br/>Congestion index: {congestion}',
+    } as never,
   });
 }
 
@@ -1375,6 +1915,91 @@ export function spotlight3dLayer(assetIds: string[], facilities: Facility[], ter
     ] as never,
     popupTemplate: { title: 'Live: {assetId}', content: 'Driven by the simulator.' } as never,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Yard-area highlight — outlines the ONE yard block picked in the asset tree.
+//
+// There is no yard polygon anywhere in the project: a yard block is rendered as a
+// stack of container models at a single point (`yard:<T>:<i>`). Rather than
+// inventing a new shape or a new source of truth, the outline is derived from the
+// block that is already there — its own position, its own heading, and the pitch
+// of the grid it sits in — so it always frames exactly what is drawn and follows
+// the block if it is dragged in the placement editor.
+//
+// The extent is half the distance to the block's nearest neighbour, clamped, so
+// the outline fills its bay without ever bleeding into the next one (the yard
+// pitch differs per terminal — 24 m at most, 36 m at JNPCT).
+// ---------------------------------------------------------------------------
+
+/** Fraction of the gap to the neighbouring block that the outline spans. */
+const YARD_HIGHLIGHT_FILL = 0.45;
+/** Clamp on the half-extent (m), so a lone or very tight block still reads. */
+const YARD_HIGHLIGHT_MIN_M = 8;
+const YARD_HIGHLIGHT_MAX_M = 18;
+
+/** `NSICT-Y3` → `yard:NSICT:2`, or null when the id is not a yard block. */
+export function yardPkeyFromAssetId(assetId: string): string | null {
+  const m = assetId.match(/^(.+)-Y(\d+)$/);
+  return m ? `yard:${m[1]}:${Number(m[2]) - 1}` : null;
+}
+
+/** Ground position of a yard block by its ASSET id, or null if not a yard. */
+export function yardAssetPosition(assetId: string, terminals: Terminal[]): [number, number] | null {
+  const pkey = yardPkeyFromAssetId(assetId);
+  return pkey ? pkeyPosition(pkey, terminals) : null;
+}
+
+/**
+ * Outline (and soft fill) for the selected yard block. Returns an empty array for
+ * anything that is not a yard block, so the caller can hand it any asset id.
+ */
+export function yardHighlightGraphics(assetId: string, terminals: Terminal[]): Graphic[] {
+  const pkey = yardPkeyFromAssetId(assetId);
+  if (!pkey) return [];
+  const centre = pkeyPosition(pkey, terminals);
+  if (!centre) return [];
+  const terminalId = pkey.split(':')[1]!;
+
+  // Half-extent from the yard grid's own pitch — never overlaps the next bay.
+  let nearest = Infinity;
+  for (let i = 0; i < YARD_ROWS * YARD_COLS; i++) {
+    const other = `yard:${terminalId}:${i}`;
+    if (other === pkey) continue;
+    const p = pkeyPosition(other, terminals);
+    if (p) nearest = Math.min(nearest, metresBetween(centre, p));
+  }
+  const half = Number.isFinite(nearest)
+    ? Math.max(YARD_HIGHLIGHT_MIN_M, Math.min(YARD_HIGHLIGHT_MAX_M, nearest * YARD_HIGHLIGHT_FILL))
+    : YARD_HIGHLIGHT_MIN_M;
+
+  // Square to the block's own heading, so the outline sits with the containers.
+  const heading = placementStore.get(pkey)?.heading ?? QUAY_HEADING;
+  const along = (heading + 90) % 360;
+  const corner = (a: number, b: number): [number, number] => {
+    const [x, y] = metreOffset(centre[0], centre[1], along, a);
+    return metreOffset(x, y, heading, b);
+  };
+  const ring = [corner(-half, -half), corner(half, -half), corner(half, half), corner(-half, half)];
+
+  return [
+    new Graphic({
+      geometry: new Polygon({ rings: [[...ring, ring[0]!]], spatialReference: { wkid: 4326 } }),
+      symbol: {
+        type: 'polygon-3d',
+        symbolLayers: [
+          {
+            type: 'fill',
+            // Cyan reads clearly against the containers and cannot be confused
+            // with the traffic ramp (green/amber/red) or the amber pick ring.
+            material: { color: [0, 214, 235, 0.18] },
+            outline: { color: [0, 214, 235, 0.95], size: 2.5 },
+          },
+        ],
+      } as never,
+      attributes: { yardPkey: pkey, blockId: assetId },
+    }),
+  ];
 }
 
 // ---- transient selection ring ---------------------------------------------
@@ -1593,5 +2218,6 @@ export const graphicsFor3d = {
   trucks: truckGraphics,
   channel: channelGraphics,
   congestion: congestionGraphics,
+  traffic: trafficGraphics,
   picks: pickGraphicsFor,
 };

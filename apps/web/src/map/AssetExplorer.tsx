@@ -19,6 +19,7 @@ import {
 } from '@esri/calcite-components-react';
 import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
+import { gateName } from './scene3d.js';
 import { tokens } from '../theme/tokens.js';
 
 interface AssetExplorerProps {
@@ -29,6 +30,8 @@ interface AssetExplorerProps {
   selectedId: string | null;
   /** assetId = position/focus id; pkey = draggable placement key (undefined if not movable). */
   onSelect: (assetId: string, pkey?: string) => void;
+  /** Leave a focused YARD: drops the highlight and returns the camera. */
+  onClearFocus?: () => void;
 }
 
 type AssetKind = 'terminal' | 'vessel' | 'crane' | 'gate' | 'yard' | 'facility' | 'route' | 'rake' | 'tug' | 'channel';
@@ -56,7 +59,7 @@ const KIND_ICON: Record<AssetKind, string> = {
 };
 
 export function AssetExplorer(props: AssetExplorerProps) {
-  const { terminals, facilities, gateOps, pendency, selectedId, onSelect } = props;
+  const { terminals, facilities, gateOps, pendency, selectedId, onSelect, onClearFocus } = props;
 
   const groups = useMemo(() => buildGroups(terminals, facilities, gateOps, pendency), [terminals, facilities, gateOps, pendency]);
   // Track which section is expanded ourselves — otherwise a re-render (e.g. a
@@ -114,6 +117,21 @@ export function AssetExplorer(props: AssetExplorerProps) {
           <CalciteButton width="full" scale="s" iconStart="zoom-to-object" onClick={() => onSelect(selected.id, selected.pkey)}>
             Focus in 3D
           </CalciteButton>
+          {/* Closing a focused YARD flies the camera back where it came from.
+              Only yards offer this — every other asset behaves exactly as before. */}
+          {selected.kind === 'yard' && onClearFocus && (
+            <CalciteButton
+              width="full"
+              scale="s"
+              appearance="outline"
+              kind="neutral"
+              iconStart="chevron-left"
+              style={{ marginTop: 6 }}
+              onClick={onClearFocus}
+            >
+              Close yard — back to overview
+            </CalciteButton>
+          )}
         </CalciteBlock>
       )}
     </div>
@@ -194,7 +212,14 @@ function buildGroups(
     // Gates
     for (const g of t.gates) {
       const op = gateById.get(g);
-      gates.push({ id: g, label: g, kind: 'gate', meta: op ? `${t.terminalId} · queue ${op.queueLength}` : t.terminalId, pkey: `gate3d:${g}` });
+      // Row shows the real JNPA gate name; the id stays the selection key.
+      gates.push({
+        id: g,
+        label: gateName(g),
+        kind: 'gate',
+        meta: op ? `${g} · ${t.terminalId} · queue ${op.queueLength}` : `${g} · ${t.terminalId}`,
+        pkey: `gate3d:${g}`,
+      });
     }
     // Yard blocks (matching yardStackLayer: YARD_ROWS×YARD_COLS = 3×4 = 12)
     for (let i = 0; i < 12; i++) {
@@ -209,8 +234,11 @@ function buildGroups(
   // Live movers (the animated assets): the rail rake, the harbour tug, plus the
   // per-terminal truck routes built above. Each carries an anchor pkey so it's
   // selectable, focus-able and movable/rotatable via the transform panel.
+  // One row per rail line (see RAIL_LINES in scene3d.ts): selecting it moves that
+  // line's anchor, which drags both its rails and its rake together.
   const rakeNodes: AssetNode[] = [
-    { id: 'rake:T1', label: 'Rail rake (loco + wagons)', kind: 'rake', meta: 'siding T1 · live', pkey: 'rake:T1' },
+    { id: 'rake:T1', label: 'Rail rake — JNPCT corridor', kind: 'rake', meta: 'siding T1 · live', pkey: 'rake:T1' },
+    { id: 'rake:T2', label: 'Rail rake — central yard siding', kind: 'rake', meta: 'siding T2 · live', pkey: 'rake:T2' },
   ];
   const referenceNodes: AssetNode[] = [
     { id: 'tug', label: 'Harbour tug', kind: 'tug', meta: 'channel · live', pkey: 'tug' },
