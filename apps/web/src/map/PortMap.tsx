@@ -26,6 +26,7 @@ import {
   applyGraphics,
   highlightGraphics,
 } from './layers.js';
+import { traffic2dLayer, graphicsFor3d } from './scene3d.js';
 import { tokens } from '../theme/tokens.js';
 
 interface PortMapProps {
@@ -68,6 +69,7 @@ export function PortMap(props: PortMapProps) {
     pendency: FeatureLayer;
     flows: FeatureLayer;
     gates: FeatureLayer;
+    traffic: FeatureLayer;
   } | null>(null);
   const highlightRef = useRef<FeatureLayer | null>(null);
   // Last spotlight id-set we zoomed to, so we only re-frame when it changes
@@ -96,9 +98,12 @@ export function PortMap(props: PortMapProps) {
       pendency: pendencyLayer(p0.pendency),
       flows: cargoFlowsLayer(p0.terminals, p0.flows),
       gates: gatesLayer(p0.gateOps, p0.terminals),
+      // Same live-traffic model as the 3D scene, drawn flat: the road network
+      // coloured green -> amber -> red -> dark red by vehicle density.
+      traffic: traffic2dLayer(p0.gateOps, p0.terminals),
     };
     layersRef.current = layers;
-    map.addMany([layers.facilities, layers.pendency, layers.flows, layers.gates]);
+    map.addMany([layers.traffic, layers.facilities, layers.pendency, layers.flows, layers.gates]);
 
     // Highlight layer created once (empty) and edited in place; always on top.
     const highlight = highlightedAssetsLayer(
@@ -182,6 +187,7 @@ export function PortMap(props: PortMapProps) {
     void applyGraphics(layers.pendency, graphicsFor.pendency(props.pendency));
     void applyGraphics(layers.flows, graphicsFor.flows(props.terminals, props.flows));
     void applyGraphics(layers.gates, graphicsFor.gates(props.gateOps, props.terminals));
+    void applyGraphics(layers.traffic, graphicsFor3d.traffic(props.gateOps, props.terminals));
   }, [props.facilities, props.terminals, props.gateOps, props.pendency, props.flows]);
 
   // Highlight halos are edited in place too, so adding/removing a driven asset

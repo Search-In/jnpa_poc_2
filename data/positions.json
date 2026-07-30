@@ -62,13 +62,14 @@
       "lng": 72.940181,
       "lat": 18.946844
     },
+    "$craneBMCTNote": "crane:BMCT:0 stood alone in the water. Its earlier correction projected it onto a straight line fitted from BMCT's other seven anchors, but at along-quay +301 m it lay ~300 m PAST the end of that line's data, so the fit was extrapolated off the curving wharf. It is now placed 70 m beyond crane:BMCT:2 - the last real crane in the row - so it sits on the quay among actual cranes instead of alone offshore. Positions before: [72.938557,18.945129] originally, then [72.940649,18.943373]. crane:BMCT:1 keeps its earlier correction (it lay INSIDE the fitted span, so no extrapolation was involved).",
     "crane:BMCT:0": {
-      "lng": 72.938557,
-      "lat": 18.945129
+      "lng": 72.939204,
+      "lat": 18.941806
     },
     "crane:BMCT:1": {
-      "lng": 72.935065,
-      "lat": 18.942779
+      "lng": 72.937897,
+      "lat": 18.940401
     },
     "crane:BMCT:2": {
       "lng": 72.938764,
@@ -111,299 +112,291 @@
       "lat": 18.930613
     },
     "yard:NSICT:0": {
-      "lng": 72.952651,
-      "lat": 18.958562
+      "lng": 72.953009,
+      "lat": 18.958788
     },
     "yard:NSICT:1": {
-      "lng": 72.952859,
-      "lat": 18.958969
+      "lng": 72.953108,
+      "lat": 18.958984
     },
     "yard:NSICT:2": {
-      "lng": 72.953067,
-      "lat": 18.959375
+      "lng": 72.953208,
+      "lat": 18.959179
     },
     "yard:NSICT:3": {
-      "lng": 72.953275,
-      "lat": 18.959781
+      "lng": 72.953308,
+      "lat": 18.959374
     },
     "yard:NSICT:4": {
-      "lng": 72.953026,
-      "lat": 18.958388
+      "lng": 72.953189,
+      "lat": 18.958705
     },
     "yard:NSICT:5": {
-      "lng": 72.953235,
-      "lat": 18.958794
+      "lng": 72.953289,
+      "lat": 18.9589
     },
     "yard:NSICT:6": {
-      "lng": 72.953443,
-      "lat": 18.959201
+      "lng": 72.953389,
+      "lat": 18.959095
     },
     "yard:NSICT:7": {
-      "lng": 72.953651,
-      "lat": 18.959607
+      "lng": 72.953489,
+      "lat": 18.95929
     },
     "yard:NSICT:8": {
-      "lng": 72.953402,
-      "lat": 18.958213
+      "lng": 72.953369,
+      "lat": 18.958621
     },
     "yard:NSICT:9": {
-      "lng": 72.95361,
-      "lat": 18.95862
+      "lng": 72.953469,
+      "lat": 18.958816
     },
     "yard:NSICT:10": {
-      "lng": 72.953818,
-      "lat": 18.959026
+      "lng": 72.953569,
+      "lat": 18.959011
     },
     "yard:NSICT:11": {
-      "lng": 72.954026,
-      "lat": 18.959433
+      "lng": 72.953669,
+      "lat": 18.959206
     },
     "yard:NSIGT:0": {
-      "lng": 72.949835,
-      "lat": 18.95377
+      "lng": 72.950137,
+      "lat": 18.954035
     },
     "yard:NSIGT:1": {
-      "lng": 72.950028,
-      "lat": 18.954184
+      "lng": 72.950239,
+      "lat": 18.954225
     },
     "yard:NSIGT:2": {
-      "lng": 72.950221,
-      "lat": 18.954597
+      "lng": 72.950341,
+      "lat": 18.954414
     },
     "yard:NSIGT:3": {
-      "lng": 72.950414,
-      "lat": 18.95501
+      "lng": 72.950444,
+      "lat": 18.954613
     },
     "yard:NSIGT:4": {
-      "lng": 72.950216,
-      "lat": 18.953609
+      "lng": 72.950367,
+      "lat": 18.953931
     },
     "yard:NSIGT:5": {
-      "lng": 72.95041,
-      "lat": 18.954022
+      "lng": 72.95046,
+      "lat": 18.954129
     },
     "yard:NSIGT:6": {
-      "lng": 72.950603,
-      "lat": 18.954435
+      "lng": 72.950553,
+      "lat": 18.954328
     },
     "yard:NSIGT:7": {
-      "lng": 72.950796,
-      "lat": 18.954848
+      "lng": 72.950645,
+      "lat": 18.954526
     },
     "yard:NSIGT:8": {
-      "lng": 72.950598,
-      "lat": 18.953447
+      "lng": 72.95055,
+      "lat": 18.953853
     },
     "yard:NSIGT:9": {
-      "lng": 72.950791,
-      "lat": 18.95386
+      "lng": 72.950643,
+      "lat": 18.954052
     },
     "yard:NSIGT:10": {
-      "lng": 72.950985,
-      "lat": 18.954273
+      "lng": 72.950736,
+      "lat": 18.95425
     },
     "yard:NSIGT:11": {
-      "lng": 72.951178,
-      "lat": 18.954686
+      "lng": 72.950829,
+      "lat": 18.954448
     },
     "yard:GTI:0": {
-      "lng": 72.946133,
-      "lat": 18.944539
+      "lng": 72.946555,
+      "lat": 18.944681
     },
     "yard:GTI:1": {
-      "lng": 72.946451,
-      "lat": 18.944899
+      "lng": 72.946707,
+      "lat": 18.944854
     },
     "yard:GTI:2": {
-      "lng": 72.946768,
-      "lat": 18.945259
+      "lng": 72.94686,
+      "lat": 18.945026
     },
     "yard:GTI:3": {
-      "lng": 72.947086,
-      "lat": 18.945619
+      "lng": 72.947012,
+      "lat": 18.945199
     },
     "yard:GTI:4": {
-      "lng": 72.946468,
-      "lat": 18.944271
+      "lng": 72.946716,
+      "lat": 18.944552
     },
     "yard:GTI:5": {
-      "lng": 72.946786,
-      "lat": 18.944631
+      "lng": 72.946868,
+      "lat": 18.944725
     },
     "yard:GTI:6": {
-      "lng": 72.947103,
-      "lat": 18.944992
+      "lng": 72.94702,
+      "lat": 18.944898
     },
     "yard:GTI:7": {
-      "lng": 72.94742,
-      "lat": 18.945352
+      "lng": 72.947173,
+      "lat": 18.945071
     },
     "yard:GTI:8": {
-      "lng": 72.946803,
-      "lat": 18.944004
+      "lng": 72.946876,
+      "lat": 18.944424
     },
     "yard:GTI:9": {
-      "lng": 72.94712,
-      "lat": 18.944364
+      "lng": 72.947029,
+      "lat": 18.944597
     },
     "yard:GTI:10": {
-      "lng": 72.947438,
-      "lat": 18.944724
+      "lng": 72.947181,
+      "lat": 18.94477
     },
     "yard:GTI:11": {
-      "lng": 72.947755,
-      "lat": 18.945084
+      "lng": 72.947333,
+      "lat": 18.944942
     },
     "yard:BMCT:0": {
-      "lng": 72.940248,
-      "lat": 18.938169
+      "lng": 72.940625,
+      "lat": 18.938365
     },
     "yard:BMCT:1": {
-      "lng": 72.940493,
-      "lat": 18.938557
+      "lng": 72.940743,
+      "lat": 18.938551
     },
     "yard:BMCT:2": {
-      "lng": 72.940737,
-      "lat": 18.938944
+      "lng": 72.94086,
+      "lat": 18.938737
     },
     "yard:BMCT:3": {
-      "lng": 72.940982,
-      "lat": 18.939332
+      "lng": 72.940977,
+      "lat": 18.938923
     },
     "yard:BMCT:4": {
-      "lng": 72.940606,
-      "lat": 18.937964
+      "lng": 72.940797,
+      "lat": 18.938266
     },
     "yard:BMCT:5": {
-      "lng": 72.940851,
-      "lat": 18.938352
+      "lng": 72.940915,
+      "lat": 18.938453
     },
     "yard:BMCT:6": {
-      "lng": 72.941096,
-      "lat": 18.93874
+      "lng": 72.941032,
+      "lat": 18.938639
     },
     "yard:BMCT:7": {
-      "lng": 72.94134,
-      "lat": 18.939127
+      "lng": 72.941149,
+      "lat": 18.938825
     },
     "yard:BMCT:8": {
-      "lng": 72.940965,
-      "lat": 18.937759
+      "lng": 72.940969,
+      "lat": 18.938168
     },
     "yard:BMCT:9": {
-      "lng": 72.941209,
-      "lat": 18.938147
+      "lng": 72.941086,
+      "lat": 18.938354
     },
     "yard:BMCT:10": {
-      "lng": 72.941454,
-      "lat": 18.938535
+      "lng": 72.941204,
+      "lat": 18.938541
     },
     "yard:BMCT:11": {
-      "lng": 72.941698,
-      "lat": 18.938922
+      "lng": 72.941321,
+      "lat": 18.938726
     },
     "yard:JNPCT:0": {
-      "lng": 72.930222,
-      "lat": 18.929586
+      "lng": 72.93227,
+      "lat": 18.928976
     },
     "yard:JNPCT:1": {
-      "lng": 72.930652,
-      "lat": 18.930126
+      "lng": 72.932408,
+      "lat": 18.929148
     },
     "yard:JNPCT:2": {
-      "lng": 72.931083,
-      "lat": 18.930667
+      "lng": 72.932545,
+      "lat": 18.929321
     },
     "yard:JNPCT:3": {
-      "lng": 72.931513,
-      "lat": 18.931207
+      "lng": 72.932683,
+      "lat": 18.929494
     },
     "yard:JNPCT:4": {
-      "lng": 72.930752,
-      "lat": 18.929203
+      "lng": 72.93244,
+      "lat": 18.928853
     },
     "yard:JNPCT:5": {
-      "lng": 72.931182,
-      "lat": 18.929744
+      "lng": 72.932577,
+      "lat": 18.929026
     },
     "yard:JNPCT:6": {
-      "lng": 72.931613,
-      "lat": 18.930284
+      "lng": 72.932715,
+      "lat": 18.929199
     },
     "yard:JNPCT:7": {
-      "lng": 72.932043,
-      "lat": 18.930825
+      "lng": 72.932853,
+      "lat": 18.929372
     },
     "yard:JNPCT:8": {
-      "lng": 72.931282,
-      "lat": 18.928821
+      "lng": 72.932609,
+      "lat": 18.92873
     },
     "yard:JNPCT:9": {
-      "lng": 72.931712,
-      "lat": 18.929361
+      "lng": 72.932747,
+      "lat": 18.928904
     },
     "yard:JNPCT:10": {
-      "lng": 72.932142,
-      "lat": 18.929902
+      "lng": 72.932885,
+      "lat": 18.929076
     },
     "yard:JNPCT:11": {
-      "lng": 72.932573,
-      "lat": 18.930442
+      "lng": 72.933023,
+      "lat": 18.929249
     },
+    "$rakeNote": "rake:T1 runs the rail corridor marked in red on the JNPA reference: a straight 1509 m line from above the BMCT gates, ESE along the port's landward boundary, ending at the JNPCT-G2 OUT gate. Georeferenced from the three gates labelled in that image — the line starts 140 m landward of BMCT-G2 (perpendicular to the BMCT-G2 -> JNPCT-G2 bearing of 134.55 deg) and ends on JNPCT-G2, giving a 139.87 deg run rounded to 140. 140 m of offset is what clears the BMCT gate structures: at 100 m the line passed 24 m from BMCT-G1, inside its 18 m canopy half-span. The anchor sits 200 m along the line because the rake trails 144 m of wagons behind it. The static track drawn by railTrackLayer() derives from this same anchor and heading, so the rails and the train can never drift apart. Previous: [72.949928,18.929288] heading 276 (JNPCT-G2 into the terminal).",
     "rake:T1": {
+      "lng": 72.943802,
+      "lat": 18.938148,
+      "heading": 140
+    },
+    "$rakeT2Note": "rake:T2 restores the ORIGINAL central-yard siding line, at exactly the anchor and bearing rake:T1 held before the reference corridor was traced. The two lines are independent: T1 follows the red-line corridor, T2 keeps the original alignment, and each has its own rails drawn by railTrackLayer() and its own rake running on them.",
+    "rake:T2": {
       "lng": 72.949657,
       "lat": 18.942208,
       "heading": 218
     },
     "gate3d:NSICT-G1": {
-      "lng": 72.952064,
-      "lat": 18.951073,
-      "heading": 308
-    },
-    "gate3d:NSICT-G2": {
-      "lng": 72.952144,
-      "lat": 18.955438,
-      "heading": 201
+      "lng": 72.952119,
+      "lat": 18.957701,
+      "heading": 205
     },
     "gate3d:NSIGT-G1": {
-      "lng": 72.948576,
-      "lat": 18.9466,
-      "heading": 296
+      "lng": 72.950686,
+      "lat": 18.954845,
+      "heading": 207
     },
     "gate3d:GTI-G1": {
-      "lng": 72.947711,
-      "lat": 18.945378,
-      "heading": 302
+      "lng": 72.947342,
+      "lat": 18.943807,
+      "heading": 127
     },
     "gate3d:GTI-G2": {
-      "lng": 72.946125,
-      "lat": 18.943353,
-      "heading": 307
+      "lng": 72.950528,
+      "lat": 18.935804,
+      "heading": 148
     },
     "gate3d:BMCT-G1": {
-      "lng": 72.943475,
-      "lat": 18.937704,
-      "heading": 225
-    },
-    "gate3d:BMCT-G2": {
-      "lng": 72.941648,
-      "lat": 18.938631,
-      "heading": 313
-    },
-    "gate3d:BMCT-G3": {
-      "lng": 72.940223,
-      "lat": 18.935349,
-      "heading": 313
+      "lng": 72.941252,
+      "lat": 18.937301,
+      "heading": 307
     },
     "gate3d:JNPCT-G1": {
-      "lng": 72.952185,
-      "lat": 18.929294,
-      "heading": 226
+      "lng": 72.960401,
+      "lat": 18.952913,
+      "heading": 100
     },
     "gate3d:JNPCT-G2": {
-      "lng": 72.951817,
-      "lat": 18.929099,
-      "heading": 225
+      "lng": 72.935797,
+      "lat": 18.933054,
+      "heading": 311
     },
     "truckroute:NSICT": {
       "lng": 72.953205,
@@ -519,8 +512,12 @@
       ]
     },
     "tug": {
-      "lng": 72.94631,
-      "lat": 18.963279
-    }
+      "lng": 72.94434,
+      "lat": 18.964178
+    },
+    "$yardNote": "Yard blocks compacted 0.48x about each terminal's grid centroid (pitch 50/44 m -> 24/21 m); four NSIGT blocks nudged 1-6 m clear of the NSIGT truck route. JNPCT additionally tightened to the same 24/21 m pitch and moved 165 m LANDWARD: its yard sat 204-272 m behind the quay, ~150 m closer than every other terminal (351-472 m), leaving the terminal's open apron covered in isolated stacks. It now sits at 369-411 m, in line with the rest and still 1.5 km clear of its gates.",
+    "$gateNote": "North Gate and Central Gate are placed on the two real toll plazas OSM records INSIDE the Jawaharlal Nehru Port polygon (way 49499133), verified by Overpass is_in containment: 6 barrier=toll_booth nodes centred 18.952913,72.960401 sitting 45 m from the named \"JNPT Terminal 1\" access road (way 587671181), and 2 booths centred 18.935804,72.950528 on the \"JNPT Terminal 2\" branch (ways 807490638/807538918). Headings follow those road bearings (100 and 148 deg). The five terminal Entry Gates are NOT moved: OSM carries no terminal-gate feature, and this model's terminals sit 1.2-2.3 km west of the real JNPT road spine, so putting them on the real roads would detach them from the terminals they serve.",
+    "$gateHeadingNote": "Each gate canopy is squared across the road it stands on: heading = the bearing of that traced road at the gate. The toll-naka model spans 36 m across the carriageway and 14 m along it, and with no heading set every gate fell back to the port-wide 298 deg default. NSICT-G1 and NSIGT-G1 were the worst - 91-93 deg out, so their canopies blocked the road sideways instead of spanning it.",
+    "$tugNote": "tug moved 230 m further SEAWARD along the NSICT quay normal, from 421 m to ~651 m off the quay line. It was reported as looking beached on a mudflat edge. Its committed coordinate had not changed and no code touches it, so this is a judgement move, not a regression fix: the only trustworthy water references in the project are the hand-placed berthed vessels (141-493 m seaward), so pushing the tug beyond the furthest of them along the same axis is the one direction guaranteed to lead further from shore. Previous: [72.94631,18.963279]."
   }
 }

@@ -360,6 +360,13 @@ export function Dashboard() {
                         setDrawRouteKey((k) => (k && k !== pkey ? null : k));
                         sceneRef.current?.focus(id);
                       }}
+                      // Closing a focused yard clears the selection and lets the
+                      // 3D scene glide the camera back to where it was.
+                      onClearFocus={() => {
+                        sceneRef.current?.clearSelection();
+                        setSelectedAsset(null);
+                        setSelectedPkey(null);
+                      }}
                     />
                   </div>
                   <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>

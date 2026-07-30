@@ -6,8 +6,8 @@ glTF object symbols. Licences below; CC-BY assets are attributed here as require
 | File | Model | Author | Source | Licence |
 |------|-------|--------|--------|---------|
 | `ship-cargo-a.glb`, `ship-cargo-b.glb` | Cargo ships | Kenney | Kenney Watercraft Kit (kenney.nl) | CC0 1.0 |
-| `cargo-container-a/b/c.glb` | ISO containers (quay-apron cargo) | Kenney | Kenney Watercraft Kit | CC0 1.0 |
-| `cargo-pile-a/b.glb` | Container stacks (quay-apron cargo) | Kenney | Kenney Watercraft Kit | CC0 1.0 |
+| `cargo-container-a/b/c.glb` | ISO containers (vendored, not referenced) | Kenney | Kenney Watercraft Kit | CC0 1.0 |
+| `cargo-pile-a/b.glb` | Container stacks (vendored, not referenced) | Kenney | Kenney Watercraft Kit | CC0 1.0 |
 | `toll-naka.glb` | Indian toll-naka gate canopy | — | Generated for this project | CC0 1.0 |
 | `gate.glb` | Gate frame | Kenney | Kenney Watercraft Kit | CC0 1.0 |
 | `boat-tug-a.glb` | Tug | Kenney | Kenney Watercraft Kit | CC0 1.0 |

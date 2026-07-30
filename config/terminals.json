@@ -15,7 +15,7 @@
       "quayLengthM": 600,
       "capacityTEU": 1500000,
       "geom": { "type": "Point", "coordinates": [72.9505, 18.9527] },
-      "gates": ["NSICT-G1", "NSICT-G2"],
+      "gates": ["NSICT-G1"],
       "sidingMapping": { "rail": ["T1"] },
       "tos": { "mode": "EDIFACT", "ediVersion": "D21A" }
     },
@@ -53,7 +53,7 @@
       "capacityTEU": 4800000,
       "$geomNote": "BMCT sits SW of the older NSICT/NSIGT/GTI cluster — this separation is the raison d'être of ITRHO (inter-terminal road transfer). Geom aligned to BMCT's 3D asset placements (data/positions.json: vessel/cranes/yards/gates) so the berth-line sits on the developed terminal instead of in open water; the previous [72.9120, 18.9100] fell in the channel. Approximate for demonstration; replace with surveyed polygon before production.",
       "geom": { "type": "Point", "coordinates": [72.9383, 18.9386] },
-      "gates": ["BMCT-G1", "BMCT-G2", "BMCT-G3"],
+      "gates": ["BMCT-G1"],
       "sidingMapping": { "rail": ["T2"] },
       "tos": { "mode": "REST" }
     },

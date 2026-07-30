@@ -77,8 +77,14 @@ const SATELLITE_COORDS: Record<string, [number, number]> = {
   // On/near-port JNPA facilities — clustered around the port road network.
   'DPE-WEST': [72.9480, 18.9464], // Direct Port Entry (was [72.9430,18.9490] — sat ~300 m SEAWARD of the quay line, i.e. in Thane Creek; a land-side facility, so nudged ESE onto the landward port band, same corridor — cf. CPP-1)
   'DPD-CENTRAL': [72.9550, 18.9537], // Direct Port Delivery yard (was [72.9505,18.9560] — sat ~240 m seaward in the creek; nudged ESE onto the developed land band east of the quay)
-  'ECD-1': [72.9640, 18.9420], // Empty container depot, JNPT SEZ road
-  'ECD-2': [72.9670, 18.9385], // Empty container depot, JNPT SEZ road
+  // Both verified against OpenStreetMap with an Overpass `is_in` containment test
+  // (queried 2026-07; see the note in the audit trail). ECD-1 now sits on the
+  // centre of the real mapped container depot — OSM way 1305919440,
+  // `landuse=depot` + `depot=container` — which `is_in` confirms lies inside the
+  // "Jawaharlal Nehru Port" polygon (OSM way 49499133). ECD-2 was already inside
+  // that port polygon and is therefore left where it is.
+  'ECD-1': [72.947, 18.9439], // Empty container depot — centre of OSM way 1305919440 (depot=container), inside JNPT. Was [72.9640,18.9420]: ~1.8 km inland in the mangrove belt. Then [72.9468,18.9489]: on land but OUTSIDE the JNPT port polygon.
+  'ECD-2': [72.9484, 18.9476], // Empty container depot — inside the JNPT port polygon per OSM is_in. Was [72.9670,18.9385]: ~2.2 km inland in the mangroves.
   'CPP-1': [72.9560, 18.9500], // Centralized Parking Plaza, port-entry landside (was 18.9605 — fell in the creek N of the port; moved S onto the developed yard band, same lng corridor)
 };
 

@@ -29,14 +29,17 @@ import {
   vesselLayer,
   gate3dLayer,
   cctvLayer,
-  apronCargoLayer,
+  railTrackLayer,
   truckLayer,
   channelLayer,
   congestionLayer,
+  trafficLayer,
   spotlight3dLayer,
   spotlight3dGraphics,
   selectionLayer,
   selectionRing,
+  yardHighlightGraphics,
+  yardAssetPosition,
   routeDrawLayer,
   routeDrawGraphics,
   pickLayer,
@@ -46,6 +49,16 @@ import {
 import { buildSceneAnim, type SceneAnim } from './sceneAnim.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
+
+/** How often the road-traffic overlay is recoloured (ms). Not per frame. */
+const TRAFFIC_REFRESH_MS = 3000;
+
+/** Yard focus: closer and a touch flatter than a normal pick, over a longer beat. */
+const YARD_FOCUS_ZOOM = 18;
+const YARD_FOCUS_TILT = 58;
+const YARD_FOCUS_MS = 1400;
+/** Glide back out to the pre-focus camera when the yard is closed. */
+const YARD_RETURN_MS = 1200;
 
 /** Respect the OS "reduce motion" setting — freeze the animation clock if set. */
 const REDUCED_MOTION =
@@ -133,6 +146,12 @@ function resolveHit(res: { results: Array<unknown> }): { id: string; pkey?: stri
       const m = String(a.blockId).match(/-Y(\d+)$/);
       if (m) pkey = `yard:${a.terminalId as string}:${Number(m[1]) - 1}`;
     }
+    // A gate graphic carries BOTH gateId and terminalId, so the generic order
+    // above reports the TERMINAL. That selected the terminal's tree row — which
+    // is reference-only and has no pkey — and the transform panel promptly closed
+    // again, which is why Edit appeared not to work on gates. A gate identifies as
+    // itself. (Vessels keep using terminalId: asset3dPosition keys them that way.)
+    if (pkey?.startsWith('gate3d:')) return { id: pkey.slice('gate3d:'.length), pkey };
     return { id, ...(pkey ? { pkey } : {}) };
   }
   return null;
@@ -163,6 +182,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     trucks: FeatureLayer;
     channel: FeatureLayer;
     congestion: FeatureLayer;
+    traffic: FeatureLayer;
     picks: FeatureLayer;
   } | null>(null);
   const spotlightRef = useRef<FeatureLayer | null>(null);
@@ -171,6 +191,9 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
   const animRef = useRef<SceneAnim | null>(null);
   const animRebuildPending = useRef<boolean>(false);
   const rafRef = useRef<number | null>(null);
+  const trafficTimerRef = useRef<number | null>(null);
+  // Camera pose captured before the first yard was opened, so closing can return.
+  const preFocusCameraRef = useRef<__esri.Camera | null>(null);
   const animClockRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
   const lastZoomKey = useRef<string>('');
@@ -202,7 +225,33 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     void applyGraphics(layers.trucks, graphicsFor3d.trucks(p.gateOps, p.terminals));
     void applyGraphics(layers.congestion, graphicsFor3d.congestion(p.gateOps, p.terminals));
     void applyGraphics(layers.picks, graphicsFor3d.picks(p.terminals, p.gateOps));
+    refreshTraffic();
     rebuildAnim();
+  }
+
+  /**
+   * Recolour the road network from current vehicle positions. Called on a sim tick
+   * and on a slow interval (TRAFFIC_REFRESH_MS) — never per frame. The moving
+   * trucks are read straight off the live animation layer, so the overlay follows
+   * real vehicle density rather than a synthetic pattern; sceneAnim itself is not
+   * touched, we only read the graphics it has already produced.
+   */
+  function refreshTraffic() {
+    const layers = layersRef.current;
+    const p = propsRef.current;
+    if (!layers) return;
+    const movers: [number, number][] = [];
+    for (const layer of animRef.current?.layers ?? []) {
+      if (layer.title !== '3D · Trucks (live)') continue;
+      for (const g of layer.graphics.toArray()) {
+        if (g.visible === false) continue;
+        const geo = g.geometry as unknown as { longitude?: number; latitude?: number };
+        if (typeof geo?.longitude === 'number' && typeof geo?.latitude === 'number') {
+          movers.push([geo.longitude, geo.latitude]);
+        }
+      }
+    }
+    void applyGraphics(layers.traffic, graphicsFor3d.traffic(p.gateOps, p.terminals, movers));
   }
 
   // Redraw the route-trace preview (line + numbered dots) for the route being
@@ -286,22 +335,60 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     const sel = selectionRef.current;
     if (!view) return;
     const pos = asset3dPosition(propsRef.current.facilities, propsRef.current.terminals);
-    const p = pos.get(assetId);
+    // Yard blocks are not in asset3dPosition (it keys terminals, gates, facilities
+    // and the live movers), so resolve them from their own placement key.
+    const p = pos.get(assetId) ?? yardAssetPosition(assetId, propsRef.current.terminals) ?? undefined;
     if (!p) return;
     const [lng, lat] = p;
-    // Drop a transient amber selection ring and tilt the camera in on the asset.
+    // One highlight at a time: removeAll() clears whatever was selected before, so
+    // picking another yard swaps the outline and clearSelection() drops it.
+    const yard = yardHighlightGraphics(assetId, propsRef.current.terminals);
+    const isYard = yard.length > 0;
     if (sel) {
       sel.removeAll();
-      sel.add(selectionRing(lng, lat));
+      // A yard block gets its AREA outlined; every other asset keeps the amber
+      // pick ring exactly as before (a 90 m ring would swamp a ~20 m yard bay).
+      if (isYard) for (const g of yard) sel.add(g);
+      else sel.add(selectionRing(lng, lat));
     }
+    // Diving into a yard remembers where the camera was, so closing the yard can
+    // fly back to it. Only the FIRST dive stores it, so hopping between yards
+    // still returns to wherever browsing started. Focusing anything else drops it.
+    if (isYard) {
+      if (!preFocusCameraRef.current && view.camera) preFocusCameraRef.current = view.camera.clone();
+    } else {
+      preFocusCameraRef.current = null;
+    }
+    // Same goTo the scene has always used — a yard just gets a closer, slightly
+    // flatter framing over a longer beat, because a bay is ~20 m across.
     void view
-      .goTo({ target: { type: 'point', longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } }, tilt: 62, zoom: 17 } as never, {
-        duration: 900,
-        easing: 'ease-in-out',
-      })
+      .goTo(
+        {
+          target: { type: 'point', longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } },
+          tilt: isYard ? YARD_FOCUS_TILT : 62,
+          zoom: isYard ? YARD_FOCUS_ZOOM : 17,
+        } as never,
+        { duration: isYard ? YARD_FOCUS_MS : 900, easing: 'ease-in-out' },
+      )
       .catch(() => {
         /* goTo rejects if interrupted by a newer animation — fine */
       });
+  }
+
+  /**
+   * Leave yard focus: drop the highlight and glide back to the camera pose the
+   * scene held before the first yard was opened. No-op (beyond clearing the
+   * highlight) if we never entered a yard, so every other asset is unaffected.
+   */
+  function clearYardFocus() {
+    selectionRef.current?.removeAll();
+    const view = viewRef.current;
+    const previous = preFocusCameraRef.current;
+    preFocusCameraRef.current = null;
+    if (!view || !previous) return;
+    void view.goTo(previous, { duration: YARD_RETURN_MS, easing: 'ease-in-out' }).catch(() => {
+      /* interrupted by a newer animation — fine */
+    });
   }
 
   // ---- cinematic camera presets (the template's OVERVIEW/CHANNEL/…) ----------
@@ -355,7 +442,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
 
   useImperativeHandle(ref, () => ({
     focus: focusAsset,
-    clearSelection: () => selectionRef.current?.removeAll(),
+    clearSelection: clearYardFocus,
     rebuild: rebuildLayers,
     rebuildOne,
     refreshRouteDraw,
@@ -388,22 +475,24 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       gates: gate3dLayer(p0.gateOps, p0.terminals),
       trucks: truckLayer(p0.gateOps, p0.terminals),
       congestion: congestionLayer(p0.gateOps, p0.terminals),
+      traffic: trafficLayer(p0.gateOps, p0.terminals),
       picks: pickLayer(p0.terminals, p0.gateOps),
     };
     layersRef.current = layers;
     // Order matters for readability: channel + congestion + decks under
     // stacks/cranes/ships (the heatmap is a ground wash, drawn early). The pick
     // markers go LAST so they sit on top and hitTest picks them first.
-    map.addMany([layers.channel, layers.congestion, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks, layers.picks]);
+    map.addMany([layers.channel, layers.congestion, layers.traffic, layers.decks, layers.yards, layers.cranes, layers.vessels, layers.gates, layers.trucks, layers.picks]);
 
     // Static CCTV surveillance towers beside each toll plaza (gate3d). Position
     // is derived from the gate anchors, so it never changes on a sim tick — added
     // as a standalone layer (not part of the in-place data diff above).
     map.add(cctvLayer(p0.gateOps, p0.terminals));
 
-    // Decorative cargo on the quay apron, derived from the crane clusters. Like
-    // the CCTV towers it carries no live data, so it stays out of the diff path.
-    map.add(apronCargoLayer(p0.terminals));
+
+    // The permanent way the shunting rake runs on — derived from the same
+    //  anchor, so the rails always sit under the train.
+    map.add(railTrackLayer(p0.terminals));
 
     const spotlight = spotlight3dLayer(p0.highlights ?? [], p0.facilities, p0.terminals);
     spotlightRef.current = spotlight;
@@ -555,7 +644,19 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       });
     });
 
+    // Traffic recolour on a slow timer — the moving trucks shift the density even
+    // when no sim tick arrives. Deliberately NOT in the rAF loop: ~30 segments ×
+    // a few dozen vehicles is cheap, but it has no business running at 60 fps.
+    trafficTimerRef.current = setInterval(() => {
+      const container = containerRef.current;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (!container || container.clientWidth === 0) return;
+      refreshTraffic();
+    }, TRAFFIC_REFRESH_MS) as unknown as number;
+
     return () => {
+      if (trafficTimerRef.current != null) clearInterval(trafficTimerRef.current);
+      trafficTimerRef.current = null;
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       lastFrameRef.current = 0;
@@ -570,6 +671,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       layersRef.current = null;
       spotlightRef.current = null;
       selectionRef.current = null;
+      preFocusCameraRef.current = null;
       routeDrawRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -598,6 +700,9 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     // Feed live queue lengths to the moving trucks so they visibly slow at a
     // congested gate (the animation reads congestion, it doesn't fake it).
     animRef.current?.setGateQueues(props.gateOps);
+    // Recolour the roads from the new queue lengths straight away, so a sim tick
+    // shows up in the traffic overlay without waiting for the next interval.
+    refreshTraffic();
   }, [props.terminals, props.pendency, props.gateOps]);
 
   // Pick markers stay hit-testable at all times (a hidden layer isn't picked), but

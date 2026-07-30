@@ -24,7 +24,7 @@ import Graphic from '@arcgis/core/Graphic';
 import Point from '@arcgis/core/geometry/Point';
 import type { Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO } from '@jnpa/data';
-import { place, headingBetween, QUAY_BEARING_DEG } from './scene3d.js';
+import { place, headingBetween, QUAY_BEARING_DEG, RAIL_LINES } from './scene3d.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
 
@@ -72,6 +72,14 @@ function applyAnchor(p: LngLat, tr: { deltaLng: number; deltaLat: number; rotDeg
 // Quaternius truck/pickup point along +Y; the rake models point along +X.
 const TRUCK_MODEL_OFFSET = 180; // truck models turned a further 90° to face along travel
 const RAKE_MODEL_OFFSET = 90; // rake models' long axis is +X → +90° to face along-track
+/** How far along its run each later rake starts, so the trains aren't in lockstep. */
+const RAKE_START_STAGGER_M = 70;
+/**
+ * Half the carriageway width (m) — each of a route's two trucks is held this far
+ * to its own side of the centreline, so opposing traffic passes 12 m apart. The
+ * widest vehicle renders 7.5 m across, so that leaves ~4.5 m between them.
+ */
+const TRUCK_LANE_OFFSET_M = 6;
 
 type LngLat = [number, number];
 
@@ -147,6 +155,18 @@ interface TruckMover {
   model: string;
   /** True when following a user-DRAWN path (skip the synthetic gate-slowdown). */
   custom: boolean;
+  /** Compass bearing (rad) of this route's fixed cross-axis — see `laneOffsetM`. */
+  perpRad: number;
+  /**
+   * Metres this truck is held to one side of the route centreline. Each circuit is
+   * an out-and-back along a single corridor, so its two trucks necessarily meet
+   * head-on; without a lane each they drove straight through one another. The
+   * offset is measured on the route's OWN fixed cross-axis (not the truck's
+   * heading), so a truck keeps the same side for the whole lap instead of hopping
+   * across the centreline every time it turns round. Path, order and direction of
+   * travel are untouched — this only says which side of it the truck drives on.
+   */
+  laneOffsetM: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,42 +280,61 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
         seg: (ti + k) % wps.length,
         u: (k / perTerminal + ti * 0.17) % 1,
         // Yard-truck pace: ~5–7 m/s (≈18–25 km/h), realistic for internal port roads.
-        speed: 5 + ((ti + k) % 3) * 0.8,
+        // Keyed on the ROUTE (ti), not the vehicle (k): the two trucks sharing a
+        // loop start ~1.5 segments apart, and holding them at one speed keeps that
+        // gap constant for ever. When the speed varied per truck the faster one
+        // closed on the slower one every lap and eventually drove through it —
+        // they were measured 0.8 m apart. Route, lane, order and direction are
+        // untouched; only the spacing between the pair is now preserved.
+        speed: 5 + (ti % 3) * 0.8,
         gateId,
         model,
         custom: usingDrawn,
+        // Cross-axis of the corridor as a whole (first waypoint → last), so both
+        // trucks measure their lane from the same fixed reference.
+        perpRad: ((headingBetween(at(wps, 0), at(wps, wps.length - 1)) + 90) * Math.PI) / 180,
+        laneOffsetM: (k === 0 ? 1 : -1) * TRUCK_LANE_OFFSET_M,
       });
     }
   });
 
-  // ---- rail rake on siding T1 (the central yard siding) ----
+  // ---- one rail rake per line (see RAIL_LINES in scene3d.ts) ----
+  // T1 is the corridor traced from the JNPA reference; T2 is the original central
+  // yard siding. Each has its own `rake:<siding>` placement anchor, so the two
+  // lines are positioned independently — the same anchor railTrackLayer() lays the
+  // rails from, so every rake runs on its own track. The rake itself (models,
+  // car count, spacing, run-in/dwell/run-out motion) is identical for both.
   const rakes: Rake[] = [];
   const t1 = terminals.find((t) => t.geom.type === 'Point'); // fallback anchor
   // Siding centroids live in config; we approximate the rake origin off the
   // GTI/central cluster along the quay bearing. Use the first terminal's frame.
   if (t1) {
     const [lng, lat] = (t1.geom as { coordinates: [number, number] }).coordinates;
-    // A rail line ~700 m inland, parallel to the quay. A `rake:T1` override drags
-    // the whole track origin and rotates its axis (direction of travel).
+    // A rail line ~700 m inland, parallel to the quay. A `rake:<siding>` override
+    // drags that track's origin and rotates its axis (direction of travel).
     const defaultOrigin = place(lng, lat, 400, 700);
-    const rakeTr = anchorTransform('rake:T1', defaultOrigin, QUAY_BEARING_DEG);
-    const origin = applyAnchor(defaultOrigin, rakeTr);
-    const axisDeg = (QUAY_BEARING_DEG + rakeTr.rotDeg) % 360; // rake runs along the (possibly rotated) axis
-    const cars: RakeCar[] = [];
-    // loco + 8 wagons (alternating flat wagon / container wagon), ~18 m each.
-    const CAR_LEN = 18;
-    for (let i = 0; i < 9; i++) {
-      const model = i === 0 ? 'rail-loco' : i % 2 === 0 ? 'rail-container' : 'rail-wagon';
-      const height = i === 0 ? 7 : 6;
-      const g = new Graphic({
-        geometry: new Point({ longitude: origin[0], latitude: origin[1], spatialReference: { wkid: 4326 } }),
-        symbol: objectSymbol(`${MODELS}/${model}.glb`, height, axisDeg + RAKE_MODEL_OFFSET),
-        attributes: { kind: 'rake-live', car: i },
-      });
-      railLayer.add(g);
-      cars.push({ g, offsetM: i * CAR_LEN });
-    }
-    rakes.push({ cars, origin, axisDeg, headM: 0, phase: 'run-in', dwellT: 0 });
+    RAIL_LINES.forEach((line, lineIdx) => {
+      const rakeTr = anchorTransform(`rake:${line.siding}`, defaultOrigin, QUAY_BEARING_DEG);
+      const origin = applyAnchor(defaultOrigin, rakeTr);
+      const axisDeg = (QUAY_BEARING_DEG + rakeTr.rotDeg) % 360; // rake runs along the (possibly rotated) axis
+      const cars: RakeCar[] = [];
+      // loco + 8 wagons (alternating flat wagon / container wagon), ~18 m each.
+      const CAR_LEN = 18;
+      for (let i = 0; i < 9; i++) {
+        const model = i === 0 ? 'rail-loco' : i % 2 === 0 ? 'rail-container' : 'rail-wagon';
+        const height = i === 0 ? 7 : 6;
+        const g = new Graphic({
+          geometry: new Point({ longitude: origin[0], latitude: origin[1], spatialReference: { wkid: 4326 } }),
+          symbol: objectSymbol(`${MODELS}/${model}.glb`, height, axisDeg + RAKE_MODEL_OFFSET),
+          attributes: { kind: 'rake-live', car: i, siding: line.siding },
+        });
+        railLayer.add(g);
+        cars.push({ g, offsetM: i * CAR_LEN });
+      }
+      // The first line starts where it always did; later ones start part-way along
+      // their run so the trains don't shunt in lockstep.
+      rakes.push({ cars, origin, axisDeg, headM: lineIdx * RAKE_START_STAGGER_M, phase: 'run-in', dwellT: 0 });
+    });
   }
 
   // ---- tug: a harbour tug patrolling the channel, seaward of the quays ----
@@ -357,13 +396,12 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
   }
 
   function tick(t: number, dt: number) {
-    // Rail-rake track footprint (the static line the train shunts along). Any
-    // yard truck rendering within ~40 m of it is clipped below, so the fleet
-    // never draws on/beside the train. Only NSIGT/GTI routes ever reach it; every
-    // other terminal's trucks (403 m–1.2 km away) are never affected.
-    const rk0 = rakes[0];
-    const railA = rk0?.origin;
-    const railB = rk0 ? advance(rk0.origin, (rk0.axisDeg * Math.PI) / 180, 220) : null;
+    // Rail-track footprints (the static line each train shunts along), one per
+    // line. Any yard truck rendering within ~40 m of a track is clipped below, so
+    // the fleet never draws on/beside a train. Only NSIGT/GTI routes ever reach
+    // the sidings; every other terminal's trucks (403 m–1.2 km away) are never
+    // affected, on either line.
+    const railSpans = rakes.map((rk) => [rk.origin, advance(rk.origin, (rk.axisDeg * Math.PI) / 180, 220)] as const);
     // --- trucks ---
     for (const tr of trucks) {
       const a = at(tr.wps, tr.seg);
@@ -375,22 +413,40 @@ export function buildSceneAnim(terminals: Terminal[], gateOps: GateOpsDTO[]): Sc
       const nearGate = !tr.custom && (tr.seg === 1 || tr.seg === 2 || tr.seg === 6);
       const q = gateQueue.get(tr.gateId) ?? 6;
       const speed = nearGate ? tr.speed * Math.max(0.25, 6 / Math.max(6, q)) : tr.speed;
-      // metres this frame = speed(m/s) × dt(s); ÷ segment length → fraction of seg.
-      tr.u += (speed * dt) / segLenM;
-      while (tr.u >= 1) {
-        tr.u -= 1;
+      // Advance by metres, converting to a segment fraction ONE SEGMENT AT A TIME.
+      // The route's segments differ in length, so the old code — which added the
+      // whole frame's fraction to `u` and then carried the overflow straight into
+      // the next segment — moved a truck the wrong distance whenever it crossed a
+      // waypoint (the leftover was a fraction of the segment just left, reused as a
+      // fraction of the one entered). Two trucks sharing a loop crossed waypoints at
+      // different moments, so each accumulated a different error and the gap between
+      // them drifted until they interpenetrated. Same route, same lane, same order,
+      // same direction — only the distance stepped per frame is now correct.
+      let remainingM = speed * dt;
+      let legLenM = segLenM;
+      for (let guard = 0; remainingM > 0 && guard < tr.wps.length + 2; guard++) {
+        const toEndM = (1 - tr.u) * legLenM;
+        if (remainingM < toEndM) {
+          tr.u += remainingM / legLenM;
+          break;
+        }
+        remainingM -= toEndM;
+        tr.u = 0;
         tr.seg = (tr.seg + 1) % tr.wps.length;
+        legLenM = metresBetween(at(tr.wps, tr.seg), at(tr.wps, tr.seg + 1)) || 1;
       }
       const cur = at(tr.wps, tr.seg);
       const nxt = at(tr.wps, tr.seg + 1);
-      const lng = cur[0] + (nxt[0] - cur[0]) * tr.u;
-      const lat = cur[1] + (nxt[1] - cur[1]) * tr.u;
+      // Point on the route centreline, then held to this truck's own side of it.
+      const centreLng = cur[0] + (nxt[0] - cur[0]) * tr.u;
+      const centreLat = cur[1] + (nxt[1] - cur[1]) * tr.u;
+      const [lng, lat] = advance([centreLng, centreLat], tr.perpRad, tr.laneOffsetM);
       tr.g.geometry = new Point({ longitude: lng, latitude: lat, spatialReference: { wkid: 4326 } });
       const heading = (headingBetween(cur, nxt) + TRUCK_MODEL_OFFSET) % 360;
       tr.g.symbol = objectSymbol(`${MODELS}/${tr.model}.glb`, tr.model === 'pickup-realistic' ? 5 : 8, heading);
       // Clip: hide this truck only while it would render over the train track,
       // so no yard truck appears on/beside the rake. Trucks elsewhere are shown.
-      tr.g.visible = !(railA != null && railB != null && distPtSegM([lng, lat], railA, railB) < 40);
+      tr.g.visible = !railSpans.some(([ra, rb]) => distPtSegM([lng, lat], ra, rb) < 40);
     }
 
     // --- rail rake: run in ~220 m, dwell, run out (slow shunting pace) ---

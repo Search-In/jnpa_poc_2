@@ -12,12 +12,26 @@ import { describe, expect, it } from 'vitest';
 import type { Terminal } from '@jnpa/schemas';
 import terminalsConfig from '../../../config/terminals.json';
 import positions from '../../../data/positions.json';
-import { apronCargoLayer, cranePlacements, gateRoles, graphicsFor3d } from '../src/map/scene3d.js';
+import {
+  railTrackLayer,
+  cranePlacements,
+  gateRoles,
+  graphicsFor3d,
+  quayHeadings,
+  pkeyPosition,
+  pkeyHeading,
+  resetTrafficState,
+  yardHighlightGraphics,
+  yardAssetPosition,
+  yardPkeyFromAssetId,
+} from '../src/map/scene3d.js';
+import { buildSceneAnim } from '../src/map/sceneAnim.js';
+import { placementStore } from '../src/map/placementStore.js';
 
 const terminals = (terminalsConfig as unknown as { terminals: Terminal[] }).terminals;
 const placements = (
   positions as unknown as {
-    placements: Record<string, { lng: number; lat: number; path?: [number, number][] }>;
+    placements: Record<string, { lng: number; lat: number; heading?: number; path?: [number, number][] }>;
   }
 ).placements;
 
@@ -45,18 +59,42 @@ describe('scene3d crane clusters', () => {
     }
   });
 
-  it('grows every anchor into a cluster of 3–4 cranes', () => {
-    const perAnchor = new Map<string, number>();
+  /** Cranes grouped by their anchor pkey. */
+  const groups = (() => {
+    const byAnchor = new Map<string, typeof cranes>();
     for (const c of cranes) {
-      const parts = c.pkey.split(':');
-      const anchor = parts.slice(0, 3).join(':');
-      perAnchor.set(anchor, (perAnchor.get(anchor) ?? 0) + 1);
+      const anchor = c.pkey.split(':').slice(0, 3).join(':');
+      byAnchor.set(anchor, [...(byAnchor.get(anchor) ?? []), c]);
     }
-    expect(perAnchor.size).toBe(22); // 3 NSICT + 3 NSIGT + 4 GTI + 9 BMCT + 3 JNPCT
-    for (const [anchor, n] of perAnchor) {
-      expect(n, `${anchor} cluster size`).toBeGreaterThanOrEqual(3);
-      expect(n, `${anchor} cluster size`).toBeLessThanOrEqual(4);
+    return byAnchor;
+  })();
+
+  it('groups the cranes into the sizes seen in the JNPA reference photos', () => {
+    expect(groups.size).toBe(22); // 3 NSICT + 3 NSIGT + 4 GTI + 9 BMCT + 3 JNPCT
+    const sizes = [...groups.values()].map((g) => g.length);
+    for (const [anchor, g] of groups) {
+      expect(g.length, `${anchor} group size`).toBeGreaterThanOrEqual(1);
+      expect(g.length, `${anchor} group size`).toBeLessThanOrEqual(4);
     }
+    // The reference shows a MIX — lone cranes, pairs, threes and fours. A run of
+    // one repeated size everywhere is the artificial look this replaced.
+    expect(new Set(sizes).size, 'distinct group sizes').toBeGreaterThanOrEqual(3);
+    expect(sizes.filter((n) => n === 1).length, 'lone cranes standing apart').toBeGreaterThan(0);
+    expect(sizes.filter((n) => n === 4).length, 'full four-crane berths').toBeGreaterThan(0);
+  });
+
+  it('never spaces the groups on one uniform pitch', () => {
+    const pitches: number[] = [];
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      const spread = g
+        .map((c) => metres(g[0]!.pos, c.pos) * (c.pkey === g[0]!.pkey ? 0 : 1))
+        .sort((a, b) => a - b);
+      for (let i = 1; i < spread.length; i++) pitches.push(Math.round(spread[i]! - spread[i - 1]!));
+    }
+    expect(pitches.length).toBeGreaterThan(10);
+    // Real cranes park 30–50 m apart and never at one exact repeated pitch.
+    expect(new Set(pitches).size, 'distinct crane pitches').toBeGreaterThan(pitches.length / 2);
   });
 
   it('never places two cranes closer than the model footprint', () => {
@@ -91,6 +129,212 @@ describe('scene3d crane clusters', () => {
       const reverse = Math.abs(delta - 180);
       expect(Math.min(delta, reverse), `${c.pkey} sits on the rail`).toBeLessThan(1);
       expect(c.heading, `${c.pkey} shares the anchor heading`).toBe(anchor.heading);
+    }
+  });
+});
+
+describe('quay line — nothing standing in the water', () => {
+  const headings = quayHeadings(terminals);
+  const cranes = cranePlacements(terminals);
+  /**
+   * How far seaward of a terminal's quay line a point lies, in metres. The quay
+   * line is the median of that terminal's surveyed crane anchors along its own
+   * fitted normal; positive = out over the water.
+   */
+  function seawardOfQuay(terminalId: string, p: [number, number]): number {
+    const heading = headings.get(terminalId)!;
+    const anchors = cranes.filter((c) => c.terminalId === terminalId && c.pkey.split(':').length === 3);
+    const origin = anchors[0]!.pos;
+    const nE = Math.sin((heading * Math.PI) / 180);
+    const nN = Math.cos((heading * Math.PI) / 180);
+    const project = (q: [number, number]) =>
+      (q[0] - origin[0]) * M_PER_DEG_LON * nE + (q[1] - origin[1]) * M_PER_DEG_LAT * nN;
+    const line = anchors.map((a) => project(a.pos)).sort((a, b) => a - b);
+    return project(p) - line[Math.floor(line.length / 2)]!;
+  }
+
+  it('keeps every crane on its own quay rail', () => {
+    // Two BMCT anchors used to sit 294 m and 398 m out in the channel; the rest
+    // of each terminal's anchors fit a straight line to within a few metres.
+    for (const c of cranes) {
+      expect(Math.abs(seawardOfQuay(c.terminalId, c.pos)), `${c.pkey} is on the quay`).toBeLessThan(25);
+    }
+  });
+
+  it('gives every crane on a terminal the same quay-square heading', () => {
+    for (const t of terminals) {
+      const mine = cranes.filter((c) => c.terminalId === t.terminalId);
+      expect(new Set(mine.map((c) => c.heading)).size, `${t.terminalId} heading consistency`).toBe(1);
+      // Fitted from the terminal's own anchors, so it must differ from the
+      // port-wide 298° default wherever that quay runs on its own bearing.
+      expect(mine[0]!.heading, `${t.terminalId} heading`).toBe(headings.get(t.terminalId));
+    }
+  });
+
+  it('keeps every container stack inside the terminal, landward of the quay', () => {
+    for (const [key, v] of Object.entries(placements)) {
+      const match = key.match(/^yard:([^:]+):/);
+      if (!match) continue;
+      const off = seawardOfQuay(match[1]!, [v.lng, v.lat]);
+      expect(off, `${key} is landward of the quay`).toBeLessThan(0);
+    }
+  });
+
+
+
+  it('keeps each terminal\'s containers in ONE compact yard, not spread over the apron', () => {
+    for (const t of terminals) {
+      const blocks = Object.entries(placements)
+        .filter(([k]) => k.startsWith(`yard:${t.terminalId}:`))
+        .map(([, v]) => [v.lng, v.lat] as [number, number]);
+      expect(blocks.length).toBe(12);
+      const cx = blocks.reduce((s, p) => s + p[0], 0) / blocks.length;
+      const cy = blocks.reduce((s, p) => s + p[1], 0) / blocks.length;
+      const radius = Math.max(...blocks.map((p) => metres(p, [cx, cy])));
+      // The JNPA reference shows one dense yard, not blocks scattered across the
+      // open marked apron. Before compaction this radius was 87–133 m.
+      expect(radius, `${t.terminalId} yard cluster radius`).toBeLessThan(80);
+    }
+  });
+
+});
+
+/** Gates that serve the whole port from the main access road, not one terminal. */
+const PORT_WIDE_GATES = new Set(['North Gate', 'Central Gate']);
+
+describe('JNPA gate layout', () => {
+  /** The seven real JNPA gates kept in the scene. */
+  const REAL_GATES = [
+    'North Gate',
+    'Central Gate',
+    'JNPCT Gate 2',
+    'NSICT Entry Gate',
+    'NSIGT Entry Gate',
+    'GTI Entry Gate',
+    'BMCT Entry Gate',
+  ];
+  const ids = terminals.flatMap((t) => t.gates);
+  const gateOps = ids.map((gateId) => ({
+    gateId,
+    terminalId: terminals.find((t) => t.gates.includes(gateId))!.terminalId,
+    queueLength: 5,
+    transactions: [],
+    avgTxnTimeMin: 4,
+  }));
+  const rendered = graphicsFor3d.gates(gateOps as never, terminals);
+
+  it('has exactly the 7 real gates, with no duplicates or extras', () => {
+    expect(ids.length, 'gates in config').toBe(7);
+    expect(new Set(ids).size, 'no duplicate ids').toBe(7);
+    expect(rendered.length, 'gates rendered').toBe(7);
+    const names = rendered.map((g) => (g.attributes as { gateName: string }).gateName);
+    expect(new Set(names)).toEqual(new Set(REAL_GATES));
+    // Retired gates must be gone from config AND from the placements.
+    for (const retired of ['NSICT-G2', 'BMCT-G3', 'BMCT-G2']) {
+      expect(ids, `${retired} retired from config`).not.toContain(retired);
+      expect(placements[`gate3d:${retired}`], `${retired} placement removed`).toBeUndefined();
+    }
+  });
+
+  it('stands every gate on a traced road, never in water or mangrove', () => {
+    // The truck-route paths were drawn waypoint-by-waypoint on the satellite
+    // imagery along the real port roads, so a point on one is provably on a road
+    // inside the estate. The previous coordinates put four gates in the creek.
+    const roads = Object.entries(placements)
+      .filter(([k, v]) => k.startsWith('truckroute:') && Array.isArray(v.path))
+      .map(([, v]) => v.path!);
+    expect(roads.length).toBeGreaterThan(0);
+    const toRoad = (p: [number, number]) =>
+      Math.min(
+        ...roads.flatMap((path) =>
+          path.slice(1).map((w, i) => {
+            const a = path[i]!;
+            const ax = (a[0] - p[0]) * M_PER_DEG_LON;
+            const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
+            const bx = (w[0] - p[0]) * M_PER_DEG_LON;
+            const by = (w[1] - p[1]) * M_PER_DEG_LAT;
+            const dx = bx - ax;
+            const dy = by - ay;
+            const len = dx * dx + dy * dy || 1;
+            const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+            return Math.hypot(ax + u * dx, ay + u * dy);
+          }),
+        ),
+      );
+    const water = Object.entries(placements)
+      .filter(([k]) => k.startsWith('vessel:'))
+      .map(([, v]) => [v.lng, v.lat] as [number, number]);
+    for (const g of rendered) {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const a = g.attributes as { gateName: string; roleLabel: string };
+      const p: [number, number] = [geo.longitude, geo.latitude];
+      // The two PORT-WIDE gates are pinned to surveyed OSM toll plazas on the real
+      // JNPT access roads, which are ~1 km east of this model's traced routes —
+      // see the separate test below. Every TERMINAL gate stays on a traced road.
+      if (!PORT_WIDE_GATES.has(a.gateName)) {
+        expect(toRoad(p), `${a.gateName} sits on a traced road`).toBeLessThan(1);
+      }
+      expect(Math.min(...water.map((w) => metres(p, w))), `${a.gateName} is clear of the water`).toBeGreaterThan(200);
+      // The 3D label must carry the real name, not the internal id.
+      expect(a.roleLabel, `${a.gateName} label`).toContain(a.gateName);
+    }
+  });
+
+  it('puts every TERMINAL gate at its own terminal, within reach of its yard', () => {
+    for (const g of rendered) {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const a = g.attributes as { gateName: string; terminalId: string };
+      // Port-wide gates serve the whole estate from the main access road, so they
+      // are deliberately not tied to one terminal's stacks.
+      if (PORT_WIDE_GATES.has(a.gateName)) continue;
+      const yards = Object.entries(placements)
+        .filter(([k]) => k.startsWith(`yard:${a.terminalId}:`))
+        .map(([, v]) => [v.lng, v.lat] as [number, number]);
+      const d = Math.min(...yards.map((y) => metres([geo.longitude, geo.latitude], y)));
+      // A terminal entrance is a few hundred metres from its stacks — not the
+      // 1.7–5.1 km the previous coordinates put them at.
+      expect(d, `${a.gateName} is at the ${a.terminalId} entrance`).toBeLessThan(700);
+    }
+  });
+
+  it('pins the port-wide gates to the surveyed OSM toll plazas', () => {
+    // Verified against OpenStreetMap via Overpass `is_in` containment in the
+    // "Jawaharlal Nehru Port" polygon (way 49499133). Plaza A is 6 barrier=toll_booth
+    // nodes on the named "JNPT Terminal 1" access road (way 587671181); Plaza B is
+    // 2 booths on the "JNPT Terminal 2" branch. These are real coordinates, so they
+    // are asserted exactly — a drift here means someone moved a surveyed gate.
+    const SURVEYED: Record<string, [number, number]> = {
+      'North Gate': [18.952913, 72.960401],
+      'Central Gate': [18.935804, 72.950528],
+    };
+    for (const [name, [lat, lng]] of Object.entries(SURVEYED)) {
+      const g = rendered.find((x) => (x.attributes as { gateName: string }).gateName === name);
+      expect(g, `${name} is rendered`).toBeTruthy();
+      const geo = g!.geometry as unknown as { longitude: number; latitude: number };
+      expect(geo.latitude, `${name} latitude`).toBeCloseTo(lat, 6);
+      expect(geo.longitude, `${name} longitude`).toBeCloseTo(lng, 6);
+    }
+  });
+
+  it('keeps every gate editable — position and heading both resolve', () => {
+    // The transform panel bails out when pkeyPosition returns null, which is what
+    // made Edit appear dead on gates.
+    for (const id of ids) {
+      expect(pkeyPosition(`gate3d:${id}`, terminals), `${id} resolves a position`).toBeTruthy();
+      expect(Number.isFinite(pkeyHeading(`gate3d:${id}`, terminals)), `${id} resolves a heading`).toBe(true);
+    }
+  });
+
+  it('identifies a clicked gate as the GATE, not its terminal', () => {
+    // resolveHit()'s rule, mirrored: a gate graphic carries both gateId and
+    // terminalId, and reporting the terminal selected an unmovable tree row and
+    // closed the transform panel.
+    for (const g of rendered) {
+      const a = g.attributes as Record<string, unknown>;
+      const pkey = a.pkey as string;
+      expect(pkey.startsWith('gate3d:')).toBe(true);
+      expect(pkey.slice('gate3d:'.length), 'reported id is the gate').toBe(a.gateId);
+      expect(a.gateId).not.toBe(a.terminalId);
     }
   });
 });
@@ -174,7 +418,7 @@ describe('scene3d gate truck queues', () => {
       const d = metres(tr.pos, gates.get(tr.attrs.gateId as string)!);
       expect(d, `truck at ${tr.attrs.gateId} clears the gate`).toBeGreaterThan(7 + 11.5);
       // …and stays on the gate approach rather than trailing off across the port.
-      expect(d, `truck at ${tr.attrs.gateId} stays on the approach`).toBeLessThan(110);
+      expect(d, `truck at ${tr.attrs.gateId} stays on the approach`).toBeLessThan(125);
     }
   });
 
@@ -193,6 +437,298 @@ describe('scene3d gate truck queues', () => {
       const expected = roles.get(tr.attrs.gateId as string) === 'OUT' ? 180 : 0;
       expect(tr.attrs.headingDelta, `${tr.attrs.gateId} heading`).toBe(expected);
     }
+  });
+});
+
+describe('yard-area highlight', () => {
+  const ringOf = (assetId: string) => {
+    const g = yardHighlightGraphics(assetId, terminals);
+    return (g[0]!.geometry as unknown as { rings: [number, number][][] }).rings[0]!;
+  };
+
+  it('outlines only the yard block that was selected', () => {
+    for (const id of ['NSICT-Y1', 'GTI-Y7', 'JNPCT-Y12']) {
+      const g = yardHighlightGraphics(id, terminals);
+      expect(g.length, `${id} produces exactly one outline`).toBe(1);
+      const ring = ringOf(id);
+      expect(ring.length, 'closed rectangle').toBe(5);
+      // Centred on the block it belongs to.
+      const centre = yardAssetPosition(id, terminals)!;
+      const mid: [number, number] = [(ring[0]![0] + ring[2]![0]) / 2, (ring[0]![1] + ring[2]![1]) / 2];
+      expect(metres(centre, mid), `${id} outline is centred on its block`).toBeLessThan(0.5);
+    }
+  });
+
+  it('never bleeds into the neighbouring bay', () => {
+    for (const id of ['NSICT-Y1', 'GTI-Y7', 'JNPCT-Y12']) {
+      const centre = yardAssetPosition(id, terminals)!;
+      const terminalId = id.split('-')[0]!;
+      let nearest = Infinity;
+      for (let i = 0; i < 12; i++) {
+        const p = pkeyPosition(`yard:${terminalId}:${i}`, terminals);
+        if (p && metres(p, centre) > 0.1) nearest = Math.min(nearest, metres(p, centre));
+      }
+      const reach = Math.max(...ringOf(id).map((c) => metres(centre, c)));
+      expect(reach, `${id} stays inside its own bay`).toBeLessThan(nearest);
+    }
+  });
+
+  it('produces nothing for assets that are not yard blocks', () => {
+    // The caller hands it any selected id, so a terminal / gate / crane / mover
+    // must fall through to the normal pick ring instead of drawing an area.
+    for (const id of ['NSICT', 'NSICT-G1', 'NSICT-STS1', 'tug', 'channel', 'route:GTI']) {
+      expect(yardHighlightGraphics(id, terminals).length, `${id} is not a yard`).toBe(0);
+      expect(yardPkeyFromAssetId(id), `${id} maps to no yard pkey`).toBeNull();
+    }
+    expect(yardPkeyFromAssetId('NSICT-Y3')).toBe('yard:NSICT:2');
+  });
+});
+
+describe('live traffic overlay', () => {
+  const ops = (queue: number) =>
+    [...gateRoles(terminals).keys()].map((gateId) => ({
+      gateId,
+      terminalId: terminals.find((t) => t.gates.includes(gateId))!.terminalId,
+      queueLength: queue,
+      transactions: [],
+      avgTxnTimeMin: 4,
+    }));
+  /** Run the overlay to a steady state at a given queue depth. */
+  const settle = (queue: number, vehicles: [number, number][] = []) => {
+    resetTrafficState();
+    let out = graphicsFor3d.traffic(ops(queue) as never, terminals, vehicles);
+    for (let i = 0; i < 40; i++) out = graphicsFor3d.traffic(ops(queue) as never, terminals, vehicles);
+    return out.map((g) => g.attributes as { congestion: number; level: string; routeId: string });
+  };
+
+  it('lays segments only on the traced road network', () => {
+    const segs = graphicsFor3d.traffic(ops(4) as never, terminals, []);
+    expect(segs.length).toBeGreaterThan(10);
+    const roads = Object.entries(placements)
+      .filter(([k, v]) => k.startsWith('truckroute:') && Array.isArray(v.path))
+      .map(([, v]) => v.path!);
+    for (const g of segs) {
+      const path = (g.geometry as unknown as { paths: [number, number][][] }).paths[0]!;
+      for (const p of path) {
+        const onRoad = Math.min(
+          ...roads.flatMap((r) =>
+            r.slice(1).map((w, i) => {
+              const a = r[i]!;
+              const ax = (a[0] - p[0]) * M_PER_DEG_LON;
+              const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
+              const bx = (w[0] - p[0]) * M_PER_DEG_LON;
+              const by = (w[1] - p[1]) * M_PER_DEG_LAT;
+              const dx = bx - ax;
+              const dy = by - ay;
+              const len = dx * dx + dy * dy || 1;
+              const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+              return Math.hypot(ax + u * dx, ay + u * dy);
+            }),
+          ),
+        );
+        expect(onRoad, 'traffic segment lies on a traced road').toBeLessThan(1);
+      }
+    }
+  });
+
+  it('is driven by vehicles, not randomness — empty roads stay green', () => {
+    const quiet = settle(0);
+    expect(quiet.every((s) => s.congestion === 0), 'an empty port is entirely free flowing').toBe(true);
+    expect(new Set(quiet.map((s) => s.level))).toEqual(new Set(['Free flowing']));
+    // Same input twice must give the same output — no random component.
+    const again = settle(0);
+    expect(again.map((s) => s.congestion)).toEqual(quiet.map((s) => s.congestion));
+  });
+
+  it('escalates green → moderate → heavy → severe as queues grow', () => {
+    const mean = (q: number) => {
+      const s = settle(q);
+      return s.reduce((a, b) => a + b.congestion, 0) / s.length;
+    };
+    const m0 = mean(0);
+    const m3 = mean(3);
+    const m7 = mean(7);
+    const m12 = mean(12);
+    expect(m0).toBe(0);
+    expect(m3).toBeGreaterThan(m0);
+    expect(m7).toBeGreaterThan(m3);
+    expect(m12).toBeGreaterThan(m7);
+    // A busy port shows every band at once — multiple hotspots, not one flat colour.
+    const busy = new Set(settle(12).map((s) => s.level));
+    expect(busy.size, 'several congestion levels visible together').toBeGreaterThanOrEqual(3);
+  });
+
+  it('counts moving vehicles, not just gate queues', () => {
+    const segs = graphicsFor3d.traffic(ops(0) as never, terminals, []);
+    const first = (segs[0]!.geometry as unknown as { paths: [number, number][][] }).paths[0]![0]!;
+    const quiet = settle(0)[0]!.congestion;
+    const busy = settle(0, [first, first, first, first, first])[0]!.congestion;
+    expect(quiet).toBe(0);
+    expect(busy, 'trucks parked on a segment colour it').toBeGreaterThan(0.2);
+  });
+
+  it('never leaves an isolated red island in a green road', () => {
+    const busy = settle(12);
+    const byRoad = new Map<string, number[]>();
+    for (const s of busy) byRoad.set(s.routeId, [...(byRoad.get(s.routeId) ?? []), s.congestion]);
+    for (const [road, vals] of byRoad) {
+      for (let i = 1; i < vals.length - 1; i++) {
+        const above = vals[i]! - Math.max(vals[i - 1]!, vals[i + 1]!);
+        expect(above, `${road} segment ${i} is not a lone spike`).toBeLessThan(0.2);
+      }
+    }
+  });
+
+  it('tails congestion back up the approach rather than stopping at the gate', () => {
+    const busy = settle(12);
+    const byRoad = new Map<string, number[]>();
+    for (const s of busy) byRoad.set(s.routeId, [...(byRoad.get(s.routeId) ?? []), s.congestion]);
+    // The longest approach must show a real gradient — a hot end and a cool end —
+    // not one hot segment at the gate with everything behind it green.
+    const longest = [...byRoad.values()].sort((a, b) => b.length - a.length)[0]!;
+    expect(longest.length).toBeGreaterThan(6);
+    expect(Math.max(...longest) - Math.min(...longest), 'gradient along the approach').toBeGreaterThan(0.25);
+    // …and the decay is monotone-ish: no neighbour jumps a whole colour band.
+    for (let i = 1; i < longest.length; i++) {
+      expect(Math.abs(longest[i]! - longest[i - 1]!), 'smooth tail-back').toBeLessThan(0.2);
+    }
+  });
+
+  it('clears more slowly than it builds, so roads fade red → orange → green', () => {
+    resetTrafficState();
+    for (let i = 0; i < 60; i++) graphicsFor3d.traffic(ops(14) as never, terminals, []);
+    const peak = (gs: ReturnType<typeof graphicsFor3d.traffic>) =>
+      Math.max(...gs.map((g) => (g.attributes as { congestion: number }).congestion));
+    const jammed = peak(graphicsFor3d.traffic(ops(14) as never, terminals, []));
+    // Queues vanish; the road must ease down over several updates, not snap green.
+    const r1 = peak(graphicsFor3d.traffic(ops(0) as never, terminals, []));
+    const r2 = peak(graphicsFor3d.traffic(ops(0) as never, terminals, []));
+    expect(r1).toBeLessThan(jammed);
+    expect(r2).toBeLessThan(r1);
+    expect(r1, 'recovery is gradual, not instant').toBeGreaterThan(jammed * 0.6);
+  });
+
+  it('picks up any newly traced truckroute with no code change', () => {
+    const before = new Set(settle(6).map((s) => s.routeId));
+    expect(before.has('NEW-ROAD')).toBe(false);
+    placementStore.set('truckroute:NEW-ROAD', {
+      lng: 72.945,
+      lat: 18.946,
+      path: [
+        [72.945, 18.946],
+        [72.947, 18.944],
+        [72.949, 18.942],
+      ],
+    });
+    try {
+      const after = settle(6);
+      expect(new Set(after.map((s) => s.routeId)).has('NEW-ROAD'), 'new road is covered').toBe(true);
+      expect(after.filter((s) => s.routeId === 'NEW-ROAD').length, 'new road is segmented').toBeGreaterThan(4);
+    } finally {
+      placementStore.remove('truckroute:NEW-ROAD');
+      resetTrafficState();
+    }
+  });
+
+  it('transitions gradually in space and in time', () => {
+    // Spatial: neighbouring segments of one road must not jump bands at a joint.
+    const busy = settle(12);
+    const byRoad = new Map<string, number[]>();
+    for (const s of busy) byRoad.set(s.routeId, [...(byRoad.get(s.routeId) ?? []), s.congestion]);
+    for (const [road, vals] of byRoad) {
+      for (let i = 1; i < vals.length; i++) {
+        expect(Math.abs(vals[i]! - vals[i - 1]!), `${road} steps smoothly`).toBeLessThan(0.35);
+      }
+    }
+    // Temporal: a sudden jam ramps in over several updates rather than snapping.
+    resetTrafficState();
+    for (let i = 0; i < 40; i++) graphicsFor3d.traffic(ops(0) as never, terminals, []);
+    const peak = (gs: ReturnType<typeof graphicsFor3d.traffic>) =>
+      Math.max(...gs.map((g) => (g.attributes as { congestion: number }).congestion));
+    const step1 = peak(graphicsFor3d.traffic(ops(16) as never, terminals, []));
+    const step2 = peak(graphicsFor3d.traffic(ops(16) as never, terminals, []));
+    const settled = Math.max(...settle(16).map((s) => s.congestion));
+    expect(step1).toBeLessThan(settled * 0.6);
+    expect(step2).toBeGreaterThan(step1);
+    expect(step2).toBeLessThan(settled);
+  });
+});
+
+describe('trucks never overlap', () => {
+  // Rendered footprints at the 8 m symbol height, from the node-transformed glTF
+  // bounds. truck-realistic is the WIDE one — 7.5 m across, wider than the old
+  // 7 m lane pitch, which is why neighbouring lanes interpenetrated.
+  const DIM: Record<string, { L: number; W: number }> = {
+    'container-truck': { L: 12.0 * (8 / 4.15), W: 2.29 * (8 / 4.15) },
+    'truck-realistic': { L: 5.256 * (8 / 2.884), W: 2.709 * (8 / 2.884) },
+  };
+  const gateOps = [...gateRoles(terminals).keys()].map((gateId) => ({
+    gateId,
+    terminalId: gateId.split('-')[0]!,
+    queueLength: 12,
+    transactions: [],
+    avgTxnTimeMin: 4,
+  }));
+
+  it('leaves no two queued trucks interpenetrating at any gate', () => {
+    const queued = graphicsFor3d.trucks(gateOps as never, terminals).map((g) => {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const a = g.attributes as { model: string; gateId: string; headingDelta: number };
+      return {
+        pos: [geo.longitude, geo.latitude] as [number, number],
+        model: a.model,
+        gateId: a.gateId,
+        heading: (298 + 180 + (a.headingDelta ?? 0)) % 360,
+      };
+    });
+    expect(queued.length).toBe(7 * 12); // 7 real JNPA gates × the 12-truck cap
+    for (let i = 0; i < queued.length; i++) {
+      for (let j = i + 1; j < queued.length; j++) {
+        const a = queued[i]!;
+        const b = queued[j]!;
+        if (a.gateId !== b.gateId) continue;
+        // Both trucks in a queue share a heading, so their boxes overlap exactly
+        // when they are too close BOTH along the lane and across it.
+        const rad = (a.heading * Math.PI) / 180;
+        const uE = Math.sin(rad);
+        const uN = Math.cos(rad);
+        const dE = (b.pos[0] - a.pos[0]) * M_PER_DEG_LON;
+        const dN = (b.pos[1] - a.pos[1]) * M_PER_DEG_LAT;
+        const along = Math.abs(dE * uE + dN * uN);
+        const across = Math.abs(dE * -uN + dN * uE);
+        const needAlong = (DIM[a.model]!.L + DIM[b.model]!.L) / 2;
+        const needAcross = (DIM[a.model]!.W + DIM[b.model]!.W) / 2;
+        expect(
+          along >= needAlong || across >= needAcross,
+          `${a.gateId}: ${a.model} and ${b.model} overlap (along ${along.toFixed(1)}/${needAlong.toFixed(
+            1,
+          )}, across ${across.toFixed(1)}/${needAcross.toFixed(1)})`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('keeps the moving trucks apart for a full circuit', () => {
+    // Each circuit is an out-and-back along one corridor, so its two trucks meet
+    // head-on every lap. They were measured 0.8 m apart — driving through one
+    // another — before each was held to its own side of the centreline.
+    const anim = buildSceneAnim(terminals, gateOps as never);
+    const cars = anim.layers.find((l) => l.title === '3D · Trucks (live)')!.graphics.toArray();
+    expect(cars.length).toBe(8);
+    let closest = Infinity;
+    for (let t = 0; t <= 1200; t += 4) {
+      anim.tick(t, 4);
+      const pts = cars.map((c) => {
+        const geo = c.geometry as unknown as { longitude: number; latitude: number };
+        return [geo.longitude, geo.latitude] as [number, number];
+      });
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) closest = Math.min(closest, metres(pts[i]!, pts[j]!));
+      }
+    }
+    // The widest pairing needs (7.5 + 4.4) / 2 ≈ 6 m of separation.
+    expect(closest, 'closest moving pair over a full circuit').toBeGreaterThan(8);
+    anim.destroy();
   });
 });
 
@@ -241,29 +777,128 @@ describe('drawn truck routes', () => {
   });
 });
 
-describe('quay apron cargo', () => {
-  const apron = apronCargoLayer(terminals).graphics.toArray().map((g) => {
-    const geo = g.geometry as unknown as { longitude: number; latitude: number };
-    return [geo.longitude, geo.latitude] as [number, number];
+describe('rail corridor — JNPCT-G2 into the terminal', () => {
+  const gateOps = [...gateRoles(terminals).keys()].map((gateId) => ({
+    gateId,
+    terminalId: gateId.split('-')[0]!,
+    queueLength: 6,
+    transactions: [],
+    avgTxnTimeMin: 4,
+  }));
+  const gates = new Map(
+    graphicsFor3d.gates(gateOps as never, terminals).map((g) => {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      return [g.attributes.gateId as string, [geo.longitude, geo.latitude] as [number, number]] as const;
+    }),
+  );
+  /** The DRAWN rail lines, keyed by siding (T2's rails are left to the basemap). */
+  const lines = new Map(
+    railTrackLayer(terminals).graphics.toArray().map((g) => {
+      const path = (g.geometry as unknown as { paths: [number, number][][] }).paths[0]!;
+      return [g.attributes.siding as string, { start: path[0]!, end: path[path.length - 1]! }] as const;
+    }),
+  );
+
+  /**
+   * The axis each RAKE runs on, drawn or not — for T1 that is its rails, for T2 it
+   * is the seeded anchor projected along its own heading.
+   */
+  const axes = new Map(
+    ['T1', 'T2'].map((siding) => {
+      const drawn = lines.get(siding);
+      if (drawn) return [siding, drawn] as const;
+      const seed = placements[`rake:${siding}`]!;
+      const rad = ((seed.heading ?? 0) * Math.PI) / 180;
+      // Same extents the drawn lines use: the rake trails 144 m of wagons behind
+      // its anchor, so the axis has to start behind it too.
+      const at = (d: number): [number, number] => [
+        seed.lng + (Math.sin(rad) * d) / M_PER_DEG_LON,
+        seed.lat + (Math.cos(rad) * d) / M_PER_DEG_LAT,
+      ];
+      return [siding, { start: at(-200), end: at(800) }] as const;
+    }),
+  );
+
+  /** Distance (m) from `p` to a given line's axis. */
+  function toLine(siding: string, p: [number, number]): number {
+    const { start, end } = axes.get(siding)!;
+    const ax = (start[0] - p[0]) * M_PER_DEG_LON;
+    const ay = (start[1] - p[1]) * M_PER_DEG_LAT;
+    const bx = (end[0] - p[0]) * M_PER_DEG_LON;
+    const by = (end[1] - p[1]) * M_PER_DEG_LAT;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy || 1;
+    const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+    return Math.hypot(ax + u * dx, ay + u * dy);
+  }
+
+  it('draws rails ONLY for the corridor the basemap does not already show', () => {
+    // The satellite imagery already carries the central-yard siding's permanent
+    // way, so drawing T2's rails over it rendered a duplicate double track. T2 is
+    // rake-only; its train rides the track that is already in the imagery.
+    expect(lines.size, 'one drawn rail line').toBe(1);
+    expect(lines.has('T1'), 'reference corridor is drawn').toBe(true);
+    expect(lines.has('T2'), 'siding rails are left to the basemap').toBe(false);
   });
 
-  it('decorates the apron of every terminal', () => {
-    expect(apron.length).toBeGreaterThan(20);
+  it('keeps T1 on the reference corridor', () => {
+    const { start, end } = lines.get('T1')!;
+    // Pinned to the corridor's own geometry, not to a gate: the rail alignment is
+    // fixed in positions.json, and the gates have since been re-sited to the real
+    // JNPA layout, so JNPCT-G2 is no longer at the corridor's end.
+    expect(start[0]).toBeCloseTo(72.9426, 3);
+    expect(start[1]).toBeCloseTo(18.9395, 3);
+    expect(end[0]).toBeCloseTo(72.9518, 3);
+    expect(end[1]).toBeCloseTo(18.9291, 3);
+    expect(metres(start, end), 'T1 length').toBeGreaterThan(1400);
+    expect(metres(start, end), 'T1 length').toBeLessThan(1600);
   });
 
-  it('keeps the decoration clear of the cranes, the yards and the gate queues', () => {
-    // The biggest cargo GLB renders ~15 m across, so ~8 m of separation is the
-    // floor for two stacks; the working assets need much more room than that.
-    const nearest = (from: [number, number], to: [number, number][]) =>
-      Math.min(...to.map((p) => metres(from, p)));
-    const cranes = cranePlacements(terminals).map((c) => c.pos);
-    const yards = Object.entries(placements)
-      .filter(([k]) => k.startsWith('yard:'))
-      .map(([, v]) => [v.lng, v.lat] as [number, number]);
-    for (const p of apron) {
-      expect(nearest(p, cranes), 'apron cargo clears the cranes').toBeGreaterThan(20);
-      expect(nearest(p, yards), 'apron cargo clears the yard blocks').toBeGreaterThan(20);
-      expect(nearest(p, apron.filter((q) => q !== p)), 'apron cargo clears itself').toBeGreaterThan(16);
+  it('keeps T2 at the original siding alignment', () => {
+    const seeded = placements['rake:T2']!;
+    // The anchor rake:T1 held before the corridor was traced — its rake still runs
+    // here, on the permanent way the basemap already draws.
+    expect(seeded.lng).toBe(72.949657);
+    expect(seeded.lat).toBe(18.942208);
+    expect(seeded.heading).toBe(218);
+  });
+
+  it('neither line crosses the container yard, the roads or a gate structure', () => {
+    for (const siding of ['T1', 'T2']) {
+      for (const [key, v] of Object.entries(placements)) {
+        if (!key.startsWith('yard:')) continue;
+        expect(toLine(siding, [v.lng, v.lat]), `${siding} clears ${key}`).toBeGreaterThan(60);
+      }
+      for (const [id, g] of gates) {
+        if (siding === 'T1' && id === 'JNPCT-G2') continue; // T1 deliberately terminates here
+        // A toll canopy spans ±18 m across the road, so past ~30 m is clear of the
+        // structure. JNPCT-G1 is the adjacent carriageway of T1's terminating
+        // complex (44 m away) and BMCT-G1 sits beside T1's BMCT end.
+        expect(toLine(siding, g), `${siding} clears the ${id} structure`).toBeGreaterThan(30);
+      }
+      for (const [key, v] of Object.entries(placements)) {
+        if (!key.startsWith('truckroute:') || !Array.isArray(v.path)) continue;
+        for (const w of v.path) expect(toLine(siding, w), `${siding} clears ${key}`).toBeGreaterThan(40);
+      }
     }
+  });
+
+  it('runs each rake on its OWN line for the whole shunt cycle', () => {
+    const anim = buildSceneAnim(terminals, gateOps as never);
+    const layer = anim.layers.find((l) => l.title === '3D · Rail rake (live)')!;
+    const cars = layer.graphics.toArray();
+    expect(cars.length, 'two rakes of loco + 8 wagons').toBe(18);
+    for (let t = 0; t <= 400; t += 20) {
+      anim.tick(t, 20);
+      for (const g of cars) {
+        const geo = g.geometry as unknown as { longitude: number; latitude: number };
+        const siding = (g.attributes as { siding: string }).siding;
+        // Each rake is derived from the same anchor + heading as its own track, so
+        // every car must sit on those rails, not beside them or on the other line.
+        expect(toLine(siding, [geo.longitude, geo.latitude]), `t=${t}s ${siding} car is on its rails`).toBeLessThan(2);
+      }
+    }
+    anim.destroy();
   });
 });

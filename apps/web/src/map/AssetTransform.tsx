@@ -55,7 +55,7 @@ export function AssetTransform({ pkey, label, terminals, onChange, drawing, onTo
   if (!pkey) return null;
   const pos = pkeyPosition(pkey, terminals);
   if (!pos) return null;
-  const heading = Math.round(pkeyHeading(pkey));
+  const heading = Math.round(pkeyHeading(pkey, terminals));
   const isRoute = pkey.startsWith('truckroute:');
   const wpCount = placementStore.getPath(pkey)?.length ?? 0;
 
