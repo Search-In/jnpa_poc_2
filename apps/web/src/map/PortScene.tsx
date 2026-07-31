@@ -20,7 +20,7 @@ import Legend from '@arcgis/core/widgets/Legend';
 import Expand from '@arcgis/core/widgets/Expand';
 import { initialBasemap, installBasemapFallback, isOfflineRequested } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
-import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
+import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { applyGraphics } from './layers.js';
 import {
   terminalDeckLayer,
@@ -745,6 +745,10 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
 
     const load = async () => {
       try {
+        if (!adapter.getLiveVessels) {
+          setLiveVesselError('Live vessels API is not available');
+          return;
+        }
         const vessels = await adapter.getLiveVessels();
         if (cancelled || !liveLayer) return;
         const graphics = graphicsFor3d.liveVessels(vessels);

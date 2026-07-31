@@ -15,7 +15,7 @@ import BasemapToggle from '@arcgis/core/widgets/BasemapToggle';
 import Expand from '@arcgis/core/widgets/Expand';
 import { initialBasemap, installBasemapFallback } from './basemapFallback.js';
 import type { Facility, Terminal } from '@jnpa/schemas';
-import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
+import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import {
   cargoFlowsLayer,
   facilitiesLayer,
@@ -254,6 +254,10 @@ export function PortMap(props: PortMapProps) {
 
     async function load() {
       try {
+        if (!adapter.getLiveVessels) {
+          setLiveVesselError('Live vessels API is not available');
+          return;
+        }
         const vessels = await adapter.getLiveVessels();
         if (cancelled || !layer) return;
         void applyGraphics(layer, graphicsForLiveVessels(vessels));

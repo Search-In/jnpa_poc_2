@@ -41,6 +41,7 @@ import type {
   EmptyPoolDTO,
   GateOpsDTO,
   GateQueueForecastDTO,
+  LiveVesselDTO,
   PendencyDTO,
   RailSideDTO,
   RakeForecastDTO,
