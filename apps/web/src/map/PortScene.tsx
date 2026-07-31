@@ -50,6 +50,7 @@ import {
 import { buildSceneAnim, type SceneAnim } from './sceneAnim.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
+import { CARGO_API_BASE } from '../state/AppContext.js';
 
 /** How often the road-traffic overlay is recoloured (ms). Not per frame. */
 const TRAFFIC_REFRESH_MS = 3000;
@@ -60,11 +61,9 @@ const YARD_FOCUS_TILT = 58;
 const YARD_FOCUS_MS = 1400;
 /** Glide back out to the pre-focus camera when the yard is closed. */
 const YARD_RETURN_MS = 1200;
-/** Gateway base URL — same as VITE_GATEWAY_URL or falls back to relative /api. */
-const GATEWAY_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_GATEWAY_URL?.replace(/\/$/, '') ?? '';
 
 async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
-  const url = `${GATEWAY_BASE}/api/marine/vessels/live`;
+  const url = `${CARGO_API_BASE}/api/marine/vessels/live`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
   return res.json() as Promise<LiveVesselDTO[]>;
