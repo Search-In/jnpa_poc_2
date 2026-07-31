@@ -16,7 +16,7 @@ import type {
   CargoNotification, CargoNotificationCreateInput, CargoNotificationFilter,
   CargoWorkflowActionInput, CargoWorkflowHistoryEntry, CargoWorkflowState,
   YardPlanningInput, YardPlanningResult, YardOptimization,
-  RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent,
+  RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent, LiveVesselDTO,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -94,6 +94,9 @@ export class SimAdapter implements DataAdapter {
   }
   getCargoEvents(containerNo?: string): Promise<CargoLifecycleEvent[]> {
     return this.base.getCargoEvents ? this.base.getCargoEvents(containerNo) : SimAdapter.unavailable();
+  }
+  getLiveVessels(): Promise<LiveVesselDTO[]> {
+    return this.base.getLiveVessels ? this.base.getLiveVessels() : SimAdapter.unavailable();
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {

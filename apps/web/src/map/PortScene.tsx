@@ -50,7 +50,7 @@ import {
 import { buildSceneAnim, type SceneAnim } from './sceneAnim.js';
 import { placementStore } from './placementStore.js';
 import { tokens } from '../theme/tokens.js';
-import { CARGO_API_BASE } from '../state/AppContext.js';
+import { useApp } from '../state/AppContext.js';
 
 /** How often the road-traffic overlay is recoloured (ms). Not per frame. */
 const TRAFFIC_REFRESH_MS = 3000;
@@ -61,13 +61,6 @@ const YARD_FOCUS_TILT = 58;
 const YARD_FOCUS_MS = 1400;
 /** Glide back out to the pre-focus camera when the yard is closed. */
 const YARD_RETURN_MS = 1200;
-
-async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
-  const url = `${CARGO_API_BASE}/api/marine/vessels/live`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
-  return res.json() as Promise<LiveVesselDTO[]>;
-}
 
 /** Respect the OS "reduce motion" setting — freeze the animation clock if set. */
 const REDUCED_MOTION =
@@ -184,6 +177,7 @@ function makeValueOf(gateOps: GateOpsDTO[], pendency: PendencyDTO[]): (id: strin
 export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function PortScene(props, ref) {
   const [showLiveVessels, setShowLiveVessels] = useState(false);
   const [liveVesselError, setLiveVesselError] = useState<string | null>(null);
+  const { adapter } = useApp();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<SceneView | null>(null);
   const layersRef = useRef<{
@@ -751,7 +745,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
 
     const load = async () => {
       try {
-        const vessels = await fetchLiveVessels();
+        const vessels = await adapter.getLiveVessels();
         if (cancelled || !liveLayer) return;
         const graphics = graphicsFor3d.liveVessels(vessels);
         liveLayer.removeAll();
@@ -768,7 +762,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
       cancelled = true;
       clearInterval(interval);
     };
-  }, [showLiveVessels]);
+  }, [showLiveVessels, adapter]);
 
 
   // ---- data: edit each 3D layer's features IN PLACE on change ----
