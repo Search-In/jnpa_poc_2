@@ -18,6 +18,7 @@ import baselinesConfig from '../../../../config/baselines.json';
 import type { Lang } from '../i18n/strings.js';
 import { SimAdapter } from '../sim/SimAdapter.js';
 import { cargoRefreshStore } from './cargoRefreshStore.js';
+import { cargoTokenStore } from './cargoTokenStore.js';
 
 interface AppState {
   adapter: DataAdapter;
@@ -129,7 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ? new Poc3CargoAdapter(base, {
           cargoBaseUrl: CARGO_API_BASE,
           getToken: () => cargoTokenRef.current,
-          setToken: (t) => { cargoTokenRef.current = t; },
+          setToken: (t) => { cargoTokenRef.current = t; cargoTokenStore.setToken(t); },
           // On a 401 the adapter re-mints the POC-3 JWT and retries once, so an
           // absent/expired token self-heals. A pre-issued static token opts out.
           refreshToken: CARGO_STATIC_TOKEN ? undefined : mintCargoToken,
@@ -175,6 +176,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!CARGO_FROM_POC3) return;
     if (CARGO_STATIC_TOKEN) {
       cargoTokenRef.current = CARGO_STATIC_TOKEN;
+      cargoTokenStore.setToken(CARGO_STATIC_TOKEN);
       setCargoReady(true);
       return;
     }
@@ -184,6 +186,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then((tok) => {
         if (cancelled) return;
         cargoTokenRef.current = tok;
+        cargoTokenStore.setToken(tok);
         setCargoReady(true);
       })
       .catch(() => {

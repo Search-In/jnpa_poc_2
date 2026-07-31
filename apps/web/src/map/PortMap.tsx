@@ -30,14 +30,7 @@ import {
 } from './layers.js';
 import { traffic2dLayer, graphicsFor3d } from './scene3d.js';
 import { tokens } from '../theme/tokens.js';
-import { CARGO_API_BASE } from '../state/AppContext.js';
-
-async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
-  const url = `${CARGO_API_BASE}/api/marine/vessels/live`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
-  return res.json() as Promise<LiveVesselDTO[]>;
-}
+import { useApp } from '../state/AppContext.js';
 
 interface PortMapProps {
   facilities: Facility[];
@@ -94,6 +87,7 @@ export function PortMap(props: PortMapProps) {
   // ---- Live AIS vessel state ------------------------------------------------
   const [showLiveVessels, setShowLiveVessels] = useState(false);
   const [liveVesselError, setLiveVesselError] = useState<string | null>(null);
+  const { adapter } = useApp();
 
   // ---- init: create the view + layers + widgets ONCE (never on data change) ----
   // Re-creating the view every sim tick would tear down the basemap, zoom and
@@ -260,7 +254,7 @@ export function PortMap(props: PortMapProps) {
 
     async function load() {
       try {
-        const vessels = await fetchLiveVessels();
+        const vessels = await adapter.getLiveVessels();
         if (cancelled || !layer) return;
         void applyGraphics(layer, graphicsForLiveVessels(vessels));
         setLiveVesselError(null);
@@ -275,7 +269,7 @@ export function PortMap(props: PortMapProps) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [showLiveVessels]);
+  }, [showLiveVessels, adapter]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

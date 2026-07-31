@@ -482,6 +482,9 @@ export interface DataAdapter {
   /** Cargo lifecycle events (`GET /api/cargo/events`), optionally scoped to one container. */
   getCargoEvents?(containerNo?: string): Promise<CargoLifecycleEvent[]>;
 
+  /** Live AIS vessel data from the marine API (`GET /api/marine/vessels/live`). Optional: implemented only on the Poc3CargoAdapter path. */
+  getLiveVessels?(): Promise<LiveVesselDTO[]>;
+
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';
 }

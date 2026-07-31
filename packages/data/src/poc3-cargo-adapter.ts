@@ -363,6 +363,15 @@ export class Poc3CargoAdapter implements DataAdapter {
     return this.getList<CargoLifecycleEvent>('/api/cargo/events', norm ? { container_number: norm } : undefined);
   }
 
+  // 8) Marine API — Live Vessels -----------------------------------------------
+  /**
+   * Fetch live AIS vessel data from the marine API. Uses the same request plumbing
+   * as cargo calls, so the bearer token is attached and 401 self-heals automatically.
+   */
+  async getLiveVessels(): Promise<LiveVesselDTO[]> {
+    return this.getList<LiveVesselDTO>('/api/marine/vessels/live');
+  }
+
   // -- everything else passes straight through to the base adapter -----------
   getFacilities(role?: Role): Promise<Facility[]> {
     return this.base.getFacilities(role);
