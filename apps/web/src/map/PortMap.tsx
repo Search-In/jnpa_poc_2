@@ -30,14 +30,10 @@ import {
 } from './layers.js';
 import { traffic2dLayer, graphicsFor3d } from './scene3d.js';
 import { tokens } from '../theme/tokens.js';
+import { CARGO_API_BASE } from '../state/AppContext.js';
 
-/** Gateway base URL — same as VITE_GATEWAY_URL or falls back to relative /api. */
-const env = (import.meta as unknown as { env: Record<string, string> }).env;
-console.log('env', env)
-const GATEWAY_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_GATEWAY_URL?.replace(/\/$/, '') ?? '';
-console.log('GATEWAY_BASE', GATEWAY_BASE)
 async function fetchLiveVessels(): Promise<LiveVesselDTO[]> {
-  const url = `${GATEWAY_BASE}/api/marine/vessels/live`;
+  const url = `${CARGO_API_BASE}/api/marine/vessels/live`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Live vessels fetch failed: ${res.status}`);
   return res.json() as Promise<LiveVesselDTO[]>;

@@ -39,7 +39,7 @@ const GATEWAY_BASE = '/gateway';
 // browser hits the relative `/poc3` path (Vite proxies it to the POC-3 gateway,
 // avoiding CORS); set VITE_CARGO_API_BASE to the gateway origin for a deployed
 // build. Set VITE_CARGO_SOURCE=mock to opt out and keep cargo on the simulator.
-const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | undefined) || '/poc3';
+export const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | undefined) || '/poc3';
 // Cargo source, cargo-only (never changes the base adapter or non-cargo panels):
 //   'poc3'      (default) — wrap cargo with the POC-3 client.
 //   'mock'      — keep cargo on the synthetic simulator (pure base adapter).
