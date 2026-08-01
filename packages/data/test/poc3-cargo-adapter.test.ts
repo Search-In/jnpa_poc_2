@@ -307,6 +307,185 @@ describe('Poc3CargoAdapter — extended Cargo APIs (Jayesh handover)', () => {
   });
 });
 
+describe('Poc3CargoAdapter — IGM (customs manifest layer)', () => {
+  /** The customs endpoints return the `{items, total, …}` page envelope. */
+  const page = (items: unknown[], total = items.length) =>
+    ok({ items, total, limit: items.length, offset: 0, count: items.length });
+
+  const MANIFEST = {
+    igm_no: 1194313, igm_date: '2026-05-19', imo_code: '9523017', vessel_code: 'BPKG',
+    voyage_no: '213', shipping_line_code: 'CHZ', terminal_operator_code: 'INNSA1NSI1',
+    line_count: 311, container_count: 752,
+  };
+  const CONTAINER = {
+    igm_no: 1194313, line_no: 241, subline_no: 0, container_no: 'DPWU9011100',
+    seal_no: 'UFL498836', container_agent_code: 'AAECP2527J', container_status: 'FCL',
+    no_of_packages: 16, container_weight: '1.350', iso_size_type: '4210',
+  };
+
+  it('lists manifests from /api/customs/igm and unwraps the page envelope', async () => {
+    const fetchImpl = vi.fn(async () => page([MANIFEST]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const rows = await a.getIgmManifests();
+    expect(rows).toEqual([MANIFEST]);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/customs/igm');
+  });
+
+  it('lists the containers declared on one manifest', async () => {
+    const fetchImpl = vi.fn(async () => page([CONTAINER]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const rows = await a.getIgmContainers(1194313);
+    expect(rows).toEqual([CONTAINER]);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/customs/igm/1194313/containers');
+  });
+
+  it('pages through a manifest larger than one 2000-row page instead of truncating', async () => {
+    // 2 794 containers = a full page + a partial one, mirroring the real corpus.
+    const full = Array.from({ length: 2000 }, (_, i) => ({ ...CONTAINER, container_no: `AAAU000000${i}` }));
+    const tail = Array.from({ length: 794 }, (_, i) => ({ ...CONTAINER, container_no: `BBBU000000${i}` }));
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(page(full, 2794))
+      .mockResolvedValueOnce(page(tail, 2794));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const rows = await a.getIgmContainers(1193612);
+    expect(rows).toHaveLength(2794);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[1]![0])).toContain('offset=2000');
+  });
+
+  it('honours an explicit limit as a single page (no paging)', async () => {
+    const fetchImpl = vi.fn(async () => page([CONTAINER]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await a.getIgmContainers(1194313, { limit: 50 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('limit=50');
+  });
+
+  it('carries the bearer token and surfaces a 403 as a typed CargoApiError', async () => {
+    const fetchImpl = vi.fn(async () => errorRes(403, 'forbidden'));
+    const a = new Poc3CargoAdapter(base(), {
+      cargoBaseUrl: '/poc3', getToken: () => 'TESTTOKEN', fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(a.getIgmManifests()).rejects.toBeInstanceOf(CargoApiError);
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer TESTTOKEN');
+  });
+});
+
+describe('Poc3CargoAdapter — in-flight GET de-duplication', () => {
+  /** Resolve manually so both calls are provably in flight at the same time. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  it('collapses two identical concurrent GETs into ONE network request', async () => {
+    // This is what stops React StrictMode's double-invoked effects from firing
+    // every panel's fetch twice in development.
+    const gate = deferred<void>();
+    const fetchImpl = vi.fn(async () => { await gate.promise; return ok([RECORD]); });
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const first = a.getContainerMovements({});
+    const second = a.getContainerMovements({});
+    gate.resolve();
+    const [r1, r2] = await Promise.all([first, second]);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(r1).toHaveLength(1);
+    expect(r2).toHaveLength(1);
+  });
+
+  it('does NOT collapse GETs with different query params', async () => {
+    const fetchImpl = vi.fn(async () => ok([RECORD]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await Promise.all([
+      a.getContainerMovements({}),
+      a.getContainerMovements({ isReleased: false }),
+    ]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('is not a response cache — a later identical GET refetches', async () => {
+    // Critical: a refetch after a write must see fresh data, so the dedup entry
+    // has to be dropped once the request settles.
+    const fetchImpl = vi.fn(async () => ok([RECORD]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await a.getContainerMovements({});
+    await a.getContainerMovements({});
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares the rejection with both callers, then clears the entry', async () => {
+    const fetchImpl = vi.fn(async () => errorRes(500, 'boom'));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const both = await Promise.allSettled([a.getContainerMovements({}), a.getContainerMovements({})]);
+    expect(both.every((r) => r.status === 'rejected')).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    // Entry cleared → a retry actually hits the network again.
+    await expect(a.getContainerMovements({})).rejects.toBeInstanceOf(CargoApiError);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('never collapses writes — two POSTs are two intents', async () => {
+    const fetchImpl = vi.fn(async () => created(RECORD));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await Promise.all([
+      a.createCargo({ container_number: 'MAEU6123458' }),
+      a.createCargo({ container_number: 'MAEU6123458' }),
+    ]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Poc3CargoAdapter — RMS container scanning', () => {
+  const page = (items: unknown[], total = items.length) =>
+    ok({ items, total, limit: items.length, offset: 0, count: items.length });
+
+  const LIST = {
+    report_id: 4, igm_no: 1194257, igm_year: 2026, vessel_name: 'BSG BIMINI',
+    shipping_line: 'MAERSK INDIA PVT LTD', shipping_agent: 'AAHCM0698N',
+    processing_end_date: '2026-06-11', selected_count: 20, any_selected: true,
+  };
+  const SELECTION = {
+    igm_no: 1194257, sl_no: 16, container_no: 'MRKU9527629',
+    machine_type: 'M', scan_location: 'INNSA1SDMB02', cfs_name: 'CONCOR ICD MIHAN',
+  };
+
+  it('lists the issued scan lists from /api/customs/rms', async () => {
+    const fetchImpl = vi.fn(async () => page([LIST]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await a.getRmsScanLists()).toEqual([LIST]);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/customs/rms');
+  });
+
+  it('lists the containers one scan list selected', async () => {
+    const fetchImpl = vi.fn(async () => page([SELECTION]));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await a.getRmsScanContainers(1194257)).toEqual([SELECTION]);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/customs/rms/1194257/containers');
+  });
+
+  it('returns an empty list — not an error — for "No container selected for scanning"', async () => {
+    // A scan list that selected nothing is a real, meaningful outcome; the adapter
+    // must surface it as [] so the panel can state it rather than show an error.
+    const fetchImpl = vi.fn(async () => page([], 0));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    await expect(a.getRmsScanContainers(1193499)).resolves.toEqual([]);
+  });
+
+  it('carries the bearer token on the scanning endpoints', async () => {
+    const fetchImpl = vi.fn(async () => page([]));
+    const a = new Poc3CargoAdapter(base(), {
+      cargoBaseUrl: '/poc3', getToken: () => 'TESTTOKEN', fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await a.getRmsScanContainers(1194257);
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>).authorization).toBe('Bearer TESTTOKEN');
+  });
+});
+
 describe('Poc3CargoAdapter — auth: bearer on every request + 401 self-heal', () => {
   it('attaches Authorization: Bearer <token> to every cargo request', async () => {
     const fetchImpl = vi.fn(async () => ok([RECORD]));

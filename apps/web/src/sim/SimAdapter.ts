@@ -17,6 +17,7 @@ import type {
   CargoWorkflowActionInput, CargoWorkflowHistoryEntry, CargoWorkflowState,
   YardPlanningInput, YardPlanningResult, YardOptimization,
   RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent, LiveVesselDTO,
+  IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -97,6 +98,20 @@ export class SimAdapter implements DataAdapter {
   }
   getLiveVessels(): Promise<LiveVesselDTO[]> {
     return this.base.getLiveVessels ? this.base.getLiveVessels() : SimAdapter.unavailable();
+  }
+  /** IGM manifests are filed customs documents — the simulator never overlays them. */
+  getIgmManifests(filter?: IgmContainerFilter): Promise<IgmManifest[]> {
+    return this.base.getIgmManifests ? this.base.getIgmManifests(filter) : SimAdapter.unavailable();
+  }
+  getIgmContainers(igmNo: string | number, filter?: IgmContainerFilter): Promise<IgmContainer[]> {
+    return this.base.getIgmContainers ? this.base.getIgmContainers(igmNo, filter) : SimAdapter.unavailable();
+  }
+  /** RMS scan selections are filed customs documents — never overlaid by the simulator. */
+  getRmsScanLists(filter?: IgmContainerFilter): Promise<RmsScanList[]> {
+    return this.base.getRmsScanLists ? this.base.getRmsScanLists(filter) : SimAdapter.unavailable();
+  }
+  getRmsScanContainers(igmNo: string | number, filter?: IgmContainerFilter): Promise<RmsScanContainer[]> {
+    return this.base.getRmsScanContainers ? this.base.getRmsScanContainers(igmNo, filter) : SimAdapter.unavailable();
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {

@@ -25,6 +25,7 @@ import { tokens } from './theme/tokens.js';
 import { t, type Lang } from './i18n/strings.js';
 import { KpiStrip } from './panels/KpiStrip.js';
 import { ContainerMovements } from './panels/ContainerMovements.js';
+import { Igm } from './panels/Igm.js';
 import { Pendency } from './panels/Pendency.js';
 import { RailSide } from './panels/RailSide.js';
 import { Itrho } from './panels/Itrho.js';
@@ -56,6 +57,7 @@ const DEMO_WINDOW = {
 /** Stable tab ids ↔ labels; ids drive the controlled tab selection. */
 const TABS = [
   { id: 'movements', label: 'Movements' },
+  { id: 'igm', label: 'IGM' },
   { id: 'rail', label: 'Rail T1/T2' },
   { id: 'itrho', label: 'ITRHO' },
   { id: 'gate', label: 'Gate' },
@@ -81,7 +83,9 @@ const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
   JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
   JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
   TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'notifications', 'methodology'],
-  CUSTOMS: ['movements', 'scan', 'pendency', 'notifications', 'scenarios', 'methodology'],
+  // IGM mirrors the POC-3 backend audience for /api/customs (control room + customs),
+  // so only DTCCC_ADMIN (full access, above) and CUSTOMS see the tab.
+  CUSTOMS: ['movements', 'igm', 'scan', 'pendency', 'notifications', 'scenarios', 'methodology'],
   CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
   ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'notifications', 'methodology'],
   CFS_OPERATOR: ['movements', 'gate', 'pendency', 'notifications', 'methodology'],
@@ -507,6 +511,7 @@ export function Dashboard() {
               {/* UI-only: each panel renders only when the role may see its tab
                   (ROLE_TAB_IDS). Data behind each panel is unchanged/role-scoped. */}
               {canSeeTab('movements') && <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>}
+              {canSeeTab('igm') && <CalciteTab tab="igm" selected={activeTab === 'igm'}><div data-tour-tab="igm"><Igm /></div></CalciteTab>}
               {canSeeTab('rail') && <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('itrho') && <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('gate') && <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>}
