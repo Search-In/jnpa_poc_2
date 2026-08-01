@@ -41,6 +41,9 @@ import type {
   EmptyPoolDTO,
   GateOpsDTO,
   GateQueueForecastDTO,
+  IgmContainer,
+  IgmContainerFilter,
+  IgmManifest,
   LiveVesselDTO,
   PendencyDTO,
   RailSideDTO,
@@ -49,6 +52,8 @@ import type {
   RakePlanInput,
   ReeferPlan,
   ReeferPlanInput,
+  RmsScanContainer,
+  RmsScanList,
   ScenarioParams,
   ScenarioResultDTO,
   TimeWindow,
@@ -192,10 +197,35 @@ export class Poc3CargoAdapter implements DataAdapter {
     throw new CargoApiError(res.status, path, detail);
   }
 
+  /**
+   * In-flight GET de-duplication. Two identical GETs issued before the first
+   * settles share one network request and one parsed result.
+   *
+   * This is what stops React 18 StrictMode's deliberate mount→unmount→remount
+   * from firing every panel's fetch twice in development. It is NOT a response
+   * cache: the entry is dropped as soon as the request settles, so a refetch
+   * after a write still goes to the network and always sees fresh data.
+   *
+   * GET only — writes must never be collapsed, since two POSTs are two intents.
+   */
+  private readonly inflightGets = new Map<string, Promise<unknown>>();
+
+  private dedupeGet<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const existing = this.inflightGets.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const pending = run().finally(() => {
+      this.inflightGets.delete(key);
+    });
+    this.inflightGets.set(key, pending);
+    return pending;
+  }
+
   private async getJson<T>(path: string, query?: Record<string, string | undefined>): Promise<T> {
-    const res = await this.request('GET', path, { query });
-    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
-    return (await res.json()) as T;
+    return this.dedupeGet(`GET ${this.buildUrl(path, query)}`, async () => {
+      const res = await this.request('GET', path, { query });
+      if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+      return (await res.json()) as T;
+    });
   }
 
   /** POST/PUT with a JSON body; both return the affected CargoRecord. */
@@ -286,9 +316,11 @@ export class Poc3CargoAdapter implements DataAdapter {
   }
 
   private async getList<T>(path: string, query?: Record<string, string | undefined>): Promise<T[]> {
-    const res = await this.request('GET', path, { query });
-    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
-    return Poc3CargoAdapter.asList<T>(await res.json());
+    return this.dedupeGet(`GET ${this.buildUrl(path, query)}`, async () => {
+      const res = await this.request('GET', path, { query });
+      if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+      return Poc3CargoAdapter.asList<T>(await res.json());
+    });
   }
 
   // 1) Stakeholder Notification APIs (UC2 intended-use 2) ---------------------
@@ -364,7 +396,81 @@ export class Poc3CargoAdapter implements DataAdapter {
     return this.getList<CargoLifecycleEvent>('/api/cargo/events', norm ? { container_number: norm } : undefined);
   }
 
-  // 8) Marine API — Live Vessels -----------------------------------------------
+  // 8) Customs API — IGM (Import General Manifest, ICEGATE CHPOI03) -----------
+  /**
+   * Step 1 of the import container lifecycle: the manifests the shipping lines
+   * filed before arrival, and the containers declared on each. Served by the
+   * POC-3 customs layer, which parses the official CHPOI03 XML — nothing here is
+   * synthesised. Both endpoints return the `{items, total, limit, offset, count}`
+   * page envelope, which getList() already unwraps via its `items` key.
+   *
+   * NOTE: `/api/customs` is RBAC-scoped to CONTROL_ROOM + CUSTOMS on POC-3, so a
+   * token minted for another role gets a 403 and the panel shows that message.
+   */
+  async getIgmManifests(filter: IgmContainerFilter = {}): Promise<IgmManifest[]> {
+    return this.getList<IgmManifest>('/api/customs/igm', {
+      limit: String(filter.limit ?? 100),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /**
+   * Containers on one manifest. POC-3 caps this endpoint at 2000 rows per page but
+   * a real manifest can declare more (the largest in the corpus declares 2 794), so
+   * an explicit `limit` fetches exactly that page while the default pages through
+   * until the manifest is exhausted. Without this the drill-down would silently
+   * truncate a large manifest and read as if it had fewer containers than it does.
+   */
+  async getIgmContainers(igmNo: string | number, filter: IgmContainerFilter = {}): Promise<IgmContainer[]> {
+    const key = encodeURIComponent(String(igmNo).trim());
+    const path = `/api/customs/igm/${key}/containers`;
+    const PAGE = 2000; // the backend's documented per-request maximum
+
+    // Caller asked for a specific page — honour it verbatim, no paging.
+    if (filter.limit != null) {
+      return this.getList<IgmContainer>(path, {
+        limit: String(filter.limit),
+        offset: String(filter.offset ?? 0),
+      });
+    }
+
+    const all: IgmContainer[] = [];
+    let offset = filter.offset ?? 0;
+    // Bounded so a backend that ignores `offset` can never spin forever.
+    for (let page = 0; page < 20; page += 1) {
+      const batch = await this.getList<IgmContainer>(path, {
+        limit: String(PAGE),
+        offset: String(offset),
+      });
+      all.push(...batch);
+      if (batch.length < PAGE) break;
+      offset += PAGE;
+    }
+    return all;
+  }
+
+  // 9) Customs API — RMS container scanning -----------------------------------
+  /**
+   * The scanning branch that applies between discharge and delivery. A list with
+   * `selected_count: 0` is a real outcome ("No container selected for scanning"),
+   * so an empty container response is never treated as an error here.
+   */
+  async getRmsScanLists(filter: IgmContainerFilter = {}): Promise<RmsScanList[]> {
+    return this.getList<RmsScanList>('/api/customs/rms', {
+      limit: String(filter.limit ?? 100),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  async getRmsScanContainers(igmNo: string | number, filter: IgmContainerFilter = {}): Promise<RmsScanContainer[]> {
+    const key = encodeURIComponent(String(igmNo).trim());
+    return this.getList<RmsScanContainer>(`/api/customs/rms/${key}/containers`, {
+      limit: String(filter.limit ?? 500),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 10) Marine API — Live Vessels ----------------------------------------------
   /**
    * Fetch live AIS vessel data from the marine API. Uses the same request plumbing
    * as cargo calls, so the bearer token is attached and 401 self-heals automatically.

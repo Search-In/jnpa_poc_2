@@ -401,6 +401,164 @@ export interface CargoLifecycleEvent {
   created_at?: string | null;
 }
 
+// ---- IGM (Import General Manifest, ICEGATE CHPOI03) ------------------------
+//
+// The first step of the import container lifecycle: the shipping line files an
+// IGM before the vessel arrives, declaring every cargo line and every container
+// on board. Sourced from the POC-3 customs layer (`GET /api/customs/igm` and
+// `/api/customs/igm/{igm_no}/containers`), which holds the manifests parsed from
+// the official ICEGATE CHPOI03 XML files. Field names mirror the API response
+// verbatim — this layer renames nothing.
+
+/** One filed import manifest (vessel-level header) from `GET /api/customs/igm`. */
+export interface IgmManifest {
+  /** Manifest number, e.g. 1194313. Numeric in the API; the natural key. */
+  igm_no: number | string;
+  /** Date the manifest was filed (ISO date). */
+  igm_date?: string | null;
+  /** Customs house code, e.g. INNSA1 (JNPT). */
+  customs_house_code?: string | null;
+  /** Vessel IMO number, e.g. 9523017. */
+  imo_code?: string | null;
+  /** Vessel call sign / code, e.g. BPKG. */
+  vessel_code?: string | null;
+  voyage_no?: string | null;
+  vessel_type?: string | null;
+  master_name?: string | null;
+  /** Shipping line code, e.g. CHZ. */
+  shipping_line_code?: string | null;
+  /** Shipping agent PAN, e.g. AABCC9418Q. */
+  shipping_agent_code?: string | null;
+  port_of_arrival?: string | null;
+  brief_cargo_desc?: string | null;
+  /** Terminal operator the vessel calls at, e.g. INNSA1NSI1 (NSICT). */
+  terminal_operator_code?: string | null;
+  /** Numeric on the wire but serialised as a decimal STRING (e.g. "475221.00"). */
+  lighthouse_dues?: number | string | null;
+  /** Line count declared on the manifest header (may differ from line_count). */
+  total_no_of_lines?: number | null;
+  /** Expected time of arrival (ISO timestamp). */
+  expected_arrival?: string | null;
+  /** Entry-inward granted timestamp (ISO); null until customs grants it. */
+  entry_inward?: string | null;
+  /** Cargo lines actually present for this manifest. */
+  line_count?: number | null;
+  /** Containers actually declared across those lines. */
+  container_count?: number | null;
+}
+
+/**
+ * One container declared on an IGM, from `GET /api/customs/igm/{igm_no}/containers`.
+ * The container-level fields come from the manifest's container block; the cargo-line
+ * fields (BL, importer, POL/POD, goods) come from its parent line.
+ */
+export interface IgmContainer {
+  igm_no: number | string;
+  line_no?: number | null;
+  subline_no?: number | null;
+  /** ISO-6346 container number, e.g. DPWU9011100. */
+  container_no: string;
+  seal_no?: string | null;
+  /** Container agent PAN, e.g. AAECP2527J. */
+  container_agent_code?: string | null;
+  /** FCL / LCL / EMPTY. */
+  container_status?: string | null;
+  no_of_packages?: number | null;
+  /**
+   * Container weight as declared on the container block. The API serialises
+   * Postgres `numeric` as a decimal STRING (e.g. "1.350"), so consumers must
+   * coerce before doing arithmetic or locale formatting.
+   */
+  container_weight?: number | string | null;
+  /** ISO 6346 size-type code, e.g. 4210. */
+  iso_size_type?: string | null;
+  /** Shipper-owned container flag. */
+  soc_flag?: boolean | null;
+  // -- parent cargo line ----------------------------------------------------
+  bl_no?: string | null;
+  bl_date?: string | null;
+  /** Port of loading, e.g. THLCH. */
+  port_of_loading?: string | null;
+  /** Port of destination, e.g. INNSA1. */
+  port_of_destination?: string | null;
+  importer_name?: string | null;
+  nature_of_cargo?: string | null;
+  cargo_movement?: string | null;
+  /** Gross weight of the whole cargo line; a decimal STRING on the wire. */
+  gross_weight?: number | string | null;
+  unit_of_weight?: string | null;
+  goods_description?: string | null;
+  /** RMS flagged this line for scanning (SELECTED_SCAN=Y on the manifest). */
+  selected_scan?: boolean | null;
+  // -- RMS scanner assignment, present only when a scanning-division list
+  //    actually selected this container --------------------------------------
+  /** Scanner class: "D" (drive-through) or "M" (mobile). */
+  machine_type?: string | null;
+  /** Scanner site code, e.g. INNSA1RSDT01. Renders as "D-INNSA1RSDT01". */
+  scan_location?: string | null;
+  /** CFS/ICD recorded on the scan list. */
+  scan_cfs_name?: string | null;
+}
+
+/** Filter for the IGM container listing. */
+export interface IgmContainerFilter {
+  limit?: number;
+  offset?: number;
+}
+
+// ---- RMS (Risk Management System container scanning) -----------------------
+//
+// The scanning branch of the import lifecycle, which applies between discharge
+// and delivery when Customs' Container Scanning Division selects a box. One
+// scan list is issued per vessel/IGM; it either names the containers to scan or
+// records that none were selected. Sourced from POC-3:
+//   GET /api/customs/rms                      -> the scan lists
+//   GET /api/customs/rms/{igm_no}/containers  -> the selected containers
+//
+// NOTE: the scan lists reference IGM numbers that are deliberately NOT among the
+// filed manifests in this corpus, so an RMS selection never joins to an IGM
+// container row. Treat the two as disjoint rather than assuming a broken link.
+
+/** One RMS scan list (one vessel/IGM) from `GET /api/customs/rms`. */
+export interface RmsScanList {
+  /** Surrogate key of the scan report. */
+  report_id?: number | null;
+  /** IGM the scan list was issued against, e.g. 1194257. */
+  igm_no: number | string;
+  /** IGM year, e.g. 2026 (the .txt lists render it as "1194257/2026"). */
+  igm_year?: number | null;
+  vessel_name?: string | null;
+  shipping_line?: string | null;
+  /** Shipping agent PAN. */
+  shipping_agent?: string | null;
+  /** Date the scanning division finished processing the list. */
+  processing_end_date?: string | null;
+  /** Containers selected for scanning; 0 = "No container selected for scanning". */
+  selected_count?: number | null;
+  /** False when the list selected nothing — a real outcome, not missing data. */
+  any_selected?: boolean | null;
+}
+
+/** One container selected for scanning, from `GET /api/customs/rms/{igm_no}/containers`. */
+export interface RmsScanContainer {
+  igm_no: number | string;
+  igm_year?: number | null;
+  vessel_name?: string | null;
+  shipping_line?: string | null;
+  shipping_agent?: string | null;
+  processing_end_date?: string | null;
+  /** Serial number within the scan list. */
+  sl_no?: number | null;
+  container_no: string;
+  /** Scanner class: "D" (drive-through) or "M" (mobile). */
+  machine_type?: string | null;
+  /** Scanner site code, e.g. INNSA1RSDT01. Pairs with machine_type as "D-INNSA1RSDT01". */
+  scan_location?: string | null;
+  /** CFS/ICD the box is bound for. */
+  cfs_name?: string | null;
+  goods_description?: string | null;
+}
+
 // ---- the interface ---------------------------------------------------------
 
 export interface DataAdapter {
@@ -484,6 +642,16 @@ export interface DataAdapter {
 
   /** Live AIS vessel data from the marine API (`GET /api/marine/vessels/live`). Optional: implemented only on the Poc3CargoAdapter path. */
   getLiveVessels?(): Promise<LiveVesselDTO[]>;
+
+  /** Filed import manifests (`GET /api/customs/igm`). Optional: POC-3 path only. */
+  getIgmManifests?(filter?: IgmContainerFilter): Promise<IgmManifest[]>;
+  /** Containers declared on one manifest (`GET /api/customs/igm/{igm_no}/containers`). Optional: POC-3 path only. */
+  getIgmContainers?(igmNo: string | number, filter?: IgmContainerFilter): Promise<IgmContainer[]>;
+
+  /** RMS container-scanning selection lists (`GET /api/customs/rms`). Optional: POC-3 path only. */
+  getRmsScanLists?(filter?: IgmContainerFilter): Promise<RmsScanList[]>;
+  /** Containers selected for scanning on one list (`GET /api/customs/rms/{igm_no}/containers`). Optional: POC-3 path only. */
+  getRmsScanContainers?(igmNo: string | number, filter?: IgmContainerFilter): Promise<RmsScanContainer[]>;
 
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';
