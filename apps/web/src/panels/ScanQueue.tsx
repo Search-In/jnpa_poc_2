@@ -5,7 +5,8 @@
 import { useState } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell, CalciteChip,
-  CalciteButton, CalciteNotice, CalciteIcon,
+  CalciteButton, CalciteNotice, CalciteIcon, CalciteBlock,
+  CalciteTabs, CalciteTabNav, CalciteTabTitle, CalciteTab,
 } from '@esri/calcite-components-react';
 import type { ScanEvent } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
@@ -19,6 +20,8 @@ import { tokens } from '../theme/tokens.js';
 import { useSimStore } from '../sim/useSimStore.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
+import { OocPanel } from './OocPanel.js';
+import { EdoPanel } from './EdoPanel.js';
 
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
@@ -135,8 +138,27 @@ export function ScanQueue() {
     setReleasedRows((rows) => [row, ...rows.filter((r) => r.containerNo !== row.containerNo)]);
     setToast(row.containerNo); // container number → standardized success toast below
   };
+  // Sub-tab within the Scan tab. Scanning and customs clearance are the two
+  // customs gates a container passes, so OOC lives beside the scan queue rather
+  // than in a tab of its own. Controlled selection (same pattern as Dashboard),
+  // so a re-render never snaps the user back to the first tab.
+  const [sub, setSub] = useState<'queue' | 'ooc' | 'edo'>('queue');
   return (
     <>
+    <CalciteTabs layout="inline">
+      <CalciteTabNav slot="title-group">
+        <CalciteTabTitle tab="queue" selected={sub === 'queue'} onCalciteTabsActivate={() => setSub('queue')}>
+          Scan queue
+        </CalciteTabTitle>
+        <CalciteTabTitle tab="ooc" selected={sub === 'ooc'} onCalciteTabsActivate={() => setSub('ooc')}>
+          OOC
+        </CalciteTabTitle>
+        <CalciteTabTitle tab="edo" selected={sub === 'edo'} onCalciteTabsActivate={() => setSub('edo')}>
+          E-DO
+        </CalciteTabTitle>
+      </CalciteTabNav>
+
+      <CalciteTab tab="queue" selected={sub === 'queue'}>
     <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.filter(isYardAssigned).length === 0 && releasedRows.length === 0}>
       {(scans) => {
         // Eligibility: only YARD-ASSIGNED containers (yard_block set) enter the
@@ -263,6 +285,35 @@ export function ScanQueue() {
         );
       }}
     </Panel>
+      </CalciteTab>
+
+      {/* Customs clearance — the Bill of Entry + out-of-charge that releases the
+          cargo. Rendered outside the scan-queue Panel so it stays available even
+          when the queue itself is empty. */}
+      <CalciteTab tab="ooc" selected={sub === 'ooc'}>
+        <CalciteBlock
+          heading="OOC — Out-Of-Charge / Bill of Entry"
+          description="Customs clearance granted against the Bill of Entry (ICEGATE CHPOI10)"
+          open
+          collapsible
+        >
+          <OocPanel />
+        </CalciteBlock>
+      </CalciteTab>
+
+      {/* Delivery order — the shipping line's authority to release the box, filed
+          between customs clearance and gate-out. */}
+      <CalciteTab tab="edo" selected={sub === 'edo'}>
+        <CalciteBlock
+          heading="E-DO — Electronic Delivery Order"
+          description="Shipping-line authority to release the container to its consignee (AGDORD)"
+          open
+          collapsible
+        >
+          <EdoPanel />
+        </CalciteBlock>
+      </CalciteTab>
+    </CalciteTabs>
     {/* Mounted OUTSIDE the Panel so the dialog survives the post-release refetch
         (the Panel unmounts its children while useAsync reloads, which would reset
         the dialog's success state and re-show the confirmation UI). */}
