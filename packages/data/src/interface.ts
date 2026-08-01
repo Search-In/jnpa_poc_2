@@ -519,6 +519,281 @@ export interface IgmContainerFilter {
 // filed manifests in this corpus, so an RMS selection never joins to an IGM
 // container row. Treat the two as disjoint rather than assuming a broken link.
 
+// ---- OOC (Out-Of-Charge / Bill of Entry, ICEGATE CHPOI10) ------------------
+//
+// Customs clearance: the Bill of Entry and the out-of-charge grant that releases
+// the cargo. Sourced from POC-3:
+//   GET /api/customs/ooc              -> the Bills of Entry
+//   GET /api/customs/ooc/{be}/items   -> one BE + its containers + invoice items
+
+/** One Bill of Entry with its out-of-charge grant, from `GET /api/customs/ooc`. */
+export interface OocRecord {
+  /** Bill of Entry number, e.g. 9259230. */
+  bill_of_entry_no: number | string;
+  bill_of_entry_date?: string | null;
+  document_type?: string | null;
+  igm_no?: number | string | null;
+  line_no?: number | null;
+  subline_no?: number | null;
+  /** Out-of-charge number, e.g. 2071217438 — the customs release. */
+  out_of_charge_no?: string | null;
+  out_of_charge_date?: string | null;
+  importer_name?: string | null;
+  /** Importer Exporter Code. */
+  ie_code?: string | null;
+  /** Customs House Agent code. */
+  cha_code?: string | null;
+  country_of_origin?: string | null;
+  no_of_packages?: number | null;
+  /** Decimal STRING on the wire (Postgres numeric). */
+  quantity_out_of_charged?: number | string | null;
+  unit_of_quantity?: string | null;
+  assessable_value?: number | string | null;
+  cif_value?: number | string | null;
+  total_customs_duty?: number | string | null;
+  /** Distinct containers covered by this BE. */
+  container_count?: number | null;
+}
+
+/** One invoice line item on a Bill of Entry. */
+export interface OocInvoiceItem {
+  container_no?: string | null;
+  invoice_number?: string | null;
+  item_sr_no?: number | null;
+  /** Goods description, e.g. "STANTEX S 7645(424359)". */
+  item_description?: string | null;
+  /** HS classification, e.g. 34039100. */
+  hs_classification?: string | null;
+  cif_value?: number | string | null;
+  assessable_value?: number | string | null;
+}
+
+/** Full view of one BE from `GET /api/customs/ooc/{be_no}/items`. */
+export interface OocDetail {
+  bill_of_entry_no: number | string;
+  /** BE + out-of-charge header. Additional importer/address fields beyond OocRecord. */
+  ooc?: (OocRecord & {
+    importer_address?: string | null;
+    importer_city?: string | null;
+    pin_code?: string | null;
+    nature_of_cargo?: string | null;
+  }) | null;
+  /** Containers this BE covers. */
+  containers?: string[];
+  items?: OocInvoiceItem[];
+}
+
+// ---- E-DO (Electronic Delivery Order, AGDORD) ------------------------------
+//
+// The shipping line's authority to release the container to the consignee, filed
+// after customs clearance and before the box leaves on a truck. Sourced from
+// POC-3:
+//   GET /api/shipping-lines/edo             -> the delivery orders
+//   GET /api/shipping-lines/edo/{do_number} -> one DO + its container lines
+
+/** One Electronic Delivery Order (header level). */
+export interface EdoRecord {
+  /** Delivery order number, e.g. 120260611441759. */
+  do_number: string;
+  do_date?: string | null;
+  /** Last day the DO is valid for pickup. */
+  valid_upto?: string | null;
+  /** Vessel call number, e.g. INNSA1GT0S0554. */
+  vcn?: string | null;
+  imo_no?: string | null;
+  voyage_no?: string | null;
+  /** IGM the DO cites — the link back to the filed manifest. */
+  igm_no?: number | string | null;
+  igm_date?: string | null;
+  /** Issuing agency, e.g. "EMIRATES SHIPPING LINE (ESA1)". */
+  agency_name?: string | null;
+  /** Terminal holding the box, e.g. INNSA1GTI1. */
+  custodian_code?: string | null;
+  delivery_type?: string | null;
+  notify_email?: string | null;
+  total_weight?: number | string | null;
+  weight_unit?: string | null;
+  /** Containers on the DO. */
+  container_count?: number | null;
+  /**
+   * True when at least one container on this DO also appears on a filed IGM.
+   * The only cross-document join that resolves in the current corpus.
+   */
+  manifest_linked?: boolean | null;
+}
+
+/** One container line on a delivery order. */
+export interface EdoLine {
+  line_no?: number | null;
+  container_no?: string | null;
+  seal_no?: string | null;
+  iso_code?: string | null;
+  bl_no?: string | null;
+  bl_date?: string | null;
+  consignee_name?: string | null;
+  consignee_addr?: string | null;
+  cargo_desc?: string | null;
+  packages?: number | null;
+  package_code?: string | null;
+  gross_weight?: number | string | null;
+  pol?: string | null;
+  pod?: string | null;
+  return_empty_by?: string | null;
+  /** IGM line the DO itself cites. */
+  igm_line_no?: number | null;
+  igm_subline_no?: number | null;
+  /** Set when this container is actually found on a filed manifest. */
+  manifest_igm_no?: number | string | null;
+  manifest_line_no?: number | null;
+}
+
+/** Full view of one DO from `GET /api/shipping-lines/edo/{do_number}`. */
+export interface EdoDetail {
+  do_number: string;
+  header?: EdoRecord | null;
+  lines?: EdoLine[];
+}
+
+// ---- EIR (Equipment Interchange Report) ------------------------------------
+//
+// The gate transaction itself: a truck entering the terminal, taking or dropping
+// a container, and leaving. Sourced from POC-3 `GET /api/gate-docs/eir`.
+
+/** One EIR gate transaction. */
+export interface EirTransaction {
+  id?: number;
+  /** EIR reference, e.g. E-GTI-2. */
+  eir_no?: string | null;
+  eir_type?: string | null;
+  /** Free-text terminal as printed on the EIR, e.g. "Gateway (GTI)". */
+  terminal?: string | null;
+  container_number?: string | null;
+  iso_valid?: boolean | null;
+  /** Vessel the box came off, e.g. ONE RECOGNITION. */
+  vessel?: string | null;
+  /** Vessel visit/VIA number, e.g. S0475. */
+  via_no?: string | null;
+  seal_number?: string | null;
+  bat_lane?: string | null;
+  truck_no?: string | null;
+  driver_name?: string | null;
+  /** Driving licence number. */
+  driver_licence?: string | null;
+  /** Gate-in: when the truck entered. */
+  truck_in_time?: string | null;
+  /** Gate-out: when the truck left. */
+  truck_out_time?: string | null;
+  /** Turnaround minutes; decimal STRING on the wire. */
+  tat_minutes?: number | string | null;
+  gross_weight_mt?: number | string | null;
+  /** Transport company. */
+  company?: string | null;
+  cfs_from?: string | null;
+  cfs_to?: string | null;
+  /** CFS group code, e.g. BLC. */
+  group_code?: string | null;
+  /** Customs scan stamp on the paper EIR, e.g. "SCANNED CLEAN". */
+  scanner_stamp?: string | null;
+  remarks?: string | null;
+}
+
+// ---- PIN pickup ticket -----------------------------------------------------
+//
+// The terminal's pickup ticket: the PIN a trucker quotes at the gate to collect
+// a specific container, naming the lane, yard position and haulier. Sourced from
+// POC-3 `GET /api/gate-docs/pin`.
+//
+// NOTE: the source ticket also carries a TRANSACTION number and the SHIPPING
+// LINE code, but `core.pin_ticket` has no column for either yet, so they are not
+// modelled here. Add them to the table first, then to this type.
+
+/** One PIN pickup ticket (one row per move leg). */
+export interface PinTicket {
+  id?: number;
+  /** PIN quoted at the gate, e.g. 230283. */
+  pin_number?: string | null;
+  ticket_type?: string | null;
+  /** Terminal that issued the ticket, free text. */
+  terminal?: string | null;
+  /** Truck registration, e.g. MH43CQ2814. */
+  truck_no?: string | null;
+  /** Trucking company, e.g. TRANSTAR. */
+  company?: string | null;
+  container_number?: string | null;
+  iso_valid?: boolean | null;
+  /** CFS group code. */
+  group_code?: string | null;
+  /** Yard position the box is stacked at, e.g. 2P08D.1. */
+  yard_location?: string | null;
+  /** Gate lane the ticket routes the truck to, e.g. "Gate 10". */
+  gate?: string | null;
+  move_type?: string | null;
+  /** Sequence when a pickup spans several legs. */
+  leg_seq?: number | null;
+  issued_at?: string | null;
+  remarks?: string | null;
+}
+
+// ---- CODECO gate-out movements ---------------------------------------------
+//
+// The last step of the import lifecycle: the container physically leaving the
+// terminal on a truck, as reported by the terminal's CODECO message. Sourced
+// from POC-3:
+//   GET /api/shipping-lines/gates           -> gates that have movements
+//   GET /api/shipping-lines/gate-movements  -> the movements (filter by gate_no)
+
+/** One gate-out movement — a container leaving on a truck. */
+export interface GateMovement {
+  id?: number;
+  /** ISO-6346 container number. */
+  container_no: string;
+  /** Vessel call number, e.g. INNSA1NS0S0552. */
+  vcn?: string | null;
+  imo_no?: string | null;
+  /** Shipping agent code on the CODECO header. */
+  agent_code?: string | null;
+  /** FCL / MTY (empty). */
+  equipment_status?: string | null;
+  cargo_type?: string | null;
+  /** ISO 6346 size-type as stated on the CODECO (may differ from the IGM's). */
+  iso_code?: string | null;
+  pol?: string | null;
+  final_pod?: string | null;
+  receipt_date?: string | null;
+  /** Vessel arrival timestamp carried on the same message. */
+  arrival_ts?: string | null;
+  /** Gate pass number, e.g. 16387383. */
+  gate_pass_no?: string | null;
+  /** When the gate pass was issued — the gate-out moment. */
+  gate_pass_ts?: string | null;
+  /** Truck registration, e.g. MH46H6948. */
+  vehicle_no?: string | null;
+  gate_no?: string | null;
+  /** G = gate delivery. */
+  delivery_mode?: string | null;
+  seal_status?: string | null;
+  /**
+   * Terminal the gate belongs to (e.g. NSICT), resolved server-side through the
+   * vessel call the CODECO message cites. The message itself names only a gate
+   * NUMBER, so this is what ties a movement to a dashboard gate like NSICT-G1.
+   */
+  terminal_code?: string | null;
+  /** PCS code of that terminal, e.g. INNSA1NSI1. */
+  terminal_pcs_code?: string | null;
+  /** Derived server-side: arrival -> gate pass, in hours. Null if either is absent. */
+  dwell_hours?: number | string | null;
+}
+
+/** One gate with its movement count, from `GET /api/shipping-lines/gates`. */
+export interface GateMovementGate {
+  gate_no: string;
+  /** Terminal the gate belongs to, e.g. NSICT. */
+  terminal_code?: string | null;
+  /** Dashboard-shaped gate id (terminal + gate number), e.g. NSICT-G1. */
+  gate_id?: string | null;
+  movements?: number | null;
+}
+
 /** One RMS scan list (one vessel/IGM) from `GET /api/customs/rms`. */
 export interface RmsScanList {
   /** Surrogate key of the scan report. */
@@ -652,6 +927,26 @@ export interface DataAdapter {
   getRmsScanLists?(filter?: IgmContainerFilter): Promise<RmsScanList[]>;
   /** Containers selected for scanning on one list (`GET /api/customs/rms/{igm_no}/containers`). Optional: POC-3 path only. */
   getRmsScanContainers?(igmNo: string | number, filter?: IgmContainerFilter): Promise<RmsScanContainer[]>;
+
+  /** Bills of Entry with their out-of-charge grants (`GET /api/customs/ooc`). Optional: POC-3 path only. */
+  getOocRecords?(filter?: IgmContainerFilter): Promise<OocRecord[]>;
+  /** One BE with its containers and invoice items (`GET /api/customs/ooc/{be}/items`). Optional: POC-3 path only. */
+  getOocDetail?(beNo: string | number): Promise<OocDetail | null>;
+
+  /** Electronic Delivery Orders (`GET /api/shipping-lines/edo`). Optional: POC-3 path only. */
+  getEdoRecords?(filter?: IgmContainerFilter): Promise<EdoRecord[]>;
+  /** One DO with its container lines (`GET /api/shipping-lines/edo/{do}`). Optional: POC-3 path only. */
+  getEdoDetail?(doNumber: string): Promise<EdoDetail | null>;
+
+  /** EIR gate transactions (`GET /api/gate-docs/eir`). Optional: POC-3 path only. */
+  getEirTransactions?(filter?: IgmContainerFilter): Promise<EirTransaction[]>;
+  /** PIN pickup tickets (`GET /api/gate-docs/pin`). Optional: POC-3 path only. */
+  getPinTickets?(filter?: IgmContainerFilter): Promise<PinTicket[]>;
+
+  /** Gates that have CODECO gate-out movements (`GET /api/shipping-lines/gates`). Optional: POC-3 path only. */
+  getGateMovementGates?(): Promise<GateMovementGate[]>;
+  /** CODECO gate-out movements, optionally for one gate (`GET /api/shipping-lines/gate-movements`). Optional: POC-3 path only. */
+  getGateMovements?(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]>;
 
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';

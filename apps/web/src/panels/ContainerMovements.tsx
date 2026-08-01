@@ -10,7 +10,7 @@
  * POC-3 does not model (e.g. originStream) render as "N/A" rather than redesign
  * the table.
  */
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { Fragment, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell,
   CalciteSelect, CalciteOption, CalciteChip, CalciteButton, CalciteIcon, CalciteNotice,
@@ -222,87 +222,92 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 }
 
 /**
- * Vessel Discharge modal — assigns a yard block to a live POC-3 cargo record via
- * the existing Poc3CargoAdapter write (`PUT /api/cargo/{id} { yard_block }`).
- * Reuses the app's role="dialog" overlay pattern (see TimelineDrawer) + CalciteNotice
- * feedback. Yard options are the distinct yard blocks already in the live cargo —
- * no hardcoded yard names. On success it bumps cargoRefreshStore so Movement +
- * Yard/Pendency refetch through the existing adapter flow.
+ * Discharge Report — the per-container view of lifecycle step 2/3 (vessel arrival →
+ * discharge), opened from the Discharge button on that container's row.
+ *
+ * Per markdowns/02_Import_Container_Lifecycle.md, the COARRI discharge confirmation
+ * is NOT available for JNPA calls — the only COARRI sample in the corpus is a
+ * Visakhapatnam call (INVTZ1VCT1, IMO 9385611), usable for schema only. So this
+ * dialog reports the arrival/vessel facts that DO exist on the cargo record and
+ * states plainly that the COARRI confirmation is outstanding.
+ *
+ * The Confirm action is a UI-level placeholder: it records nothing on the backend
+ * (there is no discharge write in the POC-3 Cargo API), it just acknowledges the
+ * milestone locally.
  */
-function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[]; onClose: () => void }) {
-  // Live POC-3 cargo records eligible for discharge (present + not yet released).
-  const options = useMemo(() => moves.filter((m) => m.cargo && !m.cargo.is_released), [moves]);
-  const [containerNo, setContainerNo] = useState<string>(options[0]?.container.containerNo ?? '');
+function DischargeReportModal({ move, onClose }: { move: ContainerMovementDTO; onClose: () => void }) {
   const [done, setDone] = useState(false);
-  const selected = options.find((m) => m.container.containerNo === containerNo) ?? options[0];
-  const rec = selected?.cargo;
+  const rec = move.cargo;
+  const containerNo = move.container.containerNo;
 
-  // Vessel Discharge marks the container as discharged ONLY — it no longer assigns
-  // a yard block. Per the UC-II flow, yard assignment now happens later in the
-  // Pendency flow. The backend exposes no dedicated "discharged" field, so this is
-  // a discharge milestone confirmation; no cargo record field is written here, and
-  // no cargo write API (updateCargo) is called.
-  const confirm = () => {
-    if (!selected) return;
-    setDone(true);
-  };
+  const rows: Array<[string, string]> = [
+    ['Container', containerNo],
+    ['Vessel', rec?.vessel_name || '—'],
+    ['ETA', rec?.eta ? new Date(rec.eta).toLocaleString() : '—'],
+    ['Customs status', rec?.customs_status ?? '—'],
+    ['Yard block', rec?.yard_block || 'Not yet assigned'],
+    ['Release state', rec?.is_released ? 'Released' : 'In port'],
+    ['Last event', `${move.lastEventType}${move.lastEventTs ? ` · ${new Date(move.lastEventTs).toLocaleString()}` : ''}`],
+  ];
 
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
       <div
         role="dialog"
-        aria-label="Vessel discharge"
+        aria-label={`Discharge report for ${containerNo}`}
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 'min(440px, 96vw)', maxHeight: '90vh', background: tokens.color.bgPanel,
+          width: 'min(520px, 96vw)', maxHeight: '90vh', background: tokens.color.bgPanel,
           border: `1px solid ${tokens.color.border}`, borderRadius: 12,
           boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101, display: 'flex', flexDirection: 'column',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff', borderRadius: '12px 12px 0 0' }}>
           <CalciteIcon icon="export" scale="s" />
-          <strong style={{ fontSize: 14 }}>Vessel Discharge</strong>
+          <strong style={{ fontSize: 14 }}>Discharge Report</strong>
+          <span style={{ fontSize: 12, opacity: 0.85 }}>{containerNo}</span>
           <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
             <CalciteIcon icon="x" scale="s" />
           </button>
         </div>
 
         <div style={{ padding: '12px 14px', overflowY: 'auto' }}>
-          {options.length === 0 ? (
-            <CalciteNotice open kind="info" icon="information" scale="s">
-              <div slot="title">No cargo awaiting discharge</div>
-              <div slot="message">Every live cargo record is already released.</div>
-            </CalciteNotice>
-          ) : done ? (
+          {done ? (
             <SuccessNotice
-              title="Vessel discharge completed successfully."
-              details={[{ label: 'Container', value: selected?.container.containerNo }]}
+              title="Discharge acknowledged."
+              details={[
+                { label: 'Container', value: containerNo },
+                { label: 'Vessel', value: rec?.vessel_name || '—' },
+              ]}
             />
           ) : (
             <>
-              <label style={{ fontSize: 12, color: tokens.color.textMuted }}>Container</label>
-              <CalciteSelect label="Container" onCalciteSelectChange={(e) => setContainerNo((e.target as unknown as { value: string }).value)}>
-                {options.map((m) => (
-                  <CalciteOption key={m.container.containerNo} value={m.container.containerNo} selected={m.container.containerNo === selected?.container.containerNo}>
-                    {m.container.containerNo}
-                  </CalciteOption>
+              <div
+                style={{
+                  display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px',
+                  fontSize: 12.5, background: tokens.color.bgElevated,
+                  border: `1px solid ${tokens.color.border}`, borderRadius: 6, padding: '10px 12px',
+                }}
+              >
+                {rows.map(([label, value]) => (
+                  <Fragment key={label}>
+                    <span style={{ color: tokens.color.textMuted }}>{label}</span>
+                    <strong style={{ color: tokens.color.text }}>{value}</strong>
+                  </Fragment>
                 ))}
-              </CalciteSelect>
-
-              {/* Read-only context from the selected POC-3 cargo record. */}
-              <div style={{ fontSize: 12, color: tokens.color.textMuted, margin: '8px 0 10px', lineHeight: 1.7 }}>
-                <div>Vessel: <strong style={{ color: tokens.color.text }}>{rec?.vessel_name ?? '—'}</strong></div>
-                <div>Customs: <strong style={{ color: tokens.color.text }}>{rec?.customs_status ?? '—'}</strong></div>
-                <div>ETA: <strong style={{ color: tokens.color.text }}>{rec?.eta ? new Date(rec.eta).toLocaleString() : '—'}</strong></div>
               </div>
 
-              {/* Yard block is intentionally NOT collected here — yard assignment
-                  happens in the Pendency flow (UC-II). Discharge only marks the
-                  container as discharged. */}
-              <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '2px 0 0' }}>
-                Marks the selected container as discharged. Assign a yard block later from the Pendency tab.
-              </p>
+              {/* Honest about the missing upstream document (markdown §Hero A step 3). */}
+              <CalciteNotice open kind="warning" icon="information" scale="s" style={{ marginTop: 10 }}>
+                <div slot="title">COARRI discharge confirmation not available</div>
+                <div slot="message">
+                  No COARRI discharge report exists for JNPA calls in this dataset, so the
+                  discharge timestamp and crane/bay detail cannot be shown. Confirming here
+                  records the milestone in this session only — nothing is written to the
+                  backend.
+                </div>
+              </CalciteNotice>
             </>
           )}
         </div>
@@ -313,9 +318,7 @@ function VesselDischargeModal({ moves, onClose }: { moves: ContainerMovementDTO[
           ) : (
             <>
               <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose}>Cancel</CalciteButton>
-              <CalciteButton scale="s" iconStart="export" disabled={options.length === 0} onClick={confirm}>
-                Confirm discharge
-              </CalciteButton>
+              <CalciteButton scale="s" iconStart="export" onClick={() => setDone(true)}>Confirm discharge</CalciteButton>
             </>
           )}
         </div>
@@ -532,8 +535,10 @@ export function ContainerMovements() {
   const [stream, setStream] = useState<OriginStream | 'ALL'>('ALL');
   // Container whose lifecycle timeline is open in the slide-over (null = closed).
   const [selected, setSelected] = useState<ContainerMovementDTO | null>(null);
-  // Vessel Discharge modal open state.
-  const [dischargeOpen, setDischargeOpen] = useState(false);
+  // Container whose Discharge Report dialog is open (null = closed). Discharge is
+  // a per-container milestone, so it is driven from that container's row rather
+  // than from a single panel-level button.
+  const [dischargeTarget, setDischargeTarget] = useState<ContainerMovementDTO | null>(null);
   // Create Cargo modal open state.
   const [createOpen, setCreateOpen] = useState(false);
   // Container pending a delete confirmation (null = no dialog).
@@ -579,10 +584,9 @@ export function ContainerMovements() {
             <CalciteButton scale="s" iconStart="plus" onClick={() => setCreateOpen(true)}>
               New Cargo
             </CalciteButton>
-            {/* Vessel Discharge — beside the existing Import / Export buttons. */}
-            <CalciteButton scale="s" appearance="outline" iconStart="export" onClick={() => setDischargeOpen(true)}>
-              Vessel Discharge
-            </CalciteButton>
+            {/* Discharge is now a per-container action on each row (Discharge
+                column) rather than one panel-level button, since it is a
+                milestone of an individual container, not of the whole list. */}
             <div style={{ marginLeft: 'auto' }}>
               <ImportExportToolbar
                 data={moves.map((m) => ({
@@ -593,6 +597,8 @@ export function ContainerMovements() {
                   'Gross Weight (kg)': m.container.grossWtKg,
                   'Cargo Type': m.container.cargoType,
                   'Line Owner': m.container.lineOwner,
+                  'Vessel Name': m.cargo?.vessel_name ?? '',
+                  'ETA': m.cargo?.eta ?? '',
                   'Seal No': m.container.currentSealNo,
                   'Current Status': m.container.status,
                   'Origin Stream': m.cargo?.origin_stream ?? m.container.originStream,
@@ -679,11 +685,15 @@ export function ContainerMovements() {
               <CalciteTableHeader heading="Container" />
               <CalciteTableHeader heading="Stream" />
               <CalciteTableHeader heading="Line" />
+              {/* Vessel + ETA come straight off the POC-3 cargo record. */}
+              <CalciteTableHeader heading="Vessel" />
+              <CalciteTableHeader heading="ETA" />
               <CalciteTableHeader heading="Last event" />
               <CalciteTableHeader heading="At" />
               <CalciteTableHeader heading="Source" />
               <CalciteTableHeader heading="Events" />
               <CalciteTableHeader heading="Customs" />
+              <CalciteTableHeader heading="Discharge" />
               <CalciteTableHeader heading="Manage" />
             </CalciteTableRow>
             {moves.slice(0, 50).map((m) => (
@@ -699,6 +709,10 @@ export function ContainerMovements() {
                     : <CalciteChip value={m.container.originStream}>{m.container.originStream}</CalciteChip>}
                 </CalciteTableCell>
                 <CalciteTableCell>{m.container.lineOwner}</CalciteTableCell>
+                <CalciteTableCell>{m.cargo?.vessel_name || '—'}</CalciteTableCell>
+                <CalciteTableCell>
+                  {m.cargo?.eta ? new Date(m.cargo.eta).toLocaleString() : '—'}
+                </CalciteTableCell>
                 <CalciteTableCell>{m.lastEventType}</CalciteTableCell>
                 <CalciteTableCell>{m.facilityId}</CalciteTableCell>
                 <CalciteTableCell>
@@ -749,6 +763,21 @@ export function ContainerMovements() {
                   )}
                 </CalciteTableCell>
                 <CalciteTableCell>
+                  {/* Per-container discharge report (lifecycle step 2/3). Opens a
+                      dialog with this container's vessel/ETA facts; the confirm
+                      action is UI-level only — no backend discharge write exists. */}
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="brand"
+                    iconStart="export"
+                    title="Open the discharge report for this container"
+                    onClick={() => setDischargeTarget(m)}
+                  >
+                    Discharge
+                  </CalciteButton>
+                </CalciteTableCell>
+                <CalciteTableCell>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* Per-container workflow: trigger/approve/reject + append-only
                         history from the POC-3 Cargo Workflow API (additive). */}
@@ -784,7 +813,7 @@ export function ContainerMovements() {
     {/* Dialogs are mounted OUTSIDE the Panel so they survive the post-write refetch.
         (The Panel unmounts its children while useAsync reloads — mounting a dialog
         inside would reset its success state, re-showing the confirmation UI.) */}
-    {dischargeOpen && <VesselDischargeModal moves={state.data ?? []} onClose={() => setDischargeOpen(false)} />}
+    {dischargeTarget && <DischargeReportModal move={dischargeTarget} onClose={() => setDischargeTarget(null)} />}
     {createOpen && <CreateCargoModal onClose={() => setCreateOpen(false)} />}
     {deleteTarget && <DeleteCargoDialog containerNo={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     {selected && <TimelineDrawer move={selected} onClose={() => setSelected(null)} />}
