@@ -23,6 +23,17 @@ export { runMockScenario } from './scenarios-mock.js';
 export type { ScenarioContext } from './scenarios-mock.js';
 export { roleVisibleFacilityIds } from './rbac-scope.js';
 export { buildNotifications } from './notifications-derive.js';
+export {
+  fetchLdbContainerTrack,
+  normalizeLdbSearch,
+  formatLeadTime,
+} from './ldb-track.js';
+export type {
+  NldsContainerTrack,
+  NldsTrackStop,
+  NldsTrackEvent,
+  FetchLdbTrackOptions,
+} from './ldb-track.js';
 
 export interface AdapterConfig {
   mode?: 'mock' | 'live';

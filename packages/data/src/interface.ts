@@ -640,6 +640,13 @@ export interface DataAdapter {
   /** Cargo lifecycle events (`GET /api/cargo/events`), optionally scoped to one container. */
   getCargoEvents?(containerNo?: string): Promise<CargoLifecycleEvent[]>;
 
+  /**
+   * NLDS Logistics Data Bank inland-transit track for one container
+   * (`GET /api/ldb/container/search?cntrNo=&searchType=39`). Optional — wired
+   * when an LDB base URL / Vite `/ldb` proxy is configured.
+   */
+  getNldsContainerTrack?(containerNo: string): Promise<import('./ldb-track.js').NldsContainerTrack>;
+
   /** Live AIS vessel data from the marine API (`GET /api/marine/vessels/live`). Optional: implemented only on the Poc3CargoAdapter path. */
   getLiveVessels?(): Promise<LiveVesselDTO[]>;
 

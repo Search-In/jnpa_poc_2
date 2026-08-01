@@ -44,6 +44,23 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/poc3/, ''),
         },
+        // NLDS Logistics Data Bank — Manage → Track. Browser calls /ldb/…;
+        // Vite rewrites to the public LDB origin (avoids CORS). LDB rejects
+        // requests whose Origin is localhost ("Invalid CORS request" → 403), so
+        // rewrite Origin/Referer to the LDB site on the upstream hop.
+        '/ldb': {
+          target: env.LDB_URL ?? 'https://ldb.co.in',
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p) => p.replace(/^\/ldb/, ''),
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.setHeader('Origin', 'https://ldb.co.in');
+              proxyReq.setHeader('Referer', 'https://ldb.co.in/');
+              proxyReq.removeHeader('cookie');
+            });
+          },
+        },
       },
     },
     build: { target: 'es2022', sourcemap: false },

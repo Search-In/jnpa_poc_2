@@ -52,6 +52,12 @@ describe('SimWorld dataset', () => {
     expect(ts).toEqual(sorted);
   });
 
+  it('pins the NLDS/LDB demo container as the first row', () => {
+    expect(w1.dataset.containers[0]!.containerNo).toBe('CCLU7468361');
+    expect(w1.dataset.containers[0]!.lineOwner).toBe('CCLU');
+    expect(w1.dataset.containers[0]!.originStream).toBe('IMPORT_DPD');
+  });
+
   it('every generated container number is a valid ISO 6346 number', () => {
     for (const c of w1.dataset.containers) {
       expect(isValidContainerNo(c.containerNo), c.containerNo).toBe(true);

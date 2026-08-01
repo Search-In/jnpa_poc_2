@@ -32,6 +32,7 @@ import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
 import { CargoWorkflowDialog } from './CargoWorkflowDialog.js';
+import { NldsTrackDialog } from './NldsTrackDialog.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
@@ -540,6 +541,8 @@ export function ContainerMovements() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   // Container whose POC-3 workflow (trigger/approve/reject + history) is open.
   const [workflowTarget, setWorkflowTarget] = useState<string | null>(null);
+  // Container whose NLDS/LDB inland-transit track dialog is open.
+  const [trackTarget, setTrackTarget] = useState<string | null>(null);
   // Container Search + POC-3 list filters (Appendix-C UC-II R1 "visibility of
   // container movements … container details" + R3 customs-flagged real-time status).
   // ADDITIVE: reuses the existing ContainerMovementFilter the adapter already honours
@@ -762,6 +765,17 @@ export function ContainerMovements() {
                     >
                       Workflow
                     </CalciteButton>
+                    {/* NLDS Logistics Data Bank inland-transit track (public LDB API). */}
+                    <CalciteButton
+                      scale="s"
+                      appearance="outline"
+                      kind="brand"
+                      iconStart="pin-tear"
+                      title="Track this container on NLDS / LDB (inland transit timeline)"
+                      onClick={() => setTrackTarget(m.container.containerNo)}
+                    >
+                      Track
+                    </CalciteButton>
                     {/* Delete this cargo record from the shared backend (DELETE). */}
                     <CalciteButton
                       scale="s"
@@ -789,6 +803,7 @@ export function ContainerMovements() {
     {deleteTarget && <DeleteCargoDialog containerNo={deleteTarget} onClose={() => setDeleteTarget(null)} />}
     {selected && <TimelineDrawer move={selected} onClose={() => setSelected(null)} />}
     {workflowTarget && <CargoWorkflowDialog containerNo={workflowTarget} onClose={() => setWorkflowTarget(null)} />}
+    {trackTarget && <NldsTrackDialog containerNo={trackTarget} onClose={() => setTrackTarget(null)} />}
     </>
   );
 }
