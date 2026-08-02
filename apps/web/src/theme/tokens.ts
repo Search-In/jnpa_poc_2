@@ -62,6 +62,22 @@ export const tokens = {
     TRANSSHIP: '#c77dff',
     ITRHO: '#ff9e64',
   },
+  // NLDS / LDB inland-transit timeline (Manage → Track)
+  track: {
+    line: '#f0a818',
+    node: '#1a73c2',
+    nodeRing: '#ffffff',
+    header: '#163a5f',
+    subheader: '#5c6b7a',
+    timestamp: '#c62828',
+    infoBg: '#fff8e1',
+    infoBorder: '#e8b923',
+    duration: '#1b7a3d',
+    durationBg: '#e7f6ec',
+    railBg: '#f7f9fc',
+    cardShadow: '0 1px 2px rgba(12,20,33,0.06), 0 8px 24px rgba(12,20,33,0.08)',
+    modeBadge: '#e8f1fa',
+  },
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
   radius: { sm: 4, md: 8 },
 } as const;
