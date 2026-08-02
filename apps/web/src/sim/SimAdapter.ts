@@ -17,7 +17,8 @@ import type {
   CargoWorkflowActionInput, CargoWorkflowHistoryEntry, CargoWorkflowState,
   YardPlanningInput, YardPlanningResult, YardOptimization,
   RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent, LiveVesselDTO,
-  IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer
+  IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer,
+  GateMovement, GateMovementGate, OocRecord, OocDetail, EdoRecord, EdoDetail, EirTransaction, PinTicket,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -112,6 +113,34 @@ export class SimAdapter implements DataAdapter {
   }
   getRmsScanContainers(igmNo: string | number, filter?: IgmContainerFilter): Promise<RmsScanContainer[]> {
     return this.base.getRmsScanContainers ? this.base.getRmsScanContainers(igmNo, filter) : SimAdapter.unavailable();
+  }
+  /** OOC / Bill of Entry are filed customs documents — never simulated. */
+  getOocRecords(filter?: IgmContainerFilter): Promise<OocRecord[]> {
+    return this.base.getOocRecords ? this.base.getOocRecords(filter) : SimAdapter.unavailable();
+  }
+  getOocDetail(beNo: string | number): Promise<OocDetail | null> {
+    return this.base.getOocDetail ? this.base.getOocDetail(beNo) : SimAdapter.unavailable();
+  }
+  /** E-DO delivery orders are filed shipping-line documents — never simulated. */
+  getEdoRecords(filter?: IgmContainerFilter): Promise<EdoRecord[]> {
+    return this.base.getEdoRecords ? this.base.getEdoRecords(filter) : SimAdapter.unavailable();
+  }
+  getEdoDetail(doNumber: string): Promise<EdoDetail | null> {
+    return this.base.getEdoDetail ? this.base.getEdoDetail(doNumber) : SimAdapter.unavailable();
+  }
+  /** EIR gate transactions are filed gate documents — never simulated. */
+  getEirTransactions(filter?: IgmContainerFilter): Promise<EirTransaction[]> {
+    return this.base.getEirTransactions ? this.base.getEirTransactions(filter) : SimAdapter.unavailable();
+  }
+  getPinTickets(filter?: IgmContainerFilter): Promise<PinTicket[]> {
+    return this.base.getPinTickets ? this.base.getPinTickets(filter) : SimAdapter.unavailable();
+  }
+  /** CODECO gate-out movements are filed terminal messages — never simulated. */
+  getGateMovementGates(): Promise<GateMovementGate[]> {
+    return this.base.getGateMovementGates ? this.base.getGateMovementGates() : SimAdapter.unavailable();
+  }
+  getGateMovements(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]> {
+    return this.base.getGateMovements ? this.base.getGateMovements(gateNo, filter) : SimAdapter.unavailable();
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {

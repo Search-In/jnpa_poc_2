@@ -38,14 +38,22 @@ import type {
   ContainerMovementDTO,
   ContainerMovementFilter,
   DataAdapter,
+  EdoDetail,
+  EdoRecord,
+  EirTransaction,
   EmptyPoolDTO,
+  GateMovement,
+  GateMovementGate,
   GateOpsDTO,
   GateQueueForecastDTO,
   IgmContainer,
   IgmContainerFilter,
   IgmManifest,
   LiveVesselDTO,
+  OocDetail,
+  OocRecord,
   PendencyDTO,
+  PinTicket,
   RailSideDTO,
   RakeForecastDTO,
   RakePlan,
@@ -470,7 +478,100 @@ export class Poc3CargoAdapter implements DataAdapter {
     });
   }
 
-  // 10) Marine API — Live Vessels ----------------------------------------------
+  // 10) Customs API — OOC (Bill of Entry / Out-Of-Charge) ---------------------
+  /** The Bills of Entry with their customs-release (out-of-charge) facts. */
+  async getOocRecords(filter: IgmContainerFilter = {}): Promise<OocRecord[]> {
+    return this.getList<OocRecord>('/api/customs/ooc', {
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /**
+   * One BE with its containers and every invoice line item. A 404 (unknown BE)
+   * resolves to null so the caller renders an empty state, not an error.
+   */
+  async getOocDetail(beNo: string | number): Promise<OocDetail | null> {
+    const key = encodeURIComponent(String(beNo).trim());
+    try {
+      return await this.getJson<OocDetail>(`/api/customs/ooc/${key}/items`);
+    } catch (err) {
+      if (err instanceof CargoApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  // 11) Shipping-lines API — E-DO (Electronic Delivery Order) -----------------
+  /** The delivery orders that authorise release of a container to its consignee. */
+  async getEdoRecords(filter: IgmContainerFilter = {}): Promise<EdoRecord[]> {
+    return this.getList<EdoRecord>('/api/shipping-lines/edo', {
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /** One DO with its container lines. A 404 resolves to null (unknown DO). */
+  async getEdoDetail(doNumber: string): Promise<EdoDetail | null> {
+    const key = encodeURIComponent(String(doNumber).trim());
+    try {
+      return await this.getJson<EdoDetail>(`/api/shipping-lines/edo/${key}`);
+    } catch (err) {
+      if (err instanceof CargoApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  // 12) Gate-documents API — EIR gate transactions ----------------------------
+  /**
+   * The truck-level gate transactions. Terminal is free text on the EIR
+   * ("Gateway (GTI)"), so callers match it against a terminal code themselves
+   * rather than relying on an exact-match server filter.
+   */
+  async getEirTransactions(filter: IgmContainerFilter = {}): Promise<EirTransaction[]> {
+    return this.getList<EirTransaction>('/api/gate-docs/eir', {
+      limit: String(filter.limit ?? 500),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /** The terminal pickup tickets (PIN) a trucker presents at the gate. */
+  async getPinTickets(filter: IgmContainerFilter = {}): Promise<PinTicket[]> {
+    return this.getList<PinTicket>('/api/gate-docs/pin', {
+      limit: String(filter.limit ?? 500),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 13) Shipping-lines API — CODECO gate-out movements ------------------------
+  /**
+   * The final lifecycle step: the box leaving on a truck. Read straight from the
+   * CODECO messages rather than through the delivery-order join, because a
+   * container can be gated out with no E-DO on file.
+   */
+  async getGateMovementGates(): Promise<GateMovementGate[]> {
+    const body = await this.getJson<{ gates?: GateMovementGate[] }>('/api/shipping-lines/gates');
+    return Array.isArray(body?.gates) ? body.gates : [];
+  }
+
+  /**
+   * `gateId` is the dashboard gate identifier (terminal code + gate number, e.g.
+   * "NSICT-G1"); it is split into the two filters the API expects. Pass "ALL" (or
+   * nothing) for every gate. A gate id that does not split simply falls back to a
+   * gate-number filter, so an unexpected shape degrades rather than erroring.
+   */
+  async getGateMovements(gateId?: string, filter: IgmContainerFilter = {}): Promise<GateMovement[]> {
+    const raw = (gateId ?? '').trim();
+    const scoped = raw && raw.toUpperCase() !== 'ALL';
+    const split = scoped ? /^(.*)-G(\w+)$/i.exec(raw) : null;
+    return this.getList<GateMovement>('/api/shipping-lines/gate-movements', {
+      terminal_code: split ? split[1] : undefined,
+      gate_no: split ? split[2] : (scoped ? raw : undefined),
+      limit: String(filter.limit ?? 500),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 14) Marine API — Live Vessels ----------------------------------------------
   /**
    * Fetch live AIS vessel data from the marine API. Uses the same request plumbing
    * as cargo calls, so the bearer token is attached and 401 self-heals automatically.
