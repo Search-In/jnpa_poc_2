@@ -32,6 +32,7 @@ export type {
   NldsContainerTrack,
   NldsTrackStop,
   NldsTrackEvent,
+  NldsVoyageEvent,
   FetchLdbTrackOptions,
 } from './ldb-track.js';
 

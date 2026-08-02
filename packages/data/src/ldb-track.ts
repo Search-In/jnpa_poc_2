@@ -31,6 +31,17 @@ export interface NldsTrackStop {
   events: NldsTrackEvent[];
 }
 
+/** One vessel arrival/departure row (Export / Import Voyage Information). */
+export interface NldsVoyageEvent {
+  eventName: string;
+  timestamp: string;
+  timeZone?: string;
+  terminal?: string;
+  vesselName?: string;
+  vesselImo?: string;
+  shippingLine?: string;
+}
+
 /** Normalised container track for the NLDS-style timeline UI. */
 export interface NldsContainerTrack {
   containerNo: string;
@@ -39,8 +50,13 @@ export interface NldsContainerTrack {
     containerType?: string;
     isoCode?: string;
   };
+  /** Inland Transit Information (cntrInTransit / trackLog). */
   stops: NldsTrackStop[];
-  /** True when LDB returned at least one track event. */
+  /** Export Voyage Information (vesselStatusExport*). */
+  exportVoyage: NldsVoyageEvent[];
+  /** Import Voyage Information (vesselStatusImport*). */
+  importVoyage: NldsVoyageEvent[];
+  /** True when LDB returned inland stops and/or voyage events. */
   found: boolean;
 }
 
@@ -84,6 +100,19 @@ interface LdbTrackLogEvent {
   avgLeadTime?: number;
 }
 
+/** Raw LDB vesselStatus* payload (empty `{}` when absent). */
+interface LdbVesselStatus {
+  eventid?: number;
+  eventname?: string;
+  orgname?: string;
+  timetimestamp?: string;
+  timezoneabvr?: string;
+  timeinms?: number;
+  vesselname?: string;
+  vesselimo?: string;
+  shippingline?: string;
+}
+
 interface LdbSearchObject {
   result?: string;
   cntrDetail?: {
@@ -94,6 +123,10 @@ interface LdbSearchObject {
   };
   cntrInTransit?: LdbTransitStop[];
   trackLog?: LdbTrackLogEvent[];
+  vesselStatusExportDpt?: LdbVesselStatus | Record<string, never>;
+  vesselStatusExportArv?: LdbVesselStatus | Record<string, never>;
+  vesselStatusImportDpt?: LdbVesselStatus | Record<string, never>;
+  vesselStatusImportArv?: LdbVesselStatus | Record<string, never>;
 }
 
 interface LdbSearchResponse {
@@ -111,11 +144,47 @@ function pickSearchObject(raw: LdbSearchResponse): LdbSearchObject | undefined {
       .slice()
       .sort((a, b) => {
         const score = (o: LdbSearchObject) =>
-          (o.cntrInTransit?.length ?? 0) * 10 + (o.trackLog?.length ?? 0);
+          (o.cntrInTransit?.length ?? 0) * 10 +
+          (o.trackLog?.length ?? 0) +
+          (hasVessel(o.vesselStatusExportDpt) || hasVessel(o.vesselStatusExportArv) ? 5 : 0) +
+          (hasVessel(o.vesselStatusImportArv) || hasVessel(o.vesselStatusImportDpt) ? 5 : 0);
         return score(b) - score(a);
       })[0];
   }
   return obj;
+}
+
+function hasVessel(v: LdbVesselStatus | Record<string, never> | undefined): v is LdbVesselStatus {
+  return !!v && typeof v === 'object' && typeof (v as LdbVesselStatus).eventname === 'string';
+}
+
+function mapVesselStatus(raw: LdbVesselStatus | Record<string, never> | undefined): NldsVoyageEvent | undefined {
+  if (!hasVessel(raw)) return undefined;
+  const eventName = raw.eventname?.trim();
+  if (!eventName) return undefined;
+  return {
+    eventName,
+    timestamp: raw.timetimestamp ?? '',
+    timeZone: raw.timezoneabvr,
+    terminal: raw.orgname?.trim() || undefined,
+    vesselName: raw.vesselname?.trim() || undefined,
+    vesselImo: raw.vesselimo?.trim() || undefined,
+    shippingLine: raw.shippingline?.trim() || undefined,
+  };
+}
+
+/** Export: departure first (NLDS primary), then arrival if present. */
+function exportVoyageFrom(obj: LdbSearchObject): NldsVoyageEvent[] {
+  return [mapVesselStatus(obj.vesselStatusExportDpt), mapVesselStatus(obj.vesselStatusExportArv)].filter(
+    (e): e is NldsVoyageEvent => !!e,
+  );
+}
+
+/** Import: arrival first (NLDS primary), then departure if present. */
+function importVoyageFrom(obj: LdbSearchObject): NldsVoyageEvent[] {
+  return [mapVesselStatus(obj.vesselStatusImportArv), mapVesselStatus(obj.vesselStatusImportDpt)].filter(
+    (e): e is NldsVoyageEvent => !!e,
+  );
 }
 
 function fromTransit(stops: LdbTransitStop[]): NldsTrackStop[] {
@@ -162,15 +231,21 @@ function fromTrackLog(log: LdbTrackLogEvent[]): NldsTrackStop[] {
   return stops;
 }
 
+function emptyTrack(containerNo: string): NldsContainerTrack {
+  return { containerNo, stops: [], exportVoyage: [], importVoyage: [], found: false };
+}
+
 /** Map a raw LDB JSON body into the UI DTO. */
 export function normalizeLdbSearch(raw: LdbSearchResponse, containerNo: string): NldsContainerTrack {
   const obj = pickSearchObject(raw);
   if (!obj || obj.result === 'No Record Found') {
-    return { containerNo, stops: [], found: false };
+    return emptyTrack(containerNo);
   }
   const transit = obj.cntrInTransit ?? [];
   const stops =
     transit.length > 0 ? fromTransit(transit) : fromTrackLog(obj.trackLog ?? []);
+  const exportVoyage = exportVoyageFrom(obj);
+  const importVoyage = importVoyageFrom(obj);
   return {
     containerNo: obj.cntrDetail?.cntrNumber?.trim() || containerNo,
     detail: obj.cntrDetail
@@ -181,12 +256,14 @@ export function normalizeLdbSearch(raw: LdbSearchResponse, containerNo: string):
         }
       : undefined,
     stops,
-    found: stops.length > 0,
+    exportVoyage,
+    importVoyage,
+    found: stops.length > 0 || exportVoyage.length > 0 || importVoyage.length > 0,
   };
 }
 
 /**
- * Fetch NLDS/LDB inland-transit track for one container.
+ * Fetch NLDS/LDB inland-transit + voyage track for one container.
  * `searchType=39` is the Single-container search used by the public LDB UI.
  */
 export async function fetchLdbContainerTrack(
@@ -195,7 +272,7 @@ export async function fetchLdbContainerTrack(
 ): Promise<NldsContainerTrack> {
   const norm = containerNo.trim().toUpperCase();
   if (!norm) {
-    return { containerNo: '', stops: [], found: false };
+    return emptyTrack('');
   }
   const base = (opts.baseUrl ?? '/ldb').replace(/\/$/, '');
   const searchType = opts.searchType ?? '39';
