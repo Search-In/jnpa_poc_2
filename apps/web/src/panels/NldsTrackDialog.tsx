@@ -7,6 +7,7 @@
  * Layout is a single left-rail timeline (better readability in a slide-over than
  * a full-page zig-zag). Presentation-only — no cargo writes.
  */
+import { useState, type ReactNode } from 'react';
 import {
   CalciteButton, CalciteChip, CalciteIcon, CalciteLoader, CalciteNotice,
 } from '@esri/calcite-components-react';
@@ -16,6 +17,7 @@ import {
   type NldsContainerTrack,
   type NldsTrackEvent,
   type NldsTrackStop,
+  type NldsVoyageEvent,
 } from '@jnpa/data';
 import { useAsync } from '../state/useAsync.js';
 import { tokens } from '../theme/tokens.js';
@@ -355,17 +357,225 @@ function StopCard({ stop, index }: { stop: NldsTrackStop; index: number }) {
   );
 }
 
+function VoyageCard({ event }: { event: NldsVoyageEvent }) {
+  const date = formatDateParts(event.timestamp);
+  const departed = event.eventName.toUpperCase().includes('DEPART');
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 28px 72px',
+        gap: 0,
+        alignItems: 'stretch',
+        marginBottom: 14,
+      }}
+    >
+      <div
+        style={{
+          borderRadius: 10,
+          overflow: 'hidden',
+          background: tokens.color.bgPanel,
+          border: `1px solid ${tokens.color.border}`,
+          boxShadow: tokens.track.cardShadow,
+        }}
+      >
+        <div
+          style={{
+            background: tokens.track.header,
+            color: '#fff',
+            padding: '10px 14px',
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          {event.terminal || 'Terminal'}
+        </div>
+        <div style={{ padding: '12px 14px' }}>
+          {event.vesselName ? (
+            <div style={{ fontSize: 13, fontWeight: 700, color: tokens.color.text, marginBottom: 4 }}>
+              Vessel Name:{' '}
+              <span style={{ fontWeight: 800 }}>
+                {event.vesselName}
+                {event.vesselImo ? ` [IMO ${event.vesselImo}]` : ''}
+              </span>
+            </div>
+          ) : null}
+          {event.shippingLine ? (
+            <div style={{ fontSize: 12.5, color: tokens.color.textMuted, marginBottom: 10 }}>
+              Shipping Line: <strong style={{ color: tokens.color.text }}>{event.shippingLine}</strong>
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: tokens.track.modeBadge,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: tokens.track.node,
+                flexShrink: 0,
+              }}
+              aria-hidden
+            >
+              <CalciteIcon icon="launch" scale="m" />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: 13,
+                  letterSpacing: 0.4,
+                  color: tokens.track.header,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {event.eventName}
+              </div>
+              <div
+                style={{
+                  color: tokens.track.timestamp,
+                  fontWeight: 700,
+                  marginTop: 4,
+                  fontSize: 12.5,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {formatTs(event.timestamp, event.timeZone)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <span
+          aria-hidden
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: '50%',
+            marginTop: 18,
+            background: departed ? tokens.track.timestamp : tokens.track.nodeRing,
+            border: `3px solid ${departed ? tokens.track.timestamp : tokens.track.node}`,
+            boxShadow: `0 0 0 3px ${tokens.track.line}`,
+            zIndex: 1,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          aria-hidden
+          style={{
+            width: 3,
+            flex: 1,
+            minHeight: 24,
+            background: tokens.track.line,
+            borderRadius: 2,
+            marginTop: 4,
+          }}
+        />
+      </div>
+
+      <div style={{ paddingTop: 14, paddingLeft: 8, fontVariantNumeric: 'tabular-nums' }}>
+        {date ? (
+          <>
+            <div style={{ fontSize: 16, fontWeight: 800, color: tokens.track.header, lineHeight: 1.1 }}>
+              {date.day}
+            </div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: tokens.color.textMuted, textTransform: 'uppercase' }}>
+              {date.mon} {date.year}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AccordionSection({
+  title,
+  count,
+  defaultOpen,
+  children,
+  empty,
+}: {
+  title: string;
+  count: number;
+  defaultOpen: boolean;
+  children: ReactNode;
+  empty?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section
+      style={{
+        marginBottom: 12,
+        borderRadius: 10,
+        overflow: 'hidden',
+        border: `1px solid ${tokens.color.border}`,
+        background: tokens.color.bgPanel,
+        boxShadow: '0 1px 2px rgba(12,20,33,0.04)',
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '12px 14px',
+          border: 'none',
+          cursor: 'pointer',
+          background: open ? '#e8f1fa' : '#eef3f8',
+          color: tokens.track.header,
+          textAlign: 'left',
+        }}
+      >
+        <CalciteIcon icon={open ? 'chevron-down' : 'chevron-right'} scale="s" />
+        <strong style={{ flex: 1, fontSize: 13.5 }}>{title}</strong>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: tokens.track.node,
+            background: tokens.track.modeBadge,
+            borderRadius: 999,
+            padding: '2px 8px',
+          }}
+        >
+          {count}
+        </span>
+      </button>
+      {open ? (
+        <div style={{ padding: '14px 12px 6px', background: tokens.track.railBg }}>
+          {count === 0 ? (
+            <p style={{ margin: '4px 0 14px', fontSize: 12.5, color: tokens.color.textMuted }}>
+              {empty ?? 'No records for this section.'}
+            </p>
+          ) : (
+            children
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function TimelineBody({ track }: { track: NldsContainerTrack }) {
   const latest = latestEvent(track);
   return (
     <div>
-      {/* Journey summary */}
       <div
         style={{
           display: 'flex',
           flexWrap: 'wrap',
           gap: 8,
-          marginBottom: 18,
+          marginBottom: 16,
           padding: '12px 14px',
           background: tokens.color.bgPanel,
           border: `1px solid ${tokens.color.border}`,
@@ -373,23 +583,52 @@ function TimelineBody({ track }: { track: NldsContainerTrack }) {
           boxShadow: '0 1px 2px rgba(12,20,33,0.04)',
         }}
       >
-        <MetaChip label="Stops" value={String(track.stops.length)} />
+        <MetaChip label="Export" value={String(track.exportVoyage.length)} />
+        <MetaChip label="Inland" value={String(track.stops.length)} />
+        <MetaChip label="Import" value={String(track.importVoyage.length)} />
         {track.detail?.size ? <MetaChip label="Size" value={track.detail.size} /> : null}
-        {track.detail?.isoCode ? <MetaChip label="ISO" value={track.detail.isoCode} /> : null}
         {latest?.eventName ? (
-          <MetaChip
-            label="Latest"
-            value={latest.eventName}
-            accent={tokens.track.node}
-          />
+          <MetaChip label="Latest" value={latest.eventName} accent={tokens.track.node} />
         ) : null}
       </div>
 
-      <div style={{ position: 'relative' }}>
+      {/* NLDS accordion order: Export → Inland → Import */}
+      <AccordionSection
+        title="Export Voyage Information"
+        count={track.exportVoyage.length}
+        defaultOpen={track.exportVoyage.length > 0}
+        empty="No export voyage events from NLDS/LDB."
+      >
+        {track.exportVoyage.map((e, i) => (
+          <VoyageCard key={`export-${e.eventName}-${e.timestamp}-${i}`} event={e} />
+        ))}
+      </AccordionSection>
+
+      <AccordionSection
+        title="Inland Transit Information"
+        count={track.stops.length}
+        defaultOpen={
+          track.stops.length > 0 &&
+          track.exportVoyage.length === 0 &&
+          track.importVoyage.length === 0
+        }
+        empty="No inland transit events from NLDS/LDB."
+      >
         {track.stops.map((stop, i) => (
           <StopCard key={`${stop.location}-${i}`} stop={stop} index={i} />
         ))}
-      </div>
+      </AccordionSection>
+
+      <AccordionSection
+        title="Import Voyage Information"
+        count={track.importVoyage.length}
+        defaultOpen={track.importVoyage.length > 0}
+        empty="No import voyage events from NLDS/LDB."
+      >
+        {track.importVoyage.map((e, i) => (
+          <VoyageCard key={`import-${e.eventName}-${e.timestamp}-${i}`} event={e} />
+        ))}
+      </AccordionSection>
     </div>
   );
 }
@@ -499,7 +738,7 @@ export function NldsTrackDialog({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, opacity: 0.8, letterSpacing: 0.6, textTransform: 'uppercase', fontWeight: 600 }}>
-              Inland Transit Information
+              Container Track
             </div>
             <strong
               style={{
@@ -570,7 +809,7 @@ export function NldsTrackDialog({
           {state.loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 56 }}>
               <CalciteLoader label="Loading NLDS track" scale="m" />
-              <span style={{ fontSize: 12, color: tokens.color.textMuted }}>Fetching inland transit…</span>
+              <span style={{ fontSize: 12, color: tokens.color.textMuted }}>Fetching NLDS track…</span>
             </div>
           ) : state.error ? (
             <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s">
@@ -579,9 +818,9 @@ export function NldsTrackDialog({
             </CalciteNotice>
           ) : !state.data?.found ? (
             <CalciteNotice open kind="info" icon="information" scale="s">
-              <div slot="title">No inland transit record</div>
+              <div slot="title">No track record</div>
               <div slot="message">
-                NLDS/LDB returned no track events for {containerNo}.
+                NLDS/LDB returned no voyage or inland transit events for {containerNo}.
               </div>
             </CalciteNotice>
           ) : (

@@ -77,6 +77,46 @@ describe('normalizeLdbSearch', () => {
     expect(normalizeLdbSearch({ object: { result: 'No Record Found' } }, 'XXXX0000000').found).toBe(false);
     expect(normalizeLdbSearch({}, 'XXXX0000000').found).toBe(false);
   });
+
+  it('maps Export / Import Voyage Information from vesselStatus* fields', () => {
+    const track = normalizeLdbSearch(
+      {
+        object: {
+          result: 'success',
+          cntrDetail: { cntrNumber: 'SEGU5833837', size: '40 Feet', containerType: '40 Feet HIGH CUBE', isoCode: '4510' },
+          vesselStatusExportDpt: {
+            eventname: 'VESSEL DEPARTED',
+            orgname: 'Bharat Mumbai Container Terminals (PSA)',
+            timetimestamp: '2026-05-31T10:25:00.000+00:00',
+            timezoneabvr: 'IST',
+            vesselname: 'HMM LIME',
+            vesselimo: '9998511',
+            shippingline: 'HMM SHIPPING INDIA PRIVATE LIMITED',
+          },
+          vesselStatusExportArv: {},
+          vesselStatusImportArv: {
+            eventname: 'VESSEL ARRIVED',
+            orgname: 'Bharat Mumbai Container Terminals (PSA)',
+            timetimestamp: '2026-05-04T10:24:00.000+00:00',
+            timezoneabvr: 'IST',
+            vesselname: 'HMM PROMISE',
+            vesselimo: '9742168',
+            shippingline: 'HMM SHIPPING INDIA PRIVATE LIMITED',
+          },
+          vesselStatusImportDpt: {},
+        },
+      },
+      'SEGU5833837',
+    );
+    expect(track.found).toBe(true);
+    expect(track.exportVoyage).toHaveLength(1);
+    expect(track.exportVoyage[0]!.eventName).toBe('VESSEL DEPARTED');
+    expect(track.exportVoyage[0]!.vesselName).toBe('HMM LIME');
+    expect(track.exportVoyage[0]!.vesselImo).toBe('9998511');
+    expect(track.importVoyage).toHaveLength(1);
+    expect(track.importVoyage[0]!.eventName).toBe('VESSEL ARRIVED');
+    expect(track.importVoyage[0]!.vesselName).toBe('HMM PROMISE');
+  });
 });
 
 describe('formatLeadTime', () => {
