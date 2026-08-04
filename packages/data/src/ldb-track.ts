@@ -287,7 +287,20 @@ export async function fetchLdbContainerTrack(
   if (!res.ok) {
     throw new Error(`NLDS/LDB track failed (HTTP ${res.status}) for ${norm}.`);
   }
-  const body = (await res.json()) as LdbSearchResponse;
+  const text = await res.text();
+  // Production misconfig: missing nginx /ldb proxy → SPA fallback returns index.html.
+  if (text.trimStart().startsWith('<!') || text.trimStart().startsWith('<html')) {
+    throw new Error(
+      'NLDS/LDB proxy is not configured on this host (got HTML instead of JSON). ' +
+        'Ensure nginx proxies /ldb/ → https://ldb.co.in (same as the Vite /ldb proxy in dev).',
+    );
+  }
+  let body: LdbSearchResponse;
+  try {
+    body = JSON.parse(text) as LdbSearchResponse;
+  } catch {
+    throw new Error(`NLDS/LDB returned non-JSON for ${norm}.`);
+  }
   return normalizeLdbSearch(body, norm);
 }
 
