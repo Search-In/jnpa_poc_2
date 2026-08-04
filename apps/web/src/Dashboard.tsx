@@ -32,6 +32,7 @@ import { Itrho } from './panels/Itrho.js';
 import { GateOps } from './panels/GateOps.js';
 import { ScanQueue } from './panels/ScanQueue.js';
 import { EmptyPool } from './panels/EmptyPool.js';
+import { CfsEcy } from './panels/CfsEcy.js';
 import { HealthCards } from './panels/HealthCards.js';
 import { Notifications } from './panels/Notifications.js';
 import { Scenarios } from './panels/Scenarios.js';
@@ -64,6 +65,7 @@ const TABS = [
   { id: 'pendency', label: 'Pendency' },
   { id: 'scan', label: 'Scan' },
   { id: 'empty', label: 'Empty' },
+  { id: 'cfsecy', label: 'CFS/ECY' },
   { id: 'scenarios', label: 'What-If' },
   { id: 'workflows', label: 'Workflows' },
   { id: 'models', label: 'AI Models' },
@@ -81,15 +83,15 @@ const TABS = [
 const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
   DTCCC_ADMIN: TABS.map((tb) => tb.id), // full access
   JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
-  JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
-  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'notifications', 'methodology'],
+  JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'cfsecy', 'notifications', 'scenarios', 'methodology'],
+  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'cfsecy', 'notifications', 'methodology'],
   // IGM mirrors the POC-3 backend audience for /api/customs (control room + customs),
   // so only DTCCC_ADMIN (full access, above) and CUSTOMS see the tab.
   CUSTOMS: ['movements', 'igm', 'scan', 'pendency', 'notifications', 'scenarios', 'methodology'],
   CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
-  ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'notifications', 'methodology'],
-  CFS_OPERATOR: ['movements', 'gate', 'pendency', 'notifications', 'methodology'],
-  SHIPPING_LINE: ['movements', 'empty', 'notifications', 'methodology'],
+  ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
+  CFS_OPERATOR: ['movements', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
+  SHIPPING_LINE: ['movements', 'empty', 'cfsecy', 'notifications', 'methodology'],
 };
 
 export function Dashboard() {
@@ -518,6 +520,7 @@ export function Dashboard() {
               {canSeeTab('pendency') && <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>}
               {canSeeTab('scan') && <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>}
               {canSeeTab('empty') && <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>}
+              {canSeeTab('cfsecy') && <CalciteTab tab="cfsecy" selected={activeTab === 'cfsecy'}><div data-tour-tab="cfsecy"><CfsEcy /></div></CalciteTab>}
               {canSeeTab('scenarios') && <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>}
               {canSeeTab('workflows') && <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>}
               {canSeeTab('models') && <CalciteTab tab="models" selected={activeTab === 'models'}><div data-tour-tab="models"><ModelCards /></div></CalciteTab>}
