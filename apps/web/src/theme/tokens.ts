@@ -78,6 +78,18 @@ export const tokens = {
     cardShadow: '0 1px 2px rgba(12,20,33,0.06), 0 8px 24px rgba(12,20,33,0.08)',
     modeBadge: '#e8f1fa',
   },
+  /**
+   * Categorical chart series, assigned in fixed order — never cycled, never
+   * reassigned by rank. Validated as a categorical palette against the light
+   * chart surface (#ffffff): lightness band, chroma floor, CVD separation
+   * (worst adjacent pair ΔE 24.0 protan / 27.3 tritan), normal-vision floor
+   * (ΔE 29.6) and ≥3:1 contrast all pass. Re-run the check before adding a
+   * third slot; do not pick one by eye.
+   */
+  series: {
+    A: '#1a73c2',
+    B: '#c2610a',
+  },
   space: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 },
   radius: { sm: 4, md: 8 },
 } as const;

@@ -141,7 +141,11 @@ function EirSection({ gate }: { gate: string }) {
   );
 
   const all = state.data ?? [];
-  const rows = all.filter((e) => (e.terminal ?? '').toUpperCase().includes(terminal));
+  // Match the canonical code the backend resolved (via core.ref_terminal_alias).
+  // Fall back to the free-text label only when a terminal could not be resolved.
+  const rows = all.filter((e) => (e.terminal_code
+    ? e.terminal_code.toUpperCase() === terminal
+    : (e.terminal ?? '').toUpperCase().includes(terminal)));
 
   return (
     <div style={{ marginTop: 18, borderTop: `1px solid ${tokens.color.border}`, paddingTop: 12 }}>
@@ -172,7 +176,7 @@ function EirSection({ gate }: { gate: string }) {
           <div slot="message">
             No Equipment Interchange Report names this terminal.
             {all.length > 0
-              ? ` EIRs on file cover: ${[...new Set(all.map((e) => e.terminal).filter(Boolean))].join(', ')}.`
+              ? ` EIRs on file cover: ${[...new Set(all.map((e) => e.terminal_code || e.terminal).filter(Boolean))].join(', ')}.`
               : ''}
           </div>
         </CalciteNotice>
@@ -270,7 +274,9 @@ function PinTicketSection({ gate }: { gate: string }) {
   );
 
   const all = state.data ?? [];
-  const rows = all.filter((p) => (p.terminal ?? '').toUpperCase().includes(terminal));
+  const rows = all.filter((p) => (p.terminal_code
+    ? p.terminal_code.toUpperCase() === terminal
+    : (p.terminal ?? '').toUpperCase().includes(terminal)));
 
   return (
     <div style={{ marginTop: 18, borderTop: `1px solid ${tokens.color.border}`, paddingTop: 12 }}>
@@ -303,7 +309,7 @@ function PinTicketSection({ gate }: { gate: string }) {
           <div slot="message">
             {all.length === 0
               ? 'No PIN pickup ticket has been imported yet — core.pin_ticket is empty.'
-              : `No ticket names this terminal. Tickets on file cover: ${[...new Set(all.map((p) => p.terminal).filter(Boolean))].join(', ')}.`}
+              : `No ticket names this terminal. Tickets on file cover: ${[...new Set(all.map((p) => p.terminal_code || p.terminal).filter(Boolean))].join(', ')}.`}
           </div>
         </CalciteNotice>
       ) : (
