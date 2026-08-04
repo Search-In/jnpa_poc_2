@@ -597,7 +597,7 @@ function TimelineBody({ track }: { track: NldsContainerTrack }) {
         title="Export Voyage Information"
         count={track.exportVoyage.length}
         defaultOpen={track.exportVoyage.length > 0}
-        empty="No export voyage events from NLDS/LDB."
+        empty="Export voyage data not available on NLDS."
       >
         {track.exportVoyage.map((e, i) => (
           <VoyageCard key={`export-${e.eventName}-${e.timestamp}-${i}`} event={e} />
@@ -612,7 +612,7 @@ function TimelineBody({ track }: { track: NldsContainerTrack }) {
           track.exportVoyage.length === 0 &&
           track.importVoyage.length === 0
         }
-        empty="No inland transit events from NLDS/LDB."
+        empty="Inland transit data not available on NLDS."
       >
         {track.stops.map((stop, i) => (
           <StopCard key={`${stop.location}-${i}`} stop={stop} index={i} />
@@ -623,7 +623,7 @@ function TimelineBody({ track }: { track: NldsContainerTrack }) {
         title="Import Voyage Information"
         count={track.importVoyage.length}
         defaultOpen={track.importVoyage.length > 0}
-        empty="No import voyage events from NLDS/LDB."
+        empty="Import voyage data not available on NLDS."
       >
         {track.importVoyage.map((e, i) => (
           <VoyageCard key={`import-${e.eventName}-${e.timestamp}-${i}`} event={e} />
@@ -812,15 +812,15 @@ export function NldsTrackDialog({
               <span style={{ fontSize: 12, color: tokens.color.textMuted }}>Fetching NLDS track…</span>
             </div>
           ) : state.error ? (
-            <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s">
-              <div slot="title">Could not load track</div>
+            <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
+              <div slot="title">Track data not available</div>
               <div slot="message">{state.error}</div>
             </CalciteNotice>
           ) : !state.data?.found ? (
             <CalciteNotice open kind="info" icon="information" scale="s">
-              <div slot="title">No track record</div>
+              <div slot="title">Track data not available</div>
               <div slot="message">
-                NLDS/LDB returned no voyage or inland transit events for {containerNo}.
+                Container track data not available on NLDS for {containerNo}.
               </div>
             </CalciteNotice>
           ) : (
