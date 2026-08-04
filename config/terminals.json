@@ -40,7 +40,7 @@
       "quayLengthM": 712,
       "capacityTEU": 2000000,
       "geom": { "type": "Point", "coordinates": [72.9444, 18.9457] },
-      "gates": ["GTI-G1", "GTI-G2"],
+      "gates": ["GTI-G2"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "X12" }
     },
@@ -66,7 +66,7 @@
       "capacityTEU": 1200000,
       "$geomNote": "Terminal-marker position only (2D marker + 2D gates + hidden 3D deck derive from this; 3D asset placements in data/positions.json are absolute and unaffected). Fine-tuned to the JNPA satellite reference: NSFT/JNPCT is third along the wharf, between GTI and NSICT.",
       "geom": { "type": "Point", "coordinates": [72.9479, 18.9497] },
-      "gates": ["JNPCT-G1", "JNPCT-G2"],
+      "gates": ["JNPCT-G1"],
       "sidingMapping": { "rail": ["T1", "T2"] },
       "tos": { "mode": "FILE_DROP" }
     }
