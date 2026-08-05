@@ -667,6 +667,12 @@ export interface EirTransaction {
   eir_type?: string | null;
   /** Free-text terminal as printed on the EIR, e.g. "Gateway (GTI)". */
   terminal?: string | null;
+  /**
+   * Canonical terminal code (NSICT, GTI, NSFT…) resolved server-side through
+   * core.ref_terminal_alias. Use this to match a dashboard gate — the free-text
+   * `terminal` does not reliably contain the code ("Nhava Sheva IGT" is NSIGT).
+   */
+  terminal_code?: string | null;
   container_number?: string | null;
   iso_valid?: boolean | null;
   /** Vessel the box came off, e.g. ONE RECOGNITION. */
@@ -715,6 +721,8 @@ export interface PinTicket {
   ticket_type?: string | null;
   /** Terminal that issued the ticket, free text. */
   terminal?: string | null;
+  /** Canonical terminal code resolved via core.ref_terminal_alias. Match on this. */
+  terminal_code?: string | null;
   /** Truck registration, e.g. MH43CQ2814. */
   truck_no?: string | null;
   /** Trucking company, e.g. TRANSTAR. */
@@ -832,6 +840,93 @@ export interface RmsScanContainer {
   /** CFS/ICD the box is bound for. */
   cfs_name?: string | null;
   goods_description?: string | null;
+}
+
+// ---- CFS / ECY off-dock gate movements -------------------------------------
+//
+// The off-dock leg of the export chain: a container is released from an Empty
+// Container Yard, trucked to a Container Freight Station for stuffing, and later
+// leaves the CFS for the terminal gate. Sourced from POC-3, which parses the
+// CFS-CODECO / ECY-CODECO feeds:
+//   GET /api/cfs-ecy/stats         -> throughput + dwell aggregates
+//   GET /api/cfs-ecy/chains/stats  -> ECY→CFS repositioning chain KPIs
+//   GET /api/cfs-ecy/dwell         -> per-container CFS dwell rows
+//
+// ⚠ POPULATION-LEVEL ONLY. This feed shares ZERO container numbers with the
+// manifests, advance lists and gate documents in the same corpus (verified: the
+// intersection with every EAL/IAL list is empty). It therefore supports port-wide
+// throughput and dwell statistics, and must NEVER be presented as one named
+// container's history, nor linked from a container row on another tab. See
+// markdowns/04_Export_Build_Plan.md §1.1.
+
+/** Which off-dock facility a movement belongs to. */
+export type CfsEcyFacility = 'CFS' | 'ECY';
+
+/** One day of gate throughput, from the `daily_throughput` array on the stats call. */
+export interface CfsEcyDailyThroughput {
+  /** ISO date, e.g. "2026-07-14". */
+  day: string;
+  in_count: number;
+  out_count: number;
+}
+
+/** Throughput + dwell aggregates from `GET /api/cfs-ecy/stats`. */
+export interface CfsEcyStats {
+  total_in: number;
+  total_out: number;
+  total_events: number;
+  /** Distinct containers seen across the feed. */
+  container_count: number;
+  /** Containers currently in — gated in with no matching gate-out. */
+  active_containers: number;
+  /** Rows whose container number failed ISO 6346 validation. */
+  iso_invalid: number;
+  average_dwell_hours?: number | null;
+  median_dwell_hours?: number | null;
+  /** Containers that had a computable dwell (both an IN and an OUT). */
+  dwell_count: number;
+  daily_throughput: CfsEcyDailyThroughput[];
+}
+
+/** One anomaly bucket on the chain stats. */
+export interface CfsEcyAnomalyCount {
+  /** Machine code, e.g. NO_CFS_IN. Look up prose in `anomaly_labels`. */
+  code: string;
+  chains: number;
+}
+
+/**
+ * ECY→CFS repositioning chain KPIs from `GET /api/cfs-ecy/chains/stats`.
+ * A chain is COMPLETE when an ECY gate-out is followed by a CFS gate-in and a
+ * CFS gate-out; PARTIAL when the sequence stops short.
+ */
+export interface CfsEcyChainStats {
+  chains: number;
+  complete_chains: number;
+  partial_chains: number;
+  anomaly_chains: number;
+  /** Road leg, ECY-out → CFS-in. Decimal STRING on the wire (Postgres numeric). */
+  avg_transit_hours?: number | string | null;
+  /** Time inside the CFS, in → out. */
+  avg_dwell_hours?: number | string | null;
+  /** Whole cycle, ECY-out → CFS-out. */
+  avg_cycle_hours?: number | string | null;
+  median_cycle_hours?: number | string | null;
+  by_anomaly?: CfsEcyAnomalyCount[];
+  /** Machine code → prose, supplied by the backend so the UI invents no wording. */
+  anomaly_labels?: Record<string, string>;
+  last_rebuilt_at?: string | null;
+}
+
+/** One container's CFS dwell, from `GET /api/cfs-ecy/dwell`. */
+export interface CfsEcyDwellItem {
+  container_number?: string | null;
+  facility_type?: CfsEcyFacility | string | null;
+  first_in_ts?: string | null;
+  last_out_ts?: string | null;
+  in_events?: number | null;
+  out_events?: number | null;
+  dwell_hours?: number | string | null;
 }
 
 // ---- the interface ---------------------------------------------------------
@@ -954,6 +1049,13 @@ export interface DataAdapter {
   getGateMovementGates?(): Promise<GateMovementGate[]>;
   /** CODECO gate-out movements, optionally for one gate (`GET /api/shipping-lines/gate-movements`). Optional: POC-3 path only. */
   getGateMovements?(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]>;
+
+  /** Off-dock CFS/ECY throughput + dwell aggregates (`GET /api/cfs-ecy/stats`). Optional: POC-3 path only. */
+  getCfsEcyStats?(facility?: CfsEcyFacility): Promise<CfsEcyStats>;
+  /** ECY→CFS repositioning chain KPIs (`GET /api/cfs-ecy/chains/stats`). Optional: POC-3 path only. */
+  getCfsEcyChainStats?(): Promise<CfsEcyChainStats>;
+  /** Per-container CFS dwell rows (`GET /api/cfs-ecy/dwell`). Optional: POC-3 path only. */
+  getCfsEcyDwell?(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]>;
 
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';

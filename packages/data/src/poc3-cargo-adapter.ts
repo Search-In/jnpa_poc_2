@@ -35,6 +35,10 @@ import type {
   CargoWorkflowActionInput,
   CargoWorkflowHistoryEntry,
   CargoWorkflowState,
+  CfsEcyChainStats,
+  CfsEcyDwellItem,
+  CfsEcyFacility,
+  CfsEcyStats,
   ContainerMovementDTO,
   ContainerMovementFilter,
   DataAdapter,
@@ -571,7 +575,37 @@ export class Poc3CargoAdapter implements DataAdapter {
     });
   }
 
-  // 14) Marine API — Live Vessels ----------------------------------------------
+  // 14) CFS/ECY API — off-dock gate movements --------------------------------
+  /**
+   * Port-wide throughput and dwell for the off-dock leg (ECY → CFS → terminal).
+   *
+   * ⚠ These three calls return POPULATION statistics only. The CFS/ECY feed shares
+   * no container numbers with the manifests, advance lists or gate documents in the
+   * same corpus, so nothing here may be joined to, or drilled into from, a named
+   * container elsewhere in the dashboard. See markdowns/04_Export_Build_Plan.md §1.1.
+   */
+  async getCfsEcyStats(facility?: CfsEcyFacility): Promise<CfsEcyStats> {
+    return this.getJson<CfsEcyStats>('/api/cfs-ecy/stats', { facility });
+  }
+
+  /**
+   * Chain KPIs. `by_anomaly` is absent when nothing is anomalous, so it is
+   * normalised to an array here rather than at every call site.
+   */
+  async getCfsEcyChainStats(): Promise<CfsEcyChainStats> {
+    const body = await this.getJson<CfsEcyChainStats>('/api/cfs-ecy/chains/stats');
+    return { ...body, by_anomaly: Array.isArray(body?.by_anomaly) ? body.by_anomaly : [] };
+  }
+
+  /** Per-container CFS dwell rows. Paged like the other list endpoints. */
+  async getCfsEcyDwell(filter: IgmContainerFilter = {}): Promise<CfsEcyDwellItem[]> {
+    return this.getList<CfsEcyDwellItem>('/api/cfs-ecy/dwell', {
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 15) Marine API — Live Vessels ----------------------------------------------
   /**
    * Fetch live AIS vessel data from the marine API. Uses the same request plumbing
    * as cargo calls, so the bearer token is attached and 401 self-heals automatically.

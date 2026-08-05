@@ -19,6 +19,7 @@ import type {
   RakePlan, RakePlanInput, ReeferPlan, ReeferPlanInput, CargoLifecycleEvent, LiveVesselDTO,
   IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer,
   GateMovement, GateMovementGate, OocRecord, OocDetail, EdoRecord, EdoDetail, EirTransaction, PinTicket,
+  CfsEcyChainStats, CfsEcyDwellItem, CfsEcyFacility, CfsEcyStats,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -141,6 +142,20 @@ export class SimAdapter implements DataAdapter {
   }
   getGateMovements(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]> {
     return this.base.getGateMovements ? this.base.getGateMovements(gateNo, filter) : SimAdapter.unavailable();
+  }
+  /**
+   * CFS/ECY off-dock movements are filed CODECO messages — never simulated. These
+   * are port-level aggregates over a container set disjoint from every other tab,
+   * so there is nothing for the simulator's levers to overlay onto.
+   */
+  getCfsEcyStats(facility?: CfsEcyFacility): Promise<CfsEcyStats> {
+    return this.base.getCfsEcyStats ? this.base.getCfsEcyStats(facility) : SimAdapter.unavailable();
+  }
+  getCfsEcyChainStats(): Promise<CfsEcyChainStats> {
+    return this.base.getCfsEcyChainStats ? this.base.getCfsEcyChainStats() : SimAdapter.unavailable();
+  }
+  getCfsEcyDwell(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]> {
+    return this.base.getCfsEcyDwell ? this.base.getCfsEcyDwell(filter) : SimAdapter.unavailable();
   }
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
