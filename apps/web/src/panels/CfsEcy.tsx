@@ -318,9 +318,67 @@ export function CfsEcy() {
   const last = days[days.length - 1];
   const range = first && last ? `${longDay(first.day)} – ${longDay(last.day)}` : 'no dated movements';
 
+  /**
+   * Data-completeness check — verified against the source on 2026-08-06.
+   *
+   * Two defects in this feed that a plain throughput chart would misrepresent as
+   * operations:
+   *
+   * 1. **Trailing taper.** Both source workbooks (CFS-CODECO.xlsx / ECY-CODECO.xlsx)
+   *    were extracted on 24-Jul while their content runs to 26-Jul, so the final days
+   *    are a partial extract: volume falls ~100/day → 3/day. BMCT's own reported gate
+   *    movements hold steady at 1,600–2,400/day across the same week, so the decline
+   *    is in the extract, not the port.
+   * 2. **Isolated far-future day.** A QA/idempotency import (`qa_import.csv`) put two
+   *    test containers 10 days past the real data. It stretches the date range and
+   *    adds a phantom day to the chart.
+   *
+   * Detected from the shape of the series rather than hard-coded dates, so the notice
+   * disappears by itself once a complete extract is loaded.
+   */
+  const completeness = (() => {
+    if (days.length < 8) return null;
+    const counts = days.map((d) => d.in_count + d.out_count);
+    const peak = Math.max(...counts);
+    // A trailing run of days under 20% of peak = a partial extract, not a lull.
+    let taper = 0;
+    for (let i = counts.length - 1; i >= 0 && counts[i]! < peak * 0.2; i -= 1) taper += 1;
+    // A final day separated from the previous by more than a week = an outlier import.
+    const lastTwo = days.slice(-2);
+    const gapDays = lastTwo.length === 2
+      ? (Date.parse(lastTwo[1]!.day) - Date.parse(lastTwo[0]!.day)) / 86_400_000
+      : 0;
+    const outlier = gapDays > 7 ? lastTwo[1]!.day : null;
+    if (taper < 3 && !outlier) return null;
+    const reliableEnd = days[days.length - 1 - taper - (outlier ? 1 : 0)];
+    return { taper, outlier, reliableEnd: reliableEnd?.day };
+  })();
+
   return (
     <>
       <SourceBadge source="POC-3 · CFS-CODECO + ECY-CODECO (off-dock gate movements)" live />
+
+      {completeness && (
+        <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s" style={{ margin: '4px 0 10px' }}>
+          <div slot="title">The last days of this feed are incomplete</div>
+          <div slot="message">
+            {completeness.outlier && (
+              <>A test import placed movements on {longDay(completeness.outlier)}, well after the
+              real data ends — treat that day as noise. </>
+            )}
+            {completeness.taper >= 3 && (
+              <>The final {completeness.taper} days fall to a fraction of the daily average because
+              the source extract was taken mid-window, not because throughput dropped —
+              the terminals&apos; own reported gate movements are steady across the same
+              week. </>
+            )}
+            {completeness.reliableEnd && (
+              <>Read the series up to <strong>{longDay(completeness.reliableEnd)}</strong>; beyond
+              that it is a partial extract.</>
+            )}
+          </div>
+        </CalciteNotice>
+      )}
 
       {/* The scope limit is stated on screen, not just in code, so nobody reading
           the panel mistakes a port-wide figure for a container's history. */}

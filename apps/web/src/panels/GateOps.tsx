@@ -6,7 +6,7 @@
 import { Fragment, useState } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell,
-  CalciteSelect, CalciteOption, CalciteChip, CalciteNotice,
+  CalciteSelect, CalciteOption, CalciteChip, CalciteNotice, CalciteIcon,
   CalciteLoader,
 } from '@esri/calcite-components-react';
 import type { EirTransaction, GateMovement, GateMovementGate, GateOpsDTO, GateQueueForecastDTO, PinTicket } from '@jnpa/data';
@@ -436,6 +436,42 @@ function GateOutSection({ gate }: { gate: string }) {
   const rows = moves.data ?? [];
   const withMovements = (gates.data ?? []).filter((g) => (g.movements ?? 0) > 0);
 
+  /**
+   * Export gate-in vs import gate-out.
+   *
+   * CODECO carries the direction in its header `StuffDestuffFlag` ('E' / 'I'),
+   * but `core.codeco_movement` has no column for it, so the flag is not
+   * persisted. It is reliably derivable from the ports instead: a box whose
+   * port-of-loading IS Nhava Sheva is being loaded here, i.e. it came IN through
+   * the gate for export. A foreign POL with `final_pod = INNSA` is the import
+   * leg going out. Verified against all 5 corpus messages.
+   */
+  const isExportGateIn = (m: GateMovement) => (m.pol ?? '').toUpperCase().startsWith('INNSA');
+
+  /**
+   * A truck that brought an export box in and took an import box out is doing a
+   * dual run — the single most useful decongestion signal in this data, and the
+   * thing an empty-running trailer is not doing. Pair them by vehicle.
+   */
+  const roundTrips = (() => {
+    const byVehicle = new Map<string, { in?: GateMovement; out?: GateMovement }>();
+    for (const m of rows) {
+      const v = (m.vehicle_no ?? '').trim().toUpperCase();
+      if (!v) continue;
+      const slot = byVehicle.get(v) ?? {};
+      if (isExportGateIn(m)) slot.in = m; else slot.out = m;
+      byVehicle.set(v, slot);
+    }
+    return [...byVehicle.entries()]
+      .filter(([, s]) => s.in && s.out)
+      .map(([vehicle, s]) => {
+        const inTs = s.in!.gate_pass_ts ? new Date(s.in!.gate_pass_ts).getTime() : null;
+        const outTs = s.out!.gate_pass_ts ? new Date(s.out!.gate_pass_ts).getTime() : null;
+        const gapH = inTs !== null && outTs !== null ? Math.abs(outTs - inTs) / 3_600_000 : null;
+        return { vehicle, in: s.in!, out: s.out!, gapH };
+      });
+  })();
+
   return (
     <div style={{ marginTop: 18, borderTop: `1px solid ${tokens.color.border}`, paddingTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -471,14 +507,45 @@ function GateOutSection({ gate }: { gate: string }) {
         </CalciteNotice>
       ) : (
         <>
+          {/* Dual-run evidence: the same trailer delivering an export box and
+              collecting an import one, rather than running back empty. */}
+          {roundTrips.length > 0 && (
+            <div
+              style={{
+                margin: '8px 0 10px', padding: '10px 12px',
+                background: tokens.color.bgElevated,
+                border: `1px solid ${tokens.congestion.GREEN}`, borderRadius: tokens.radius.md,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <CalciteIcon icon="refresh" scale="s" />
+                <strong style={{ fontSize: 12.5, color: tokens.color.text }}>
+                  Truck round-trip — {roundTrips.length} dual run{roundTrips.length === 1 ? '' : 's'} at this gate
+                </strong>
+              </div>
+              {roundTrips.map((rt) => (
+                <div key={rt.vehicle} style={{ fontSize: 12, color: tokens.color.textMuted }}>
+                  <strong style={{ color: tokens.color.text }}>{rt.vehicle}</strong>
+                  {' delivered export '}<strong style={{ color: tokens.color.text }}>{rt.in.container_no}</strong>
+                  {' and collected import '}<strong style={{ color: tokens.color.text }}>{rt.out.container_no}</strong>
+                  {rt.gapH !== null && ` — ${rt.gapH.toFixed(1)} h apart`}
+                  {'. One trip, two boxes: no empty leg.'}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
             <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: 0 }}>
-              {rows.length} container{rows.length === 1 ? '' : 's'} gated out through {gate}
+              {rows.length} movement{rows.length === 1 ? '' : 's'} at {gate}
+              {' — '}{rows.filter(isExportGateIn).length} export gate-in,
+              {' '}{rows.filter((m) => !isExportGateIn(m)).length} import gate-out
             </p>
             <div style={{ marginLeft: 'auto' }}>
               <ImportExportToolbar
                 data={rows.map((m) => ({
                   'Container No': m.container_no,
+                  'Direction': isExportGateIn(m) ? 'EXPORT_GATE_IN' : 'IMPORT_GATE_OUT',
                   'Gate No': m.gate_no,
                   'Gate Pass No': m.gate_pass_no,
                   'Gate Pass Time': m.gate_pass_ts,
@@ -488,7 +555,8 @@ function GateOutSection({ gate }: { gate: string }) {
                   'ISO Code': m.iso_code,
                   'VCN': m.vcn,
                   'Vessel IMO': m.imo_no,
-                  'Agent': m.agent_code,
+                  // NOT the shipping agent — see the interface note on GateMovement.agent_code.
+                  'Container Agent (CACode)': m.agent_code,
                   'POL': m.pol,
                   'Final POD': m.final_pod,
                   'Arrival': m.arrival_ts,
@@ -504,6 +572,7 @@ function GateOutSection({ gate }: { gate: string }) {
             <CalciteTable caption="containers gated out on truck">
               <CalciteTableRow slot="table-header">
                 <CalciteTableHeader heading="Container" />
+                <CalciteTableHeader heading="Direction" />
                 <CalciteTableHeader heading="Gate" />
                 <CalciteTableHeader heading="Gate pass" />
                 <CalciteTableHeader heading="Gate-out time" />
@@ -519,6 +588,22 @@ function GateOutSection({ gate }: { gate: string }) {
               {rows.map((m) => (
                 <CalciteTableRow key={`${m.id}-${m.container_no}`}>
                   <CalciteTableCell><strong>{val(m.container_no)}</strong></CalciteTableCell>
+                  <CalciteTableCell>
+                    {/* Derived from POL, not stored — see isExportGateIn. */}
+                    <CalciteChip
+                      scale="s"
+                      value={isExportGateIn(m) ? 'EXPORT-IN' : 'IMPORT-OUT'}
+                      title={isExportGateIn(m)
+                        ? `Export gate-in: loading at ${val(m.pol)} for ${val(m.final_pod)}`
+                        : `Import gate-out: discharged from ${val(m.pol)} at ${val(m.final_pod)}`}
+                      style={{
+                        ['--calcite-chip-text-color' as never]:
+                          isExportGateIn(m) ? tokens.flow.EXPORT : tokens.flow.IMPORT,
+                      }}
+                    >
+                      {isExportGateIn(m) ? 'Export in' : 'Import out'}
+                    </CalciteChip>
+                  </CalciteTableCell>
                   <CalciteTableCell>{val(m.gate_no)}</CalciteTableCell>
                   <CalciteTableCell>{val(m.gate_pass_no)}</CalciteTableCell>
                   <CalciteTableCell>{fmtTs(m.gate_pass_ts)}</CalciteTableCell>

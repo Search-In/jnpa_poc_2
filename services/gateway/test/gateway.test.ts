@@ -45,7 +45,7 @@ describe('Gateway auth + RBAC', () => {
     const r = await gw().handle('GET', '/api/kpis', bearer('DTCCC_ADMIN'), undefined);
     expect(r.status).toBe(200);
     expect(Array.isArray(r.body)).toBe(true);
-    expect((r.body as unknown[]).length).toBe(10);
+    expect((r.body as unknown[]).length).toBe(11);
   });
 
   it('scopes facilities by role (CFS_OPERATOR sees only CFS)', async () => {

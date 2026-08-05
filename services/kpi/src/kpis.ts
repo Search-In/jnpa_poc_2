@@ -3,14 +3,16 @@
  * function of its slice of KpiInputs + the baseline. Worked examples in
  * docs/KPI_DEFINITIONS.md.
  */
-import type { KpiResult } from '@jnpa/schemas';
+import type { DwellBranchStats, KpiResult } from '@jnpa/schemas';
 import type { KpiInputs } from './types.js';
 import {
   buildTrend,
   hoursBetween,
   makeResult,
   mean,
+  median,
   minutesBetween,
+  percentile,
   round,
 } from './helpers.js';
 
@@ -241,6 +243,80 @@ export function gateTransactionTime(inp: KpiInputs): KpiResult {
     higherIsBetter: false,
     trend: buildTrend(series, TREND(inp)),
   });
+}
+
+/**
+ * Container Dwell (WS4 KPI #9, supporting) — **median + P90 per branch, never a
+ * bare mean.**
+ *
+ * The spec is explicit about the form because a mean hides the population that
+ * actually costs money: the long-tail boxes (usually customs-held or DO-less).
+ * P90 is what surfaces them, so this KPI deliberately never computes a mean —
+ * `value` carries the overall median so a generic tile stays truthful.
+ *
+ * Dwell per container = first event → the event that ends its stay
+ * (GATE_OUT / RAIL_OUT / ITRHO_IN), or → `asOf` for a box still in port. Branch
+ * comes from `Container.originStream`, which is already exactly the
+ * import/export/transship × CFS/ICD/DPD split the spec names.
+ *
+ * Containers with a single event contribute a 0 h dwell rather than being
+ * dropped — a box that has only just arrived is genuinely at zero dwell, and
+ * silently excluding it would bias both percentiles upward.
+ */
+export function containerDwell(inp: KpiInputs): KpiResult {
+  const TERMINAL = new Set(['GATE_OUT', 'RAIL_OUT', 'ITRHO_IN']);
+  const span = new Map<string, { first: string; last: string; ended: boolean }>();
+  for (const e of inp.events) {
+    const cur = span.get(e.containerNo);
+    if (!cur) {
+      span.set(e.containerNo, { first: e.ts, last: e.ts, ended: TERMINAL.has(e.eventType) });
+      continue;
+    }
+    if (e.ts < cur.first) cur.first = e.ts;
+    if (e.ts > cur.last) {
+      cur.last = e.ts;
+      cur.ended = TERMINAL.has(e.eventType);
+    }
+  }
+
+  const streamOf = new Map(inp.containers.map((c) => [c.containerNo, c.originStream as string]));
+  const all: number[] = [];
+  const byBranchHours = new Map<string, number[]>();
+
+  for (const [containerNo, s] of span) {
+    const hours = Math.max(0, hoursBetween(s.first, s.ended ? s.last : inp.asOf));
+    all.push(hours);
+    const branch = streamOf.get(containerNo) ?? 'UNKNOWN';
+    const bucket = byBranchHours.get(branch);
+    if (bucket) bucket.push(hours);
+    else byBranchHours.set(branch, [hours]);
+  }
+
+  const byBranch: DwellBranchStats[] = [...byBranchHours.entries()]
+    .map(([branch, xs]) => ({
+      branch,
+      median: round(median(xs)),
+      p90: round(percentile(xs, 0.9)),
+      count: xs.length,
+    }))
+    .sort((a, b) => b.p90 - a.p90); // worst tail first — that is the actionable end
+
+  const result = makeResult({
+    key: 'containerDwell',
+    label: 'Container Dwell (median · P90)',
+    value: median(all),
+    unit: 'h',
+    baseline: baselineOf(inp, 'containerDwell'),
+    higherIsBetter: false,
+    trend: [],
+  });
+  result.distribution = {
+    median: round(median(all)),
+    p90: round(percentile(all, 0.9)),
+    count: all.length,
+    byBranch,
+  };
+  return result;
 }
 
 /** Container pendency CFS/ICD-wise — current count awaiting move, per facility. */

@@ -490,6 +490,17 @@ export interface IgmContainer {
   goods_description?: string | null;
   /** RMS flagged this line for scanning (SELECTED_SCAN=Y on the manifest). */
   selected_scan?: boolean | null;
+  /**
+   * IMDG hazard class as declared on the manifest line, e.g. "3", "8", "5.1".
+   * **218** of the 4,276 manifest lines carry a real class; the rest declare the
+   * sentinel `ZZZ` ("none"), which the backend normalises to NULL.
+   *
+   * Null/blank means the line was not declared hazardous — it does NOT mean
+   * "unknown", so absence must render as ordinary cargo, never as a warning.
+   * Treat `ZZZ` as absent too: a backend that has not yet picked up the
+   * normalisation will still send it. Drives the WS1 EC-4 hazardous flow.
+   */
+  imdg_class?: string | null;
   // -- RMS scanner assignment, present only when a scanning-division list
   //    actually selected this container --------------------------------------
   /** Scanner class: "D" (drive-through) or "M" (mobile). */
@@ -759,6 +770,14 @@ export interface GateMovement {
   vcn?: string | null;
   imo_no?: string | null;
   /** Shipping agent code on the CODECO header. */
+  /**
+   * ⚠ The CONTAINER-level party (CODECO `CACode`), NOT the header shipping agent
+   * (`ShippingAgentCode`) — the two differ on 3 of the 5 corpus messages, and
+   * `core.codeco_movement` has no column for the header value, so it is not
+   * persisted. It is the HEADER agent that joins to the berthing report; do not
+   * label this field "Agent" without qualification. See
+   * markdowns/04_Export_Build_Plan.md §2.4.
+   */
   agent_code?: string | null;
   /** FCL / MTY (empty). */
   equipment_status?: string | null;
@@ -840,6 +859,390 @@ export interface RmsScanContainer {
   /** CFS/ICD the box is bound for. */
   cfs_name?: string | null;
   goods_description?: string | null;
+}
+
+// ---- Export customs documents: Shipping Bill, LEO, SMTP --------------------
+//
+// The three customs document families named in WS4 §2 ("Customs views: IGM,
+// Shipping Bill, LEO, OOC, SMTP") that had no client until now. Served by POC-3:
+//   GET /api/customs/shipping-bills  -> export declarations
+//   GET /api/customs/leo             -> Let Export Orders
+//   GET /api/customs/smtp            -> Sub-Manifest Transhipment Permits (CHPOI13)
+//
+// ⚠ Shipping Bill and LEO DO NOT JOIN in this dataset. The filed SBs are June
+// 2026 numbered 4.00–4.04M; the LEOs are April 2026 numbered 2.05–2.38M; the
+// intersection on `sb_no` is empty (verified against the live DB). They are two
+// disjoint document sets, not two ends of one chain — the UI must say so rather
+// than implying a join. See markdowns/04_Export_Build_Plan.md §3.3.
+
+/** One filed export declaration, from `GET /api/customs/shipping-bills`. */
+export interface ShippingBillRecord {
+  /** Shipping bill number, e.g. 4014226. */
+  sb_no: number | string;
+  sb_date?: string | null;
+  /** Filing site, e.g. INJNP1. */
+  site_id?: string | null;
+}
+
+/** One Let Export Order, from `GET /api/customs/leo`. */
+export interface LeoRecord {
+  /** The shipping bill the LEO was granted against. */
+  sb_no: number | string;
+  sb_date?: string | null;
+  site_id?: string | null;
+  /** Vessel rotation number, e.g. 1180983. */
+  rotation_no?: string | null;
+  /** Date the Let Export Order was granted — the customs-clearance timestamp. */
+  leo_date?: string | null;
+}
+
+/** One Sub-Manifest Transhipment Permit (ICEGATE CHPOI13). */
+export interface SmtpRecord {
+  /** Permit number, e.g. 2697411. */
+  smtp_no: number | string;
+  smtp_date?: string | null;
+  /** Manifest the permit was raised against. */
+  igm_no?: number | string | null;
+  igm_date?: string | null;
+  /** Destination ICD code, e.g. INDHA6. */
+  destination_code?: string | null;
+  /** Carrier PAN. */
+  carrier_code?: string | null;
+  bond_no?: string | null;
+  terminal_operator_code?: string | null;
+  /**
+   * Containers named on the permit, derived by the backend from
+   * `core.smtp_container`. There is no per-permit container endpoint yet, so
+   * this is a count only — do not render it as a drill-down.
+   */
+  line_count?: number | null;
+}
+
+// ---- Export-chain steps that had no read endpoint --------------------------
+//
+//   GET /api/export-chain/form11              rail pre-advice
+//   GET /api/export-chain/load-list           COPRAR
+//   GET /api/export-chain/load-confirmations  COARRI
+//   GET /api/export-chain/synthetic           SYNTHETIC end-to-end chains
+//   GET /api/marine/calls                     departures (already existed; carries `atd`)
+
+/** Form 11 — the rail-origin export pre-advice. ⚠ One row per source workbook. */
+export interface Form11Entry {
+  form11_id: number;
+  template?: string | null;
+  /** Terminal vessel visit / VIA. */
+  visit_no?: string | null;
+  container_no?: string | null;
+  iso_code?: string | null;
+  size_ft?: number | null;
+  booking_no?: string | null;
+  preadvice_type?: string | null;
+  trade_type?: string | null;
+  /** 'R' = rail. */
+  arrival_mode?: string | null;
+  origin_port?: string | null;
+  pod?: string | null;
+  final_destination?: string | null;
+  origin_type?: string | null;
+  vgm_kg?: number | string | null;
+  commodity?: string | null;
+  line_code?: string | null;
+  status?: string | null;
+  line_seal?: string | null;
+  customs_seal?: string | null;
+  extras?: unknown;
+}
+
+/** One COPRAR line — a container ordered for loading. ⚠ Corpus sample is Kolkata/Haldia. */
+export interface CoprarItem {
+  id: number;
+  vcn?: string | null;
+  voyage_no?: string | null;
+  rotation_no?: string | null;
+  container_no?: string | null;
+  equipment_status?: string | null;
+  container_status?: string | null;
+  iso_code?: string | null;
+  tare_weight?: number | string | null;
+  gross_weight?: number | string | null;
+  port_of_origin?: string | null;
+  pol?: string | null;
+  pod?: string | null;
+  final_pod?: string | null;
+  igm_line_no?: number | null;
+  igm_subline_no?: number | null;
+  cargo_type?: string | null;
+  imdg_class?: string | null;
+  disposal_mode?: string | null;
+  arrival_mode?: string | null;
+}
+
+/** One COARRI move — what was actually loaded/discharged. ⚠ Corpus sample is Vizag. */
+export interface CoarriMove {
+  id: number;
+  vcn?: string | null;
+  imo_no?: string | null;
+  terminal_code?: string | null;
+  container_no?: string | null;
+  equipment_status?: string | null;
+  line_code?: string | null;
+  iso_code?: string | null;
+  customs_seal?: string | null;
+  shipper_seal?: string | null;
+  icd_indicator?: string | null;
+  shipped_ts?: string | null;
+  landed_ts?: string | null;
+  berthing_ts?: string | null;
+  /** Damage recorded at the move. */
+  damage_flag?: string | null;
+  damage_desc?: string | null;
+}
+
+/**
+ * A vessel's gate-open → cut-off window — the precondition of WS1 edge case EC-1.
+ *
+ * ⚠ VESSEL-LEVEL ONLY. EC-1 as specified is a per-container shutout-risk list, and
+ * that is NOT derivable here: no container in the corpus reaches a vessel with a
+ * cut-off. The export advance lists' vessel visits (KMIS0276, S0071, KMIR3458,
+ * KMRA/R3494) appear in neither `core.berthing_report_vessel` nor
+ * `core.vessel_call` — all three join paths return zero. Do not add a
+ * "containers at risk" column; it would be empty on every row.
+ *
+ * Only NSICT and NSIGT publish these times, so this covers 139 of 775 vessel
+ * rows, 46 of which carry a cut-off.
+ */
+export interface VesselCutoff {
+  id: number;
+  vessel_name?: string | null;
+  via_no?: string | null;
+  section?: string | null;
+  eta?: string | null;
+  /** When the terminal opened its gate for this call's export cargo. */
+  gate_open_ts?: string | null;
+  /** Dry-cargo cut-off — the deadline EC-1 measures a scan ETA against. */
+  cutoff_dry_ts?: string | null;
+  /** Reefer cut-off, usually later than dry. */
+  cutoff_reefer_ts?: string | null;
+  service?: string | null;
+  line_code?: string | null;
+  report_date?: string | null;
+  terminal_code?: string | null;
+}
+
+/** A vessel departure — `atd` from core.vessel_call, the final export step. */
+export interface VesselDeparture {
+  call_id?: number | null;
+  vcn?: string | null;
+  via_no?: string | null;
+  vessel_name?: string | null;
+  imo_no?: string | null;
+  voyage_no?: string | null;
+  terminal_code?: string | null;
+  eta?: string | null;
+  etd?: string | null;
+  ata?: string | null;
+  /** Actual time of departure — populated from the VESDEP messages. */
+  atd?: string | null;
+  status?: string | null;
+}
+
+/** One step on a synthetic chain. */
+export interface SyntheticChainStep {
+  step_no: number;
+  step_code: string;
+  step_label: string;
+  event_ts: string;
+  doc_ref?: string | null;
+}
+
+/**
+ * ⚠⚠ SYNTHETIC — generated demo data, NOT customer data.
+ * Exists only because no real container traverses the full export lifecycle.
+ * Container prefix `SYNU` is not an allocated BIC owner code. Any view rendering
+ * these MUST carry a visible synthetic badge.
+ */
+export interface SyntheticChain {
+  container_no: string;
+  iso_code?: string | null;
+  line_code?: string | null;
+  booking_no?: string | null;
+  origin_port?: string | null;
+  origin_type?: string | null;
+  arrival_mode?: string | null;
+  cfs_name?: string | null;
+  transporter?: string | null;
+  truck_no?: string | null;
+  pod?: string | null;
+  vgm_kg?: number | string | null;
+  line_seal?: string | null;
+  customs_seal?: string | null;
+  shipping_bill_no?: number | string | null;
+  shipping_bill_date?: string | null;
+  leo_no?: number | string | null;
+  leo_date?: string | null;
+  leo_rotation_no?: string | null;
+  gate_pass_no?: string | null;
+  gate_no?: string | null;
+  /** REAL vessel call this synthetic chain terminates in. */
+  vcn?: string | null;
+  vessel_name?: string | null;
+  via_no?: string | null;
+  /** REAL departure timestamp — verifiable against core.vessel_call.atd. */
+  departed_at?: string | null;
+  steps?: SyntheticChainStep[];
+}
+
+// ---- Parsed source gate documents ------------------------------------------
+//
+// The customer's own gate documents — Form 13, EIR and PIN tickets — parsed
+// verbatim from the shared corpus, with the full as-filed payload in `attrs`.
+//   GET /api/gate-docs/documents
+//
+// ⚠ NOT the same store as `GET /api/gate-docs/form13`, which reads
+// `core.gate_capture` — 202 of those 203 rows are seeded (`source_mode='sim'`)
+// and carry synthetic shipping-bill numbers. These 13 are real. Use this
+// endpoint wherever a document is shown as evidence.
+
+/** One parsed source gate document (Form 13 / EIR / PIN ticket). */
+export interface SourceGateDocument {
+  doc_id: number;
+  /** 'FORM13' | 'EIR' | 'PIN_TICKET'. */
+  doc_category: string;
+  /** Which physical document this was, e.g. form13_nsict_egate. */
+  doc_variant?: string | null;
+  /** The document's own reference (e-gate number, EIR number, approval no). */
+  doc_ref?: string | null;
+  pin_no?: string | null;
+  visit_id?: string | null;
+  doc_ts?: string | null;
+  container_no?: string | null;
+  iso_code?: string | null;
+  load_status?: string | null;
+  gross_weight_kg?: number | string | null;
+  seal1?: string | null;
+  seal2?: string | null;
+  vehicle_no?: string | null;
+  bat_no?: string | null;
+  driver_name?: string | null;
+  driver_licence?: string | null;
+  transporter_name?: string | null;
+  truck_in_ts?: string | null;
+  truck_out_ts?: string | null;
+  gate_no?: string | null;
+  yard_position?: string | null;
+  vessel_name?: string | null;
+  voyage?: string | null;
+  pol?: string | null;
+  pod?: string | null;
+  booking_no?: string | null;
+  cfs?: string | null;
+  group_code?: string | null;
+  /**
+   * Every field as it appeared on the document, keyed by the source label.
+   * This is the "as filed" record — render it verbatim rather than remapping.
+   */
+  attrs?: Record<string, unknown> | null;
+}
+
+// ---- Shipping-line advance lists (IAL / EAL) -------------------------------
+//
+// The terminal load list. `list_type = 'EAL'` is the export side — the containers
+// a line has declared to a terminal for a named vessel visit; 'IAL' is the import
+// equivalent. Served by POC-3:
+//   GET /api/shipping-lines?list_type=EAL&terminal=…&container=…
+//
+// 5,743 EAL rows across 5 terminal visits. ⚠ The BMCT list carries no vessel
+// column at all (`vessel_visit` is null on all 588 of its rows) — that is how the
+// file was supplied, not a parse failure, so the UI must show it as "not stated"
+// rather than dropping those rows or inventing a visit.
+
+/** One line on a shipping-line advance list (IAL import / EAL export). */
+export interface AdvanceListContainer {
+  id?: number;
+  /** 'EAL' (export) or 'IAL' (import). */
+  list_type?: string | null;
+  /** Terminal code, e.g. NSICT. */
+  terminal?: string | null;
+  container_no: string;
+  iso_code?: string | null;
+  /** False when the container number fails ISO 6346 check-digit validation. */
+  container_valid_iso?: boolean | null;
+  /** 'FULL' or 'EMPTY'. */
+  freight_kind?: string | null;
+  /** Cargo category as filed, e.g. 'E' export, 'T' transhipment. */
+  category?: string | null;
+  /** Decimal STRING on the wire (Postgres numeric). */
+  gross_weight_kg?: number | string | null;
+  weight_source_uom?: string | null;
+  pol?: string | null;
+  pod?: string | null;
+  destination?: string | null;
+  shipping_line_code?: string | null;
+  /** Terminal vessel visit / VIA, e.g. S0071. Null on the BMCT list — see above. */
+  vessel_visit?: string | null;
+  voyage?: string | null;
+  bill_of_lading?: string | null;
+  seal_no?: string | null;
+  reefer_status?: string | null;
+  reefer_temp?: number | string | null;
+  /** IMDG class from the DG slot, when the line declared one. */
+  imdg_code?: string | null;
+  un_number?: string | null;
+  group_code?: string | null;
+  client_code?: string | null;
+  departure_mode?: string | null;
+  nominated_cfs?: string | null;
+  iec_code?: string | null;
+  gst_no?: string | null;
+  commodity_code?: string | null;
+}
+
+/** Filters accepted by `GET /api/shipping-lines`. */
+export interface AdvanceListFilter {
+  list_type?: 'EAL' | 'IAL';
+  terminal?: string;
+  category?: string;
+  freight_kind?: string;
+  shipping_line?: string;
+  container?: string;
+  bl?: string;
+  /** Free-text search across the indexed columns. */
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+// ---- Terminal yard / pendency snapshot (WS1 EC-3) --------------------------
+//
+// The detection signal for the yard-congestion edge case: yard utilisation per
+// terminal plus the pendency ledger. Parsed from the JNPA daily status reports.
+//   GET /api/performance/daily/status
+//
+// `terminal_code = 'TOTAL'` is a port-wide roll-up row, NOT a terminal — filter
+// it out of any per-terminal list or it double-counts.
+
+/** One terminal's yard / gate / pendency snapshot for one report date. */
+export interface TerminalYardStatus {
+  report_date: string;
+  /** Terminal code, e.g. NSICT — or 'TOTAL' for the port-wide roll-up row. */
+  terminal_code: string;
+  /** Numerics arrive as decimal STRINGS (Postgres numeric) — coerce before maths. */
+  yard_occupancy_pct?: number | string | null;
+  yard_total_teus?: number | string | null;
+  yard_usable_capacity_teus?: number | string | null;
+  yard_import_teus?: number | string | null;
+  yard_export_teus?: number | string | null;
+  yard_transhipment_teus?: number | string | null;
+  /** Pendency awaiting rail evacuation. */
+  icd_pendency_teus?: number | string | null;
+  /** Pendency awaiting CFS evacuation. */
+  cfs_pendency_teus?: number | string | null;
+  gate_in_teus?: number | string | null;
+  gate_out_teus?: number | string | null;
+  gate_total_teus?: number | string | null;
+  reefer_total_slots?: number | null;
+  reefer_occupied_slots?: number | null;
+  reefer_available_slots?: number | null;
 }
 
 // ---- CFS / ECY off-dock gate movements -------------------------------------
@@ -1049,6 +1452,35 @@ export interface DataAdapter {
   getGateMovementGates?(): Promise<GateMovementGate[]>;
   /** CODECO gate-out movements, optionally for one gate (`GET /api/shipping-lines/gate-movements`). Optional: POC-3 path only. */
   getGateMovements?(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]>;
+
+  /** Form 11 rail pre-advice (`GET /api/export-chain/form11`). Optional: POC-3 path only. */
+  getForm11?(container?: string): Promise<Form11Entry[]>;
+  /** COPRAR advance load list (`GET /api/export-chain/load-list`). Optional: POC-3 path only. */
+  getCoprarItems?(): Promise<CoprarItem[]>;
+  /** COARRI load confirmations (`GET /api/export-chain/load-confirmations`). Optional: POC-3 path only. */
+  getCoarriMoves?(): Promise<CoarriMove[]>;
+  /** Vessel gate-open / cut-off windows (`GET /api/export-chain/cutoffs`). Optional: POC-3 path only. */
+  getVesselCutoffs?(): Promise<VesselCutoff[]>;
+  /** Vessel departures with a real `atd` (`GET /api/marine/calls`). Optional: POC-3 path only. */
+  getVesselDepartures?(): Promise<VesselDeparture[]>;
+  /** ⚠ SYNTHETIC end-to-end chains (`GET /api/export-chain/synthetic`). Optional: POC-3 path only. */
+  getSyntheticChains?(): Promise<SyntheticChain[]>;
+
+  /** Parsed source gate documents, as filed (`GET /api/gate-docs/documents`). Optional: POC-3 path only. */
+  getSourceGateDocuments?(category?: string, container?: string): Promise<SourceGateDocument[]>;
+
+  /** Shipping-line advance-list lines, IAL or EAL (`GET /api/shipping-lines`). Optional: POC-3 path only. */
+  getAdvanceList?(filter?: AdvanceListFilter): Promise<AdvanceListContainer[]>;
+
+  /** Per-terminal yard / pendency snapshot (`GET /api/performance/daily/status`). Optional: POC-3 path only. */
+  getTerminalYardStatus?(reportDate?: string): Promise<TerminalYardStatus[]>;
+
+  /** Filed export declarations (`GET /api/customs/shipping-bills`). Optional: POC-3 path only. */
+  getShippingBills?(filter?: IgmContainerFilter): Promise<ShippingBillRecord[]>;
+  /** Let Export Orders (`GET /api/customs/leo`). Optional: POC-3 path only. */
+  getLeoRecords?(filter?: IgmContainerFilter): Promise<LeoRecord[]>;
+  /** Sub-Manifest Transhipment Permits (`GET /api/customs/smtp`). Optional: POC-3 path only. */
+  getSmtpRecords?(filter?: IgmContainerFilter): Promise<SmtpRecord[]>;
 
   /** Off-dock CFS/ECY throughput + dwell aggregates (`GET /api/cfs-ecy/stats`). Optional: POC-3 path only. */
   getCfsEcyStats?(facility?: CfsEcyFacility): Promise<CfsEcyStats>;

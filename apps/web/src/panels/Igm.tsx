@@ -37,6 +37,21 @@ import { tokens } from '../theme/tokens.js';
 const val = (v: unknown): string =>
   v === null || v === undefined || v === '' ? '—' : String(v);
 
+/**
+ * The declared IMDG class, or null when the line is not hazardous.
+ *
+ * `ZZZ` is the manifest's sentinel for "no class declared" and covers 4,058 of
+ * the 4,276 lines in the corpus — passing it through paints every ordinary
+ * container with a hazard warning. The backend now normalises it to NULL
+ * (`NULLIF(l.imdg_class,'ZZZ')`); this is the client-side guard so a gateway
+ * that has not picked that up yet still renders correctly.
+ */
+function hazardClass(v?: string | null): string | null {
+  const s = (v ?? '').trim();
+  if (!s || s.toUpperCase() === 'ZZZ') return null;
+  return s;
+}
+
 /** ISO date/timestamp → local display. Invalid/absent input falls back to an em-dash. */
 function fmtDate(v?: string | null, withTime = false): string {
   if (!v) return '—';
@@ -193,6 +208,7 @@ function ContainerDrawer({ manifest, onClose }: { manifest: IgmManifest; onClose
                       'Weight Unit': c.unit_of_weight,
                       'Goods Description': c.goods_description,
                       'Selected for Scan': c.selected_scan,
+                      'IMDG Class': hazardClass(c.imdg_class) ?? '',
                     }))}
                     filename={`igm-${igmNo}-containers.csv`}
                   />
@@ -223,6 +239,7 @@ function ContainerDrawer({ manifest, onClose }: { manifest: IgmManifest; onClose
                       <CalciteTableHeader heading="BL No" />
                       <CalciteTableHeader heading="POL → POD" />
                       <CalciteTableHeader heading="Importer" />
+                      <CalciteTableHeader heading="IMDG" />
                       <CalciteTableHeader heading="Scan" />
                     </CalciteTableRow>
                     {rows.map((c) => (
@@ -255,6 +272,30 @@ function ContainerDrawer({ manifest, onClose }: { manifest: IgmManifest; onClose
                         </CalciteTableCell>
                         <CalciteTableCell title={c.goods_description ?? undefined}>
                           {val(c.importer_name)}
+                        </CalciteTableCell>
+                        <CalciteTableCell>
+                          {/* IMDG hazard class as declared on the manifest line
+                              (WS1 EC-4). A blank class means "not declared
+                              hazardous", which is ordinary cargo — so it renders
+                              as an em dash, never as a caution.
+                              `hazardClass()` also drops the 'ZZZ' sentinel, which
+                              the backend normalises away but an un-restarted
+                              gateway still sends — without it every container
+                              renders as hazardous. */}
+                          {(() => {
+                            const hz = hazardClass(c.imdg_class);
+                            return hz ? (
+                              <CalciteChip
+                                scale="s"
+                                icon="exclamation-mark-triangle"
+                                value={hz}
+                                title={`Declared IMDG class ${hz} — hazardous. Segregation and dwell rules apply.`}
+                                style={{ ['--calcite-chip-text-color' as never]: tokens.severity.WARN }}
+                              >
+                                {hz}
+                              </CalciteChip>
+                            ) : '—';
+                          })()}
                         </CalciteTableCell>
                         <CalciteTableCell>
                           {/* Machine code when a scanning-division list assigned one,

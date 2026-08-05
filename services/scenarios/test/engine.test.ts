@@ -18,8 +18,8 @@ describe('ScenarioEngine', () => {
     const e = engine();
     for (const id of ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']) {
       const r = e.run(id);
-      expect(r.before.length).toBe(10);
-      expect(r.after.length).toBe(10);
+      expect(r.before.length).toBe(11);
+      expect(r.after.length).toBe(11);
       expect(r.actions.length).toBeGreaterThan(0);
       expect(r.after.some((k, i) => k.value !== r.before[i]!.value)).toBe(true);
     }
@@ -29,7 +29,7 @@ describe('ScenarioEngine', () => {
     const e = engine();
     for (const id of ['CGO-1', 'CGO-2', 'CGO-3', 'LANE-ASSIGN']) {
       const r = e.run(id);
-      expect(r.before.length).toBe(10);
+      expect(r.before.length).toBe(11);
       expect(r.actions.length).toBeGreaterThan(0);
     }
   });

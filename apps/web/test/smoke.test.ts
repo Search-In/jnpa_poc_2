@@ -36,7 +36,7 @@ describe('web → adapter wiring (mock)', () => {
     });
     expect(adapter.mode).toBe('mock');
     const kpis = await adapter.getKPIs();
-    expect(kpis.length).toBe(10);
+    expect(kpis.length).toBe(11);
     const terminals = await adapter.getTerminals();
     expect(terminals.length).toBe(5);
   });
