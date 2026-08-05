@@ -123,6 +123,13 @@ export interface Poc3CargoAdapterDeps {
   setToken?: (token: string | undefined) => void;
   /** Re-mint a POC-3 JWT (called once on a 401 before retrying the request). */
   refreshToken?: () => Promise<string | undefined>;
+  /**
+   * Current data-SOURCE mode — the provenance filter the backend applies via the
+   * `X-Data-Mode` header. 'LIVE' returns JNPA-API-sourced rows, 'DEMO' the
+   * manually-imported pre-loaded rows. When omitted (or it returns undefined) no
+   * header is sent and the backend leaves the data unfiltered.
+   */
+  getDataMode?: () => 'LIVE' | 'DEMO' | undefined;
   fetchImpl?: typeof fetch;
 }
 
@@ -132,6 +139,7 @@ export class Poc3CargoAdapter implements DataAdapter {
   private getToken: () => string | undefined;
   private setToken: (token: string | undefined) => void;
   private refreshToken?: () => Promise<string | undefined>;
+  private getDataMode: () => 'LIVE' | 'DEMO' | undefined;
   private fetchImpl: typeof fetch;
 
   constructor(base: DataAdapter, deps: Poc3CargoAdapterDeps) {
@@ -140,6 +148,7 @@ export class Poc3CargoAdapter implements DataAdapter {
     this.getToken = deps.getToken ?? (() => undefined);
     this.setToken = deps.setToken ?? (() => {});
     this.refreshToken = deps.refreshToken;
+    this.getDataMode = deps.getDataMode ?? (() => undefined);
     // Keep `fetch` bound to its global (a bare property call throws "Illegal
     // invocation" in the browser). Mirrors LiveAdapter.
     this.fetchImpl = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
@@ -174,12 +183,16 @@ export class Poc3CargoAdapter implements DataAdapter {
     opts: { query?: Record<string, string | undefined>; body?: unknown } = {},
   ): Promise<Response> {
     const url = this.buildUrl(path, opts.query);
+    // Data-source provenance filter (LIVE = JNPA-API rows, DEMO = pre-loaded).
+    // Omitted when unset so the backend leaves the data unfiltered.
+    const dataMode = this.getDataMode();
     const send = (token: string | undefined) =>
       this.fetchImpl(url, {
         method,
         headers: {
           ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(dataMode ? { 'x-data-mode': dataMode } : {}),
         },
         ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
       });

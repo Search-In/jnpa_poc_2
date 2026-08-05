@@ -49,6 +49,7 @@ import { getScript, type TabId } from './sim/scenarioPlayer.js';
 import { IntegrationConsole } from './console/IntegrationConsole.js';
 import { faultStore } from './console/faultStore.js';
 import { useFaultStore } from './console/useFaultStore.js';
+import { DataSourceToggle } from './components/DataSourceToggle.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
@@ -199,6 +200,9 @@ export function Dashboard() {
           description={`JNPA UC2 · ${adapter.mode.toUpperCase()} mode`}
         />
         <div slot="content-end" style={{ display: 'flex', gap: 16, alignItems: 'center', paddingInline: 16 }}>
+          {/* Data-SOURCE toggle (LIVE JNPA-API rows | DEMO pre-loaded rows). Injects
+              the X-Data-Mode header on every cargo request; separate from DATA_MODE. */}
+          <DataSourceToggle />
           {hasSimOverrides(sim) && (
             <CalciteChip value="sim" kind="brand" icon={sim.running ? 'play-f' : 'pause-f'}>
               SIM {sim.running ? 'LIVE' : 'PAUSED'}
