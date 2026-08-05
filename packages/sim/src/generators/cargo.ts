@@ -38,18 +38,6 @@ const ISO_TYPES: Record<ContainerSizeFt, string[]> = {
 const IMPORT_STREAMS: OriginStream[] = ['IMPORT_CFS', 'IMPORT_ICD', 'IMPORT_DPD'];
 const EXPORT_STREAMS: OriginStream[] = ['EXPORT_CFS', 'EXPORT_ICD', 'EXPORT_DPE'];
 
-/** Fixed demo boxes for Manage → Track (public NLDS/LDB samples). Pinned by index. */
-const DEMO_LDB_CONTAINERS: ReadonlyArray<{
-  containerNo: string;
-  lineOwner: string;
-  originStream: OriginStream;
-  sizeFt: ContainerSizeFt;
-  isoTypeCode: string;
-}> = [
-  { containerNo: 'CCLU7468361', lineOwner: 'CCLU', originStream: 'IMPORT_DPD', sizeFt: 40, isoTypeCode: '45G1' },
-  { containerNo: 'SEGU5833837', lineOwner: 'SEGU', originStream: 'IMPORT_CFS', sizeFt: 40, isoTypeCode: '45G1' },
-];
-
 export interface CargoDataset {
   containers: Container[];
   events: CargoEvent[];
@@ -125,31 +113,20 @@ export function generateCargo(world: World, opts: CargoGenOptions): CargoDataset
   const iso = (ms: number) => new Date(ms).toISOString();
 
   for (let i = 0; i < count; i++) {
-    // Consume RNG in the same order every index (Addendum B.2 determinism), then
-    // pin early rows to public NLDS/LDB samples so Manage → Track has live hits.
-    const generatedNo = makeContainerNo(rng);
-    const isImportRoll = rng.bool(0.55);
-    const isTransshipRoll = rng.bool(0.12);
-    const originStreamRoll: OriginStream = isTransshipRoll
+    const containerNo = makeContainerNo(rng);
+    const isImport = rng.bool(0.55);
+    const isTransship = rng.bool(0.12);
+    const originStream: OriginStream = isTransship
       ? 'TRANSSHIP'
-      : isImportRoll
+      : isImport
         ? rng.pick(IMPORT_STREAMS)
         : rng.pick(EXPORT_STREAMS);
 
-    const sizeFtRoll = rng.pick<ContainerSizeFt>([20, 40, 45]);
-    const isoTypeCodeRoll = rng.pick(ISO_TYPES[sizeFtRoll]);
-    const lineOwnerRoll = rng.pick(LINE_CODES);
-    const terminal = rng.pick(terminals);
-
-    const demo = DEMO_LDB_CONTAINERS[i];
-    const containerNo = demo?.containerNo ?? generatedNo;
-    const isImport = demo ? true : isImportRoll;
-    const isTransship = demo ? false : isTransshipRoll;
-    const originStream: OriginStream = demo?.originStream ?? originStreamRoll;
-    const sizeFt: ContainerSizeFt = demo?.sizeFt ?? sizeFtRoll;
-    const isoTypeCode = demo?.isoTypeCode ?? isoTypeCodeRoll;
+    const sizeFt = rng.pick<ContainerSizeFt>([20, 40, 45]);
+    const isoTypeCode = rng.pick(ISO_TYPES[sizeFt]);
     const isReefer = isoTypeCode.includes('R');
-    const lineOwner = demo?.lineOwner ?? lineOwnerRoll;
+    const lineOwner = rng.pick(LINE_CODES);
+    const terminal = rng.pick(terminals);
 
     // Arrival jittered across the window.
     const arriveMs = startMs + rng.int(0, windowMs - 6 * HOUR);
