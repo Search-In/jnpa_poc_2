@@ -1,0 +1,989 @@
+{
+  "generated_at_utc": "2026-08-03T18:04:08Z",
+  "tender_ref": "GeM/2026/B/7297343",
+  "columns": [
+    "Use Case Solved",
+    "Training Data (Features)",
+    "Objective Function",
+    "Model Used",
+    "Rationale",
+    "Link to Model Weights",
+    "Validation Data",
+    "Accuracy"
+  ],
+  "cards": {
+    "UC2-M1": {
+      "module_id": "UC2-M1",
+      "module_name": "Container Dwell Prediction",
+      "model_version": "m1-dwell-v1.0.0",
+      "trained_at": "2026-08-03T18:04:02Z",
+      "use_case_solved": "Container dwell prediction -- hours a box will sit before it leaves, driving pendency optimisation and evacuation planning.",
+      "training_data_features": [
+        "stream_idx",
+        "line_idx",
+        "arrival_cadence_h",
+        "customs_flag",
+        "reefer",
+        "facility_load"
+      ],
+      "training_data_source": "Seeded synthetic generator (n=4000, seed=101) anchored to the measured CFS-CODECO dwell distribution.",
+      "objective_function": "Minimise MAE of dwell hours; post-process adds a +/-4 h departure window and empirical P10/P90.",
+      "model_used": "hist_gradient_boosting (fallback chain ['hist_gradient_boosting', 'gradient_boosting', 'random_forest', 'ridge'])",
+      "rationale": "Gradient boosting handles the mixed categorical/numeric feature set and is explainable through permutation importance; the serving path is proven end-to-end through FastAPI /predict.",
+      "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor\\model.joblib",
+      "validation_data": {
+        "headline": "Held-out synthetic slice, n=800",
+        "real_world": "CFS-CODECO paired gate events (real)"
+      },
+      "accuracy": {
+        "headline_synthetic_mae_h": 3.6908,
+        "acceptance_threshold_mae_h": 8.0,
+        "meets_threshold": true,
+        "real_corpus_mae_h": 21.3555,
+        "real_corpus_median_baseline_mae_h": 15.7418,
+        "real_corpus_beats_baseline": false
+      },
+      "disclosure": "The headline accuracy is measured on synthetic data and is labelled as such everywhere it appears. The real-corpus figure is measured on 254 genuine container stays and is published alongside it, including the case where the model loses to a median baseline.",
+      "calibration": {
+        "source": "CORPUS",
+        "degraded": false,
+        "n_observed_stays": 254,
+        "n_excluded_left_censored": 229,
+        "burn_in_cutoff": "2026-07-11T08:06:00",
+        "burn_in_cutoff_per_facility": {
+          "CFS": "2026-07-11T08:06:00",
+          "ECY": "2026-07-05T10:00:00"
+        },
+        "stats_hours": {
+          "mean_h": 50.404,
+          "median_h": 49.183,
+          "sd_h": 18.92,
+          "p10_h": 24.4,
+          "p25_h": 28.2,
+          "p75_h": 71.417,
+          "p90_h": 74.367,
+          "min_h": 21.7,
+          "max_h": 77.317,
+          "fast_mode_h": 28.2,
+          "slow_mode_h": 71.417,
+          "fast_share": 0.5
+        },
+        "note": "Generator anchored to the measured CFS-CODECO dwell distribution. Stays that gated in before the first observed gate-out are excluded as left-censored by the observation window, not as outliers."
+      },
+      "split": {
+        "policy": "chronological",
+        "ordering_field": "synthetic_arrival_ts",
+        "boundary": "2027-01-24 16:20:15",
+        "n_train": 3200,
+        "n_test": 800,
+        "test_fraction": 0.2,
+        "shuffled": false,
+        "note": "Cut at a time percentile, never shuffled. Asserted post-condition: every training row is ordered at or before every test row."
+      },
+      "feature_importance": [
+        {
+          "feature": "stream_idx",
+          "mae_increase": 28.0617,
+          "baseline_mae": 3.6908
+        },
+        {
+          "feature": "customs_flag",
+          "mae_increase": 6.8324,
+          "baseline_mae": 3.6908
+        },
+        {
+          "feature": "facility_load",
+          "mae_increase": 2.2456,
+          "baseline_mae": 3.6908
+        },
+        {
+          "feature": "arrival_cadence_h",
+          "mae_increase": 1.7305,
+          "baseline_mae": 3.6908
+        },
+        {
+          "feature": "reefer",
+          "mae_increase": 0.6791,
+          "baseline_mae": 3.6908
+        },
+        {
+          "feature": "line_idx",
+          "mae_increase": 0.5615,
+          "baseline_mae": 3.6908
+        }
+      ],
+      "engine_report": {
+        "engine": "hist_gradient_boosting",
+        "engine_chain": [
+          "hist_gradient_boosting",
+          "gradient_boosting",
+          "random_forest",
+          "ridge"
+        ],
+        "engine_trace": [
+          {
+            "engine": "hist_gradient_boosting",
+            "status": "used"
+          }
+        ],
+        "n_train": 3200,
+        "n_test": 800,
+        "seed": 101,
+        "features": [
+          "stream_idx",
+          "line_idx",
+          "arrival_cadence_h",
+          "customs_flag",
+          "reefer",
+          "facility_load"
+        ]
+      },
+      "seed": 101,
+      "reproduce": "python uc2_m1_container_dwell.py --seed 101 --n 4000 --json"
+    },
+    "UC2-M2": {
+      "module_id": "UC2-M2",
+      "module_name": "Rake TAT Forecast",
+      "model_version": "m2-rake-tat-v1.0.0",
+      "trained_at": "2026-08-03T18:04:03Z",
+      "use_case_solved": "Rake TAT forecast -- railside placement/removal ETAs and departure window, supporting the briefing's rake-assignment item.",
+      "training_data_features": [
+        "siding",
+        "cto_idx",
+        "wagon_count",
+        "arrival_hour",
+        "inbound"
+      ],
+      "training_data_source": "Deterministic handling model over a seeded generator (n=2500, seed=303) whose wagon, container and terminal distributions are measured off 7 real CTO manifests and 59 FOIS intimations.",
+      "objective_function": "Minimise MAE against the handling model; post-process derives placement at 0.25*TAT, removal at 0.8*TAT and a +/-1 h window.",
+      "model_used": "Primary: deterministic handling model (auditable coefficients). Secondary: hist_gradient_boosting.",
+      "rationale": "With no observed rake TAT anywhere in the corpus, an auditable handling model an operations manager can check by hand is worth more than a learned model fitted to a label that does not exist. The regressor proves the feature set and the serving path.",
+      "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster\\model.joblib",
+      "validation_data": {
+        "headline": "Held-out synthetic slice, n=500",
+        "real_world": "7 CTO manifests + 59 FOIS intimations -- composition only, no TAT label"
+      },
+      "accuracy": {
+        "headline_fidelity_mae_h": 0.85,
+        "metric_is_fidelity_not_accuracy": true,
+        "acceptance_threshold_mae_h": 2.0,
+        "meets_threshold": true,
+        "real_corpus_status": "exercised_not_scored"
+      },
+      "disclosure": "The headline number measures how faithfully the regressor reproduces the deterministic handling model. It is NOT accuracy against observed rake turnaround, because the shared corpus contains no such observation. The handling model's coefficients are operating assumptions, versioned in HANDLING and CTO_EFFICIENCY.",
+      "composition": {
+        "source": "CORPUS",
+        "degraded": false,
+        "n_cto_manifests": 7,
+        "n_fois_intimations": 59,
+        "stats": {
+          "wagon_count_mean": 43.286,
+          "wagon_count_min": 39.0,
+          "wagon_count_max": 45.0,
+          "containers_mean": 49.857,
+          "containers_min": 42.0,
+          "containers_max": 57.0,
+          "teu_mean": 82.571,
+          "terminals_mean": 3.571,
+          "containers_per_wagon": 1.152,
+          "fois_units_mean": 44.254,
+          "fois_units_min": 38.0,
+          "fois_units_max": 49.0,
+          "fois_loaded_share": 0.983
+        },
+        "note": "Composition is real. The TAT label is not: nothing in the corpus records rake placement, removal or departure times."
+      },
+      "split": {
+        "policy": "chronological",
+        "ordering_field": "synthetic_arrival_ts",
+        "boundary": "2027-01-04 20:07:01.925560",
+        "n_train": 2000,
+        "n_test": 500,
+        "test_fraction": 0.2,
+        "shuffled": false,
+        "note": "Cut at a time percentile, never shuffled. Asserted post-condition: every training row is ordered at or before every test row."
+      },
+      "feature_importance": [
+        {
+          "feature": "container_count",
+          "mae_increase": 0.0697,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "terminal_count",
+          "mae_increase": 0.0466,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "inbound",
+          "mae_increase": 0.0448,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "cto_idx",
+          "mae_increase": 0.0264,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "siding",
+          "mae_increase": 0.0154,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "arrival_hour",
+          "mae_increase": 0.0118,
+          "baseline_mae": 0.85
+        },
+        {
+          "feature": "wagon_count",
+          "mae_increase": -0.0067,
+          "baseline_mae": 0.85
+        }
+      ],
+      "engine_report": {
+        "engine": "hist_gradient_boosting",
+        "engine_chain": [
+          "hist_gradient_boosting",
+          "gradient_boosting",
+          "random_forest",
+          "ridge"
+        ],
+        "engine_trace": [
+          {
+            "engine": "hist_gradient_boosting",
+            "status": "used"
+          }
+        ],
+        "n_train": 2000,
+        "n_test": 500,
+        "seed": 303,
+        "features": [
+          "siding",
+          "cto_idx",
+          "wagon_count",
+          "arrival_hour",
+          "inbound",
+          "container_count",
+          "terminal_count"
+        ]
+      },
+      "seed": 303,
+      "reproduce": "python uc2_m2_rake_tat.py --seed 303 --json"
+    },
+    "UC2-M3": {
+      "module_id": "UC2-M3",
+      "module_name": "Gate Queue Forecast",
+      "model_version": "m3-gate-queue-v2.0.0",
+      "trained_at": "2026-08-03T18:04:06Z",
+      "use_case_solved": "Gate queue forecast -- next-interval queue length per gate and a deferral recommendation, supporting lane planning.",
+      "training_data_features": [
+        "queue_lag1",
+        "queue_lag2",
+        "hour_sin",
+        "hour_cos",
+        "uc3_truck_inflow"
+      ],
+      "training_data_source": "1222 hourly steps derived from 1929 real CODECO gate movements across 611 hours",
+      "objective_function": "Minimise RMSE of next-step queue length; post-process recommends deferral when queue > 8 and converts queue to an estimated wait in minutes.",
+      "model_used": "hist_gradient_boosting autoregressor",
+      "rationale": "The cross-twin uc3_truck_inflow feature demonstrates UC-II <-> UC-III interdependency. The split is chronological, which is the correction to the previously disclosed leakage defect.",
+      "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster\\model.joblib",
+      "validation_data": "Pooled across 5 rolling-origin folds, n=611 held-out steps",
+      "accuracy": {
+        "rmse": 0.9087,
+        "mae": 0.4795,
+        "r2": 0.9696,
+        "acceptance_threshold_rmse": 3.5,
+        "meets_threshold": true,
+        "persistence_baseline_rmse": 1.0186,
+        "beats_persistence": true,
+        "split_policy": "rolling-origin (expanding window)",
+        "degenerate_folds": [
+          3,
+          4
+        ]
+      },
+      "disclosure": "PREVIOUSLY DISCLOSED DEFECT, NOW FIXED. The earlier version shuffled a time series and published RMSE 0.323, which was leakage. This version splits chronologically and publishes the higher, honest number. Both figures are in metrics.leakage_check so the size of the correction is visible. Separately: the corpus records gate arrivals but no queue length, so the target is derived through a named service capacity.",
+      "series": {
+        "source": "CORPUS",
+        "degraded": false,
+        "synthetic": false,
+        "gates": [
+          "CFS",
+          "ECY"
+        ],
+        "n_steps": 1222,
+        "n_hours_per_gate": 611,
+        "span_utc": [
+          "2026-07-01T10:00:00",
+          "2026-07-26T20:00:00"
+        ],
+        "arrivals_total": 1929,
+        "stats": {
+          "arrivals_per_hour_mean": 1.579,
+          "arrivals_per_hour_max": 10.0,
+          "queue_mean": 3.52,
+          "queue_median": 0.0,
+          "queue_p90": 9.0,
+          "queue_max": 63.0,
+          "hours_above_deferral_threshold": 125.0,
+          "service_capacity_per_hour": 3.0
+        },
+        "queue_derivation": "queue[t] = max(0, queue[t-1] + arrivals[t] - 3). The corpus records gate arrivals but no queue length anywhere, so the target is a documented transform of real movements, not an observation."
+      },
+      "split": {
+        "policy": "rolling-origin (expanding window)",
+        "ordering_field": "hour_bucket",
+        "boundary": "(datetime.datetime(2026, 7, 21, 19, 0), 'CFS')",
+        "n_train": 978,
+        "n_test": 244,
+        "test_fraction": 0.1997,
+        "shuffled": false,
+        "note": "Metrics come from the rolling-origin folds, each trained only on its own past. The served model is then refit on everything, because at inference time every recorded hour really is in the past. A single tail split is reported too but is degenerate on this series -- see degenerate_folds.",
+        "n_folds": 5,
+        "serving_model_trained_on": "the full series"
+      },
+      "feature_importance": [
+        {
+          "feature": "queue_lag1",
+          "mae_increase": 5.9275,
+          "baseline_mae": 0.3955
+        },
+        {
+          "feature": "queue_lag2",
+          "mae_increase": 0.1766,
+          "baseline_mae": 0.3955
+        },
+        {
+          "feature": "hour_cos",
+          "mae_increase": 0.1382,
+          "baseline_mae": 0.3955
+        },
+        {
+          "feature": "hour_sin",
+          "mae_increase": 0.0479,
+          "baseline_mae": 0.3955
+        },
+        {
+          "feature": "uc3_truck_inflow",
+          "mae_increase": 0.0102,
+          "baseline_mae": 0.3955
+        }
+      ],
+      "feature_notes": {
+        "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+        "queue_lag2": "Derived queue two hours ago.",
+        "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+        "hour_cos": "cos(2*pi*hour/24).",
+        "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+      },
+      "engine_report": {
+        "engine": "hist_gradient_boosting",
+        "engine_chain": [
+          "hist_gradient_boosting",
+          "gradient_boosting",
+          "random_forest",
+          "ridge"
+        ],
+        "engine_trace": [
+          {
+            "engine": "hist_gradient_boosting",
+            "status": "used"
+          }
+        ],
+        "n_train": 1222,
+        "n_test": 0,
+        "seed": 202,
+        "features": [
+          "queue_lag1",
+          "queue_lag2",
+          "hour_sin",
+          "hour_cos",
+          "uc3_truck_inflow"
+        ]
+      },
+      "seed": 202,
+      "reproduce": "python uc2_m3_gate_queue.py --seed 202 --json"
+    },
+    "UC2-M4": {
+      "module_id": "UC2-M4",
+      "module_name": "Event-Sequence Anomaly Detection",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "use_case_solved": "Event-sequence anomaly detection -- stuck boxes and broken event chains, supporting pendency optimisation and alerts.",
+      "training_data_features": "Container event trails [{eventType, ts}]",
+      "training_data_source": "No training: a versioned rule engine.",
+      "objective_function": "Detect missing-sequence anomalies against the thresholds in RULES; maximise recall subject to precision >= 0.85.",
+      "model_used": "Deterministic rule engine, 6 versioned rules",
+      "rationale": "Rules give actionable, explainable alerts on day one and every finding carries the evidence that produced it. Three of the six rules were added after measuring the real corpus, where an orphan gate-out -- uncovered by the published rule set -- affects 287 of 1,202 containers.",
+      "link_to_model_weights": "No learned weights. The rule block (RULES) in this module IS the versioned configuration; served at GET /uc2/m4/rules.",
+      "validation_data": "Labelled synthetic set, n=400, seed=505, plus a full scan of 1401 real corpus containers",
+      "accuracy": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "precision_threshold": 0.85,
+        "recall_threshold": 0.85,
+        "meets_precision": true,
+        "meets_recall": true,
+        "per_rule": [
+          {
+            "ruleId": "R1",
+            "type": "ANOMALY_MISSING_GATE_OUT",
+            "severity": "CRIT",
+            "source": "spec",
+            "tp": 103,
+            "fp": 0,
+            "fn": 0,
+            "tn": 297,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          },
+          {
+            "ruleId": "R2",
+            "type": "ANOMALY_LEO_NO_MOVE",
+            "severity": "WARN",
+            "source": "spec",
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "tn": 364,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          },
+          {
+            "ruleId": "R3",
+            "type": "ANOMALY_SCAN_FLAG_NO_SCAN",
+            "severity": "WARN",
+            "source": "spec",
+            "tp": 72,
+            "fp": 0,
+            "fn": 0,
+            "tn": 328,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          },
+          {
+            "ruleId": "R4",
+            "type": "ANOMALY_ORPHAN_GATE_OUT",
+            "severity": "WARN",
+            "source": "corpus_driven",
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "tn": 364,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          },
+          {
+            "ruleId": "R5",
+            "type": "ANOMALY_NEGATIVE_DWELL",
+            "severity": "CRIT",
+            "source": "corpus_driven",
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "tn": 364,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          },
+          {
+            "ruleId": "R6",
+            "type": "ANOMALY_DWELL_OUTLIER",
+            "severity": "INFO",
+            "source": "corpus_driven",
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "tn": 364,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "exercised": true
+          }
+        ]
+      },
+      "corpus_scan": {
+        "status": "scanned",
+        "degraded": false,
+        "model_version": "m4-event-anomaly-v2.0.0",
+        "scanned_at": "2026-08-03T18:04:07Z",
+        "anchor_now": "2026-07-26T20:03:00",
+        "anchor_note": "Thresholds are measured against the last event in the corpus, not wall clock, so replaying a historical log does not flag everything in it.",
+        "containers_scanned": 1401,
+        "containers_with_findings": 1136,
+        "clean_containers": 265,
+        "finding_count": 1139,
+        "by_type": {
+          "ANOMALY_ORPHAN_GATE_OUT": 529,
+          "ANOMALY_MISSING_GATE_OUT": 408,
+          "ANOMALY_LEO_NO_MOVE": 100,
+          "ANOMALY_SCAN_FLAG_NO_SCAN": 99,
+          "ANOMALY_DWELL_OUTLIER": 3
+        },
+        "by_severity": {
+          "CRIT": 408,
+          "WARN": 728,
+          "INFO": 3
+        },
+        "dwell_p99_hours": 140.3,
+        "provenance": {
+          "source": "CORPUS",
+          "degraded": false,
+          "n_containers": 1401,
+          "events": {
+            "source": "CORPUS",
+            "degraded": false,
+            "synthetic": false,
+            "files": [
+              "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/CFS-CODECO.xlsx",
+              "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/ECY-CODECO.xlsx"
+            ],
+            "missing": [],
+            "record_count": 1929,
+            "note": "all rows parsed"
+          },
+          "scanning": {
+            "source": "CORPUS",
+            "degraded": false,
+            "synthetic": false,
+            "files": [
+              "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/1.txt",
+              "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/2.txt",
+              "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/3.txt",
+              "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/4.txt"
+            ],
+            "missing": [],
+            "record_count": 99,
+            "note": ""
+          },
+          "leo": {
+            "source": "CORPUS",
+            "degraded": false,
+            "synthetic": false,
+            "files": [
+              "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/LEO/leodetails.xlsx"
+            ],
+            "missing": [],
+            "record_count": 100,
+            "note": ""
+          },
+          "customs_flags_attached": 99,
+          "leo_trails_keyed_by_shipping_bill": 100,
+          "join_note": "The CODECO container population, the RMS scanning lists and the customs LEO file share no container numbers with each other. Trails are therefore mostly single-source, and the LEO file carries no container number at all so those trails are keyed by shipping bill. Rules that need two sources (R2, R3) consequently fire only where a real join exists."
+        },
+        "returned": 0,
+        "truncated": true
+      },
+      "disclosure": "RECALL IS NOW MEASURED. The previous version published precision 1.0 and disclosed recall as unmeasured, which made the precision figure uninformative -- a detector that fires once and stays silent also scores 1.0. Both are reported per rule. Separately, rules R2 and R3 need two sources joined on a container number, and the corpus sources do not join, so their corpus hit-rate is a property of the data rather than of the rules.",
+      "rules": [
+        {
+          "ruleId": "R1",
+          "type": "ANOMALY_MISSING_GATE_OUT",
+          "severity": "CRIT",
+          "thresholdHours": 72.0,
+          "triggerEvent": "GATE_IN",
+          "absentEvents": [
+            "GATE_OUT"
+          ],
+          "description": "Container gated in more than 72 h ago and has never gated out.",
+          "source": "spec"
+        },
+        {
+          "ruleId": "R2",
+          "type": "ANOMALY_LEO_NO_MOVE",
+          "severity": "WARN",
+          "thresholdHours": 48.0,
+          "triggerEvent": "LEO",
+          "absentEvents": [
+            "GATE_OUT",
+            "LOAD"
+          ],
+          "description": "Export cleared by customs (LEO) more than 48 h ago with no movement since.",
+          "source": "spec"
+        },
+        {
+          "ruleId": "R3",
+          "type": "ANOMALY_SCAN_FLAG_NO_SCAN",
+          "severity": "WARN",
+          "thresholdHours": 24.0,
+          "triggerEvent": "CUSTOMS_FLAG",
+          "absentEvents": [
+            "SCAN_START"
+          ],
+          "description": "Flagged for customs examination more than 24 h ago with no scan started.",
+          "source": "spec"
+        },
+        {
+          "ruleId": "R4",
+          "type": "ANOMALY_ORPHAN_GATE_OUT",
+          "severity": "WARN",
+          "thresholdHours": null,
+          "triggerEvent": "GATE_OUT",
+          "absentEvents": [
+            "GATE_IN"
+          ],
+          "description": "A gate-out with no gate-in before it -- the movement chain starts mid-way. Added after measurement: 528 of 1,202 corpus containers show this (287 with an orphan out alone, 241 with an orphan out followed by a clean pair) and the published rule set does not cover it.",
+          "source": "corpus_driven"
+        },
+        {
+          "ruleId": "R5",
+          "type": "ANOMALY_NEGATIVE_DWELL",
+          "severity": "CRIT",
+          "thresholdHours": null,
+          "triggerEvent": "GATE_OUT",
+          "absentEvents": [],
+          "description": "A single gate-in/gate-out pair whose gate-out is timestamped BEFORE its gate-in -- an impossible sequence indicating a clock or keying fault. Deliberately narrow: R4 claims the multi-event cases, so this rule only fires where a clock fault is the only remaining explanation.",
+          "source": "corpus_driven"
+        },
+        {
+          "ruleId": "R6",
+          "type": "ANOMALY_DWELL_OUTLIER",
+          "severity": "INFO",
+          "thresholdHours": null,
+          "triggerEvent": "GATE_OUT",
+          "absentEvents": [],
+          "description": "Completed dwell beyond the P99 of the observed distribution. Informational: a long stay is legal, but it is where demurrage disputes start.",
+          "source": "corpus_driven"
+        }
+      ]
+    },
+    "UC2-M5": {
+      "module_id": "UC2-M5",
+      "module_name": "Discharge-Rate & Berth-Stay Tracking",
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "use_case_solved": "Discharge-rate and berth-stay tracking -- actual versus planned, with a berth-stay re-forecast when a call deviates.",
+      "training_data_features": "TOS plan/outcome timestamps (ETA/ETD/ATA/ATD); DSR berth stays; EAL/IAL move counts per vessel visit",
+      "training_data_source": "No training: deterministic tracking and projection.",
+      "objective_function": "Report actual versus planned rate and stay; re-forecast completion on deviation using the observed rate once it is trustworthy.",
+      "model_used": "Deterministic tracking + rate-based re-forecast heuristics",
+      "rationale": "Measurement precedes prediction. The corpus has no move-level productivity history, so a crane-productivity regression would be fitted to nothing. Honest tracked actuals are exactly the training base that regression needs.",
+      "link_to_model_weights": "No learned weights. TERMINAL_CRANE_PRODUCTIVITY and BERTH_STAY_OVERHEAD_H are the versioned configuration; served at GET /uc2/m5/constants.",
+      "validation_data": "5 real TOS vessel calls with plan and outcome; 720 DSR berth stays; 6467 inventory lines across 8 terminal/direction groups",
+      "accuracy": {
+        "type": "deterministic",
+        "note": "Exact given inputs. There is no residual to report because this module measures rather than predicts; the re-forecast interval is derived from the observed spread of real berth stays, not from an assumed distribution.",
+        "observed_stay_variance": {
+          "mean": 4.73,
+          "median": 3.27,
+          "max": 16.7,
+          "min": -1.48
+        },
+        "berth_stay_spread_h": 14.98
+      },
+      "disclosure": "Discharge RATE is an assumption wherever a real move count is missing, and every such figure carries rateSource=assumption. The move counts that do exist come from the shipping-line inventories and do not join to the TOS calls, so they are reported as a terminal workload profile rather than a per-call productivity.",
+      "production_upgrade": {
+        "component": "Deterministic rate assumption",
+        "replacement": "Crane-productivity regression per vessel class and terminal",
+        "trigger": "Move-level TOS productivity feed with >= 3 months of history"
+      },
+      "provenance": {
+        "tos_calls": {
+          "source": "CORPUS",
+          "degraded": false,
+          "synthetic": false,
+          "files": [
+            "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/NLDS_FOIS_TrainIntimation_TOS/TOS File 02.xlsx",
+            "data/corpus/UC-II_Cargo_Handling/M5_Discharge_Rate_Berth_Stay/TOS_Performance/TOS File 02.xlsx"
+          ],
+          "missing": [],
+          "record_count": 5,
+          "note": ""
+        },
+        "moves": {
+          "source": "PARTIAL",
+          "degraded": true,
+          "synthetic": false,
+          "files": [
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_BMCT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_GTI.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSFT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL APMT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL BMCT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSFT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSICT.xlsx",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSIGT.xlsx"
+          ],
+          "missing": [
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSICT.xls",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSIGT.xls"
+          ],
+          "record_count": 6467,
+          "note": "Move counts are real but do not join to the TOS vessel calls: the inventories and the TOS extract cover different terminals and periods. They are reported as a terminal workload profile, not as a per-call rate.",
+          "keyed_by": "terminal/direction"
+        },
+        "berth_stays": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        }
+      }
+    },
+    "UC2-M6": {
+      "module_id": "UC2-M6",
+      "module_name": "Dynamic Lane Assignment",
+      "model_version": "m6-lane-assignment-v1.0.0",
+      "use_case_solved": "Dynamic lane assignment -- re-assign open lanes to minimise projected queue wait under a closure.",
+      "training_data_features": "Lane states and compatibility, closure events, the UC2-M3 queue forecast",
+      "training_data_source": "No training: a deterministic allocator.",
+      "objective_function": "Minimise projected queue wait subject to lane compatibility; recommend throttling when the worst wait reaches 45 min or any demand is unservable.",
+      "model_used": "Deterministic re-assignment (most-constrained-class-first)",
+      "rationale": "A re-plan must be instant and explainable to a gate supervisor mid-closure, and the corpus contains no closure history to learn a policy from. Production couples this to UC-III TAS metering.",
+      "link_to_model_weights": "No learned weights. LANES and SCENARIOS are the versioned configuration; served at GET /uc2/m6/constants.",
+      "validation_data": "Scenario regression suite: BASELINE, S4, S4B, S4C",
+      "accuracy": {
+        "type": "deterministic",
+        "note": "Exact given inputs. Feasibility is guaranteed by construction: incompatible placements are impossible and unservable demand is reported rather than silently absorbed.",
+        "s4_worst_wait_increase_min": 176.8,
+        "s4_capacity_lost_per_hour": 76.0,
+        "s4_status_change": "OK -> UNSERVABLE_DEMAND"
+      },
+      "disclosure": "Lane throughputs and the movement-class mix are operating assumptions, versioned in LANES and returned with every plan. The corpus's twelve gate documents prove the transaction types but are far too few to estimate a traffic mix from.",
+      "scenarios": {
+        "BASELINE": {
+          "scenarioId": "BASELINE",
+          "title": "All six lanes open, normal demand",
+          "closedLanes": [],
+          "demandPerHour": {
+            "IMPORT_LADEN": 42.0,
+            "EXPORT_LADEN": 38.0,
+            "EMPTY": 18.0,
+            "REEFER": 8.0,
+            "HAZARDOUS": 4.0
+          },
+          "description": "The reference plan every other scenario is compared against."
+        },
+        "S4": {
+          "scenarioId": "S4",
+          "title": "Three of six lanes closed",
+          "closedLanes": [
+            "L2",
+            "L4",
+            "L6"
+          ],
+          "demandPerHour": {
+            "IMPORT_LADEN": 42.0,
+            "EXPORT_LADEN": 38.0,
+            "EMPTY": 18.0,
+            "REEFER": 8.0,
+            "HAZARDOUS": 4.0
+          },
+          "description": "The published S4 scenario: half the gate complex is down, including the only hazardous-capable lane, at unchanged demand."
+        },
+        "S4B": {
+          "scenarioId": "S4B",
+          "title": "Three lanes closed during an import surge",
+          "closedLanes": [
+            "L2",
+            "L4",
+            "L6"
+          ],
+          "demandPerHour": {
+            "IMPORT_LADEN": 68.0,
+            "EXPORT_LADEN": 38.0,
+            "EMPTY": 24.0,
+            "REEFER": 10.0,
+            "HAZARDOUS": 4.0
+          },
+          "description": "S4 with a vessel discharge landing at the same time -- the case that actually breaks the gate."
+        },
+        "S4C": {
+          "scenarioId": "S4C",
+          "title": "Reefer lane alone is down",
+          "closedLanes": [
+            "L5"
+          ],
+          "demandPerHour": {
+            "IMPORT_LADEN": 42.0,
+            "EXPORT_LADEN": 38.0,
+            "EMPTY": 18.0,
+            "REEFER": 8.0,
+            "HAZARDOUS": 4.0
+          },
+          "description": "Losing the only powered lane. Reefer traffic has no compatible lane at all, which the allocator must report as unservable rather than hide."
+        }
+      }
+    },
+    "UC2-M7": {
+      "module_id": "UC2-M7",
+      "module_name": "Empty-Pool & Reefer Surge Management",
+      "model_version": "m7-empty-reefer-v1.0.0",
+      "use_case_solved": "Empty-pool and reefer surge management -- match empty supply to demand per terminal and prioritise reefer plugs when the bank is constrained.",
+      "training_data_features": "Empty pool by terminal and ISO type, reefer plug inventory (96 CPP plugs), discharge forecast",
+      "training_data_source": "No training: a deterministic matcher and scenario engine.",
+      "objective_function": "Match supply to demand; when plugs are constrained, allocate in ascending order of temperature hold time and report the exposure explicitly.",
+      "model_used": "Deterministic priority matcher + scenario engine",
+      "rationale": "Reefer power is a safety and commercial risk, so the response has to be rule-auditable. A learned allocator would be harder to defend to a duty manager and no more accurate -- the corpus has no plug-failure history.",
+      "link_to_model_weights": "No learned weights. CPP_REEFER_PLUGS, HOLD_HOURS_BY_SENSITIVITY and SCENARIOS are the versioned configuration; served at GET /uc2/m7/constants.",
+      "validation_data": "6467 real EAL/IAL container lines across 6 terminals (212 reefers, 1885 empties); scenario regression suite BASELINE, S6, S6B",
+      "accuracy": {
+        "type": "deterministic",
+        "note": "Exact given inputs. Conservation is asserted: allocated plus unplugged always equals arriving.",
+        "s6_shortfall": 668,
+        "s6_hours_to_first_risk": 8.0,
+        "s6_status": "AT_RISK",
+        "terminals_short_of_empties": [
+          "NSFT",
+          "APMT"
+        ]
+      },
+      "disclosure": "The pool is real. Two of the nine inventory files are legacy .xls that need xlrd and are not read -- named in the provenance on every response. Daily empty demand is proxied from export laden counts because the corpus carries no booked empty-release figure, and the cargo sensitivity mix is an assumption: ISO codes identify a reefer but not what is inside it.",
+      "pool": {
+        "source": "PARTIAL",
+        "degraded": true,
+        "totalContainers": 6467,
+        "empties": 1885,
+        "reefers": 212,
+        "emptyShare": 0.2915,
+        "reeferShare": 0.0328,
+        "byTerminal": {
+          "GTI": {
+            "total": 1765,
+            "empty": 1662,
+            "laden": 103,
+            "reefer": 3,
+            "import": 0,
+            "export": 1765
+          },
+          "NSFT": {
+            "total": 1619,
+            "empty": 0,
+            "laden": 1619,
+            "reefer": 18,
+            "import": 640,
+            "export": 979
+          },
+          "NSICT": {
+            "total": 1337,
+            "empty": 52,
+            "laden": 1285,
+            "reefer": 76,
+            "import": 1337,
+            "export": 0
+          },
+          "BMCT": {
+            "total": 1189,
+            "empty": 137,
+            "laden": 1052,
+            "reefer": 76,
+            "import": 601,
+            "export": 588
+          },
+          "NSIGT": {
+            "total": 408,
+            "empty": 34,
+            "laden": 374,
+            "reefer": 34,
+            "import": 408,
+            "export": 0
+          },
+          "APMT": {
+            "total": 149,
+            "empty": 0,
+            "laden": 149,
+            "reefer": 5,
+            "import": 149,
+            "export": 0
+          }
+        },
+        "byLine": {
+          "KMD": 923,
+          "ESA": 897,
+          "RCL": 281,
+          "KMT": 252,
+          "ONE": 238,
+          "EGI": 143,
+          "GSL": 134,
+          "TSC": 101,
+          "CCS": 79,
+          "ZIM": 64,
+          "CSS": 61,
+          "HUB": 56
+        },
+        "bySize": {
+          "40ft": 3882,
+          "20ft": 2585
+        },
+        "provenance": {
+          "source": "PARTIAL",
+          "degraded": true,
+          "synthetic": false,
+          "files": [
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_BMCT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_GTI.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSFT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL APMT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL BMCT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSFT.csv",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSICT.xlsx",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSIGT.xlsx"
+          ],
+          "missing": [
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSICT.xls",
+            "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSIGT.xls"
+          ],
+          "record_count": 6467,
+          "note": "2 file(s) skipped: legacy .xls or unrecognised header (EAL_NSICT.xls, EAL_NSIGT.xls)",
+          "reefer_detection": "ISO 6346 size-type code: the alphanumeric 'R' form (45R1) and the older numeric group-3 form (4532). Handling only the first would under-count reefers by about half."
+        }
+      },
+      "scenarios": {
+        "BASELINE": {
+          "scenarioId": "BASELINE",
+          "title": "Normal reefer arrivals, full plug bank",
+          "surgeMultiplier": 1.0,
+          "plugsFailed": 0,
+          "sensitivityMix": {
+            "CHILLED": 0.5,
+            "FROZEN": 0.3,
+            "PHARMA": 0.05,
+            "AMBIENT_CONTROLLED": 0.15
+          },
+          "description": "The reference case: the reefers actually in the corpus, all 96 plugs live."
+        },
+        "S6": {
+          "scenarioId": "S6",
+          "title": "Reefer surge x3.5 with 18 plugs failed",
+          "surgeMultiplier": 3.5,
+          "plugsFailed": 18,
+          "sensitivityMix": {
+            "CHILLED": 0.5,
+            "FROZEN": 0.3,
+            "PHARMA": 0.05,
+            "AMBIENT_CONTROLLED": 0.15
+          },
+          "description": "The published S6 scenario: a reefer-heavy discharge lands while a switchboard fault takes 18 of the 96 CPP plugs out."
+        },
+        "S6B": {
+          "scenarioId": "S6B",
+          "title": "Pharma-heavy surge, 18 plugs failed",
+          "surgeMultiplier": 2.5,
+          "plugsFailed": 18,
+          "sensitivityMix": {
+            "PHARMA": 0.4,
+            "FROZEN": 0.3,
+            "CHILLED": 0.25,
+            "AMBIENT_CONTROLLED": 0.05
+          },
+          "description": "The same fault against a pharma-heavy parcel: fewer boxes, far less time before the first one is at risk."
+        }
+      }
+    }
+  },
+  "errors": {}
+}

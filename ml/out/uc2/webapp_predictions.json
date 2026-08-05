@@ -1,0 +1,3255 @@
+{
+  "M1_from_J1": [
+    {
+      "moduleId": "UC2-M1",
+      "dwellHours": 88.02,
+      "p10Hours": 82.29,
+      "p50Hours": 88.02,
+      "p90Hours": 94.2,
+      "predictedDepartureWindowH": [
+        84.02,
+        92.02
+      ],
+      "predictedDepartureUtc": "2026-06-11T00:27:55Z",
+      "confidenceBandHours": 11.91,
+      "engine": "hist_gradient_boosting",
+      "degraded": true,
+      "decision_path": "engine=hist_gradient_boosting | calibration=CORPUS | bands=empirical_residual_quantiles | training_data=synthetic_anchored_to_corpus | adapter=adapter-v1.0.0 | assumed=1",
+      "model_version": "m1-dwell-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "stream_idx": 0,
+        "stream": "IMPORT_CFS",
+        "line_idx": 5,
+        "line": "OTHER",
+        "arrival_cadence_h": 6.0,
+        "customs_flag": 0,
+        "reefer": 0,
+        "facility_load": 0.74
+      },
+      "breakdown": {
+        "attribution_source": "generator_coefficients",
+        "attribution_caveat": "Contributions explain the documented generator coefficients, NOT the gradient-boosted engine's internal splits. Render this caveat.",
+        "terms": [
+          {
+            "factor": "calibrated base (corpus median)",
+            "hours": 49.18
+          },
+          {
+            "factor": "stream IMPORT_CFS",
+            "hours": 0.0
+          },
+          {
+            "factor": "line OTHER",
+            "hours": 3.0
+          },
+          {
+            "factor": "customs hold",
+            "hours": 0.0
+          },
+          {
+            "factor": "reefer priority",
+            "hours": -0.0
+          },
+          {
+            "factor": "yard load pressure",
+            "hours": 9.68
+          },
+          {
+            "factor": "arrival cadence",
+            "hours": 3.3
+          }
+        ],
+        "additive_total_h": 65.16,
+        "model_point_h": 88.02,
+        "model_vs_additive_delta_h": 22.86,
+        "interval_h": [
+          82.29,
+          94.2
+        ],
+        "interval_method": "empirical held-out residual quantiles (P10/P90)"
+      },
+      "container": "DPWU9011100",
+      "terminal": "NSICT",
+      "gateInUtc": "2026-06-07T08:27:00Z",
+      "predictedDepartureWindowUtc": [
+        "2026-06-10T18:44:27Z",
+        "2026-06-11T06:39:09Z"
+      ],
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J1_Import_Lifecycle",
+        "target_module": "UC2-M1",
+        "derived": [
+          {
+            "model_input": "stream_idx",
+            "value": 0,
+            "source": "Delivery_Mode",
+            "raw": "G",
+            "rule": "Delivery_Mode 'G' = General / godown delivery -- routed through a CFS; direction from IGM_No present -> IMPORT_CFS",
+            "observed": true
+          },
+          {
+            "model_input": "line_idx",
+            "value": 5,
+            "source": "Shipping_Line_Code",
+            "raw": "CHZ",
+            "rule": "unrecognised code -> OTHER",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_cadence_h",
+            "value": 6.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap",
+            "observed": false
+          },
+          {
+            "model_input": "customs_flag",
+            "value": 0,
+            "source": "Customs_Status/Selected_Scan",
+            "raw": "PENDING/False",
+            "rule": "no hold signal present",
+            "observed": true
+          },
+          {
+            "model_input": "reefer",
+            "value": 0,
+            "source": "Nature_Of_Cargo/ISO_Size_Type",
+            "raw": "GENERAL",
+            "rule": "no refrigeration marker found",
+            "observed": true
+          },
+          {
+            "model_input": "facility_load",
+            "value": 0.74,
+            "source": "Terminal_Yard_Utilization_Pct",
+            "raw": "74.0",
+            "rule": "percent / 100",
+            "observed": true
+          },
+          {
+            "model_input": "gate_in_utc",
+            "value": "2026-06-07T08:27:00Z",
+            "source": "Arrival_DateTime",
+            "raw": "2026-06-07 08:27",
+            "rule": "parsed to UTC; enables calendar departure times",
+            "observed": true
+          }
+        ],
+        "assumptions": [
+          "arrival_cadence_h=6.0 -- no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap"
+        ],
+        "warnings": [
+          "shipping line code 'CHZ' is not in LINE_CODE_TO_IDX; mapped to OTHER rather than guessed"
+        ],
+        "inputs_observed": 6,
+        "inputs_assumed": 1
+      }
+    },
+    {
+      "moduleId": "UC2-M1",
+      "dwellHours": 84.81,
+      "p10Hours": 79.08,
+      "p50Hours": 84.81,
+      "p90Hours": 91.0,
+      "predictedDepartureWindowH": [
+        80.81,
+        88.81
+      ],
+      "predictedDepartureUtc": null,
+      "confidenceBandHours": 11.91,
+      "engine": "hist_gradient_boosting",
+      "degraded": true,
+      "decision_path": "engine=hist_gradient_boosting | calibration=CORPUS | bands=empirical_residual_quantiles | training_data=synthetic_anchored_to_corpus | adapter=adapter-v1.0.0 | assumed=1",
+      "model_version": "m1-dwell-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "stream_idx": 0,
+        "stream": "IMPORT_CFS",
+        "line_idx": 3,
+        "line": "CMA_CGM",
+        "arrival_cadence_h": 6.0,
+        "customs_flag": 0,
+        "reefer": 0,
+        "facility_load": 0.71
+      },
+      "breakdown": {
+        "attribution_source": "generator_coefficients",
+        "attribution_caveat": "Contributions explain the documented generator coefficients, NOT the gradient-boosted engine's internal splits. Render this caveat.",
+        "terms": [
+          {
+            "factor": "calibrated base (corpus median)",
+            "hours": 49.18
+          },
+          {
+            "factor": "stream IMPORT_CFS",
+            "hours": 0.0
+          },
+          {
+            "factor": "line CMA_CGM",
+            "hours": 2.0
+          },
+          {
+            "factor": "customs hold",
+            "hours": 0.0
+          },
+          {
+            "factor": "reefer priority",
+            "hours": -0.0
+          },
+          {
+            "factor": "yard load pressure",
+            "hours": 9.02
+          },
+          {
+            "factor": "arrival cadence",
+            "hours": 3.3
+          }
+        ],
+        "additive_total_h": 63.5,
+        "model_point_h": 84.81,
+        "model_vs_additive_delta_h": 21.31,
+        "interval_h": [
+          79.08,
+          91.0
+        ],
+        "interval_method": "empirical held-out residual quantiles (P10/P90)"
+      },
+      "container": "CSNU1399404",
+      "terminal": "NSICT",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J1_Import_Lifecycle",
+        "target_module": "UC2-M1",
+        "derived": [
+          {
+            "model_input": "stream_idx",
+            "value": 0,
+            "source": "Delivery_Mode",
+            "raw": null,
+            "rule": "Delivery_Mode None = unmapped code, treated as CFS; direction from IGM_No present -> IMPORT_CFS",
+            "observed": true
+          },
+          {
+            "model_input": "line_idx",
+            "value": 3,
+            "source": "Shipping_Line_Code",
+            "raw": "CMA",
+            "rule": "LINE_CODE_TO_IDX[CMA] -> CMA_CGM",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_cadence_h",
+            "value": 6.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap",
+            "observed": false
+          },
+          {
+            "model_input": "customs_flag",
+            "value": 0,
+            "source": "Customs_Status/Selected_Scan",
+            "raw": "CLEARED/False",
+            "rule": "no hold signal present",
+            "observed": true
+          },
+          {
+            "model_input": "reefer",
+            "value": 0,
+            "source": "Nature_Of_Cargo/ISO_Size_Type",
+            "raw": "GENERAL STANTEX S 7645 / SELBANA WSN",
+            "rule": "no refrigeration marker found",
+            "observed": true
+          },
+          {
+            "model_input": "facility_load",
+            "value": 0.71,
+            "source": "Terminal_Yard_Utilization_Pct",
+            "raw": "71.0",
+            "rule": "percent / 100",
+            "observed": true
+          }
+        ],
+        "assumptions": [
+          "arrival_cadence_h=6.0 -- no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap"
+        ],
+        "warnings": [
+          "no arrival timestamp; response carries hour offsets only, no predicted departure clock time"
+        ],
+        "inputs_observed": 5,
+        "inputs_assumed": 1
+      }
+    },
+    {
+      "moduleId": "UC2-M1",
+      "dwellHours": 88.31,
+      "p10Hours": 82.58,
+      "p50Hours": 88.31,
+      "p90Hours": 94.5,
+      "predictedDepartureWindowH": [
+        84.31,
+        92.31
+      ],
+      "predictedDepartureUtc": null,
+      "confidenceBandHours": 11.91,
+      "engine": "hist_gradient_boosting",
+      "degraded": true,
+      "decision_path": "engine=hist_gradient_boosting | calibration=CORPUS | bands=empirical_residual_quantiles | training_data=synthetic_anchored_to_corpus | adapter=adapter-v1.0.0 | assumed=1",
+      "model_version": "m1-dwell-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "stream_idx": 0,
+        "stream": "IMPORT_CFS",
+        "line_idx": 5,
+        "line": "OTHER",
+        "arrival_cadence_h": 6.0,
+        "customs_flag": 0,
+        "reefer": 0,
+        "facility_load": 0.69
+      },
+      "breakdown": {
+        "attribution_source": "generator_coefficients",
+        "attribution_caveat": "Contributions explain the documented generator coefficients, NOT the gradient-boosted engine's internal splits. Render this caveat.",
+        "terms": [
+          {
+            "factor": "calibrated base (corpus median)",
+            "hours": 49.18
+          },
+          {
+            "factor": "stream IMPORT_CFS",
+            "hours": 0.0
+          },
+          {
+            "factor": "line OTHER",
+            "hours": 3.0
+          },
+          {
+            "factor": "customs hold",
+            "hours": 0.0
+          },
+          {
+            "factor": "reefer priority",
+            "hours": -0.0
+          },
+          {
+            "factor": "yard load pressure",
+            "hours": 8.58
+          },
+          {
+            "factor": "arrival cadence",
+            "hours": 3.3
+          }
+        ],
+        "additive_total_h": 64.06,
+        "model_point_h": 88.31,
+        "model_vs_additive_delta_h": 24.25,
+        "interval_h": [
+          82.58,
+          94.5
+        ],
+        "interval_method": "empirical held-out residual quantiles (P10/P90)"
+      },
+      "container": "DFSU1691030",
+      "terminal": "GTI",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J1_Import_Lifecycle",
+        "target_module": "UC2-M1",
+        "derived": [
+          {
+            "model_input": "stream_idx",
+            "value": 0,
+            "source": "Delivery_Mode",
+            "raw": null,
+            "rule": "Delivery_Mode None = unmapped code, treated as CFS; direction from IGM_No present -> IMPORT_CFS",
+            "observed": true
+          },
+          {
+            "model_input": "line_idx",
+            "value": 5,
+            "source": "Shipping_Line_Code",
+            "raw": "ESA1",
+            "rule": "unrecognised code -> OTHER",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_cadence_h",
+            "value": 6.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap",
+            "observed": false
+          },
+          {
+            "model_input": "customs_flag",
+            "value": 0,
+            "source": "Customs_Status/Selected_Scan",
+            "raw": "PENDING/False",
+            "rule": "no hold signal present",
+            "observed": true
+          },
+          {
+            "model_input": "reefer",
+            "value": 0,
+            "source": "Nature_Of_Cargo/ISO_Size_Type",
+            "raw": "GENERAL CYANOACRYLATE ADHESIVE",
+            "rule": "no refrigeration marker found",
+            "observed": true
+          },
+          {
+            "model_input": "facility_load",
+            "value": 0.69,
+            "source": "Terminal_Yard_Utilization_Pct",
+            "raw": "69.0",
+            "rule": "percent / 100",
+            "observed": true
+          }
+        ],
+        "assumptions": [
+          "arrival_cadence_h=6.0 -- no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap"
+        ],
+        "warnings": [
+          "shipping line code 'ESA1' is not in LINE_CODE_TO_IDX; mapped to OTHER rather than guessed",
+          "no arrival timestamp; response carries hour offsets only, no predicted departure clock time"
+        ],
+        "inputs_observed": 5,
+        "inputs_assumed": 1
+      }
+    },
+    {
+      "moduleId": "UC2-M1",
+      "dwellHours": 85.7,
+      "p10Hours": 79.98,
+      "p50Hours": 85.7,
+      "p90Hours": 91.89,
+      "predictedDepartureWindowH": [
+        81.7,
+        89.7
+      ],
+      "predictedDepartureUtc": "2026-06-11T09:42:12Z",
+      "confidenceBandHours": 11.91,
+      "engine": "hist_gradient_boosting",
+      "degraded": true,
+      "decision_path": "engine=hist_gradient_boosting | calibration=CORPUS | bands=empirical_residual_quantiles | training_data=synthetic_anchored_to_corpus | adapter=adapter-v1.0.0 | assumed=1",
+      "model_version": "m1-dwell-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "stream_idx": 0,
+        "stream": "IMPORT_CFS",
+        "line_idx": 2,
+        "line": "ONE",
+        "arrival_cadence_h": 6.0,
+        "customs_flag": 0,
+        "reefer": 0,
+        "facility_load": 0.66
+      },
+      "breakdown": {
+        "attribution_source": "generator_coefficients",
+        "attribution_caveat": "Contributions explain the documented generator coefficients, NOT the gradient-boosted engine's internal splits. Render this caveat.",
+        "terms": [
+          {
+            "factor": "calibrated base (corpus median)",
+            "hours": 49.18
+          },
+          {
+            "factor": "stream IMPORT_CFS",
+            "hours": 0.0
+          },
+          {
+            "factor": "line ONE",
+            "hours": 1.5
+          },
+          {
+            "factor": "customs hold",
+            "hours": 0.0
+          },
+          {
+            "factor": "reefer priority",
+            "hours": -0.0
+          },
+          {
+            "factor": "yard load pressure",
+            "hours": 7.92
+          },
+          {
+            "factor": "arrival cadence",
+            "hours": 3.3
+          }
+        ],
+        "additive_total_h": 61.9,
+        "model_point_h": 85.7,
+        "model_vs_additive_delta_h": 23.8,
+        "interval_h": [
+          79.98,
+          91.89
+        ],
+        "interval_method": "empirical held-out residual quantiles (P10/P90)"
+      },
+      "container": "NYKU4768188",
+      "terminal": "GTI",
+      "gateInUtc": "2026-06-07T20:00:00Z",
+      "predictedDepartureWindowUtc": [
+        "2026-06-11T03:58:44Z",
+        "2026-06-11T15:53:26Z"
+      ],
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J1_Import_Lifecycle",
+        "target_module": "UC2-M1",
+        "derived": [
+          {
+            "model_input": "stream_idx",
+            "value": 0,
+            "source": "Delivery_Mode",
+            "raw": null,
+            "rule": "Delivery_Mode None = unmapped code, treated as CFS; direction from assumed import -> IMPORT_CFS",
+            "observed": true
+          },
+          {
+            "model_input": "line_idx",
+            "value": 2,
+            "source": "Shipping_Line_Code",
+            "raw": "ONE",
+            "rule": "LINE_CODE_TO_IDX[ONE] -> ONE",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_cadence_h",
+            "value": 6.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap",
+            "observed": false
+          },
+          {
+            "model_input": "customs_flag",
+            "value": 0,
+            "source": "Customs_Status/Selected_Scan",
+            "raw": "PENDING/False",
+            "rule": "no hold signal present",
+            "observed": true
+          },
+          {
+            "model_input": "reefer",
+            "value": 0,
+            "source": "Nature_Of_Cargo/ISO_Size_Type",
+            "raw": "GENERAL",
+            "rule": "no refrigeration marker found",
+            "observed": true
+          },
+          {
+            "model_input": "facility_load",
+            "value": 0.66,
+            "source": "Terminal_Yard_Utilization_Pct",
+            "raw": "66.0",
+            "rule": "percent / 100",
+            "observed": true
+          },
+          {
+            "model_input": "gate_in_utc",
+            "value": "2026-06-07T20:00:00Z",
+            "source": "Arrival_DateTime",
+            "raw": "2026-06-07 20:00",
+            "rule": "parsed to UTC; enables calendar departure times",
+            "observed": true
+          }
+        ],
+        "assumptions": [
+          "arrival_cadence_h=6.0 -- no arrival cadence and no daily volume column; 6.0 h is the corpus mean inter-arrival gap"
+        ],
+        "warnings": [
+          "neither Pre_Advice_Type/Move_Type nor IGM/booking evidence present; assuming import"
+        ],
+        "inputs_observed": 6,
+        "inputs_assumed": 1
+      }
+    }
+  ],
+  "M2_from_J7": [
+    {
+      "moduleId": "UC2-M2",
+      "tatHours": 6.32,
+      "p10Hours": 4.86,
+      "p50Hours": 6.32,
+      "p90Hours": 7.73,
+      "etaPlacementH": 1.58,
+      "etaRemovalH": 5.06,
+      "departureWindowH": [
+        5.32,
+        7.32
+      ],
+      "handlingModelHours": 6.32,
+      "learnedVsHandlingDeltaH": 0.0,
+      "engine": "handling",
+      "degraded": false,
+      "decision_path": "primary=deterministic_handling_model | learned_engine=hist_gradient_boosting | served=handling | composition=CORPUS | no_observed_tat_label_in_corpus | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m2-rake-tat-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "siding": 0,
+        "sidingName": "T1",
+        "cto_idx": 0,
+        "cto": "CONCOR",
+        "wagon_count": 42,
+        "arrival_hour": 6,
+        "inbound": 1,
+        "direction": "INBOUND",
+        "container_count": 90,
+        "effective_containers": 90.0,
+        "terminal_count": 1
+      },
+      "breakdown": {
+        "engine": "deterministic_handling_model",
+        "steps": [
+          {
+            "step": "placement",
+            "formula": "base + per_10_wagons * wagons/10 + t2_penalty * siding",
+            "substitution": "0.55 + 0.12 * 42/10 + 0.3 * 0 = 1.054 h",
+            "hours": 1.054
+          },
+          {
+            "step": "handling",
+            "formula": "containers / (rmg_moves_per_hour / cto_efficiency)",
+            "substitution": "90.0 / (19.5 / 1.0) = 4.615 h",
+            "hours": 4.615,
+            "note": "CTO CONCOR efficiency factor 1.0"
+          },
+          {
+            "step": "release",
+            "formula": "release_base",
+            "substitution": "release_base = 0.65 h",
+            "hours": 0.65,
+            "note": "documentation, brake test, path request"
+          }
+        ],
+        "total_h": 6.319,
+        "constants_version": "m2-rake-tat-v1.0.0",
+        "note": "Every coefficient is named in HANDLING and CTO_EFFICIENCY. The corpus records no observed rake TAT, so these are operating assumptions -- auditable, but not validated against outcomes.",
+        "learned_engine_h": 4.64,
+        "served_engine": "handling",
+        "milestones": {
+          "etaPlacementH": 1.58,
+          "etaRemovalH": 5.056,
+          "formula": "placement = 0.25 * TAT, removal = 0.8 * TAT"
+        }
+      },
+      "rakeId": "RK-SRE-0711",
+      "terminal": "NSIGT",
+      "etaUtc": "2026-06-15T06:20:00Z",
+      "etaPlacementUtc": "2026-06-15T07:54:47Z",
+      "etaRemovalUtc": "2026-06-15T11:23:19Z",
+      "departureWindowUtc": [
+        "2026-06-15T11:39:09Z",
+        "2026-06-15T13:39:09Z"
+      ],
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J7_Rail_Rake",
+        "target_module": "UC2-M2",
+        "derived": [
+          {
+            "model_input": "siding",
+            "value": 0,
+            "source": "Siding",
+            "raw": "T1",
+            "rule": "SIDING_TO_IDX[T1]",
+            "observed": true
+          },
+          {
+            "model_input": "cto_idx",
+            "value": 0,
+            "source": "CTO_Index",
+            "raw": "CTO-1",
+            "rule": "CTO_TO_IDX[CTO-1] -> CONCOR (sheet is 1-based, model is 0-based)",
+            "observed": true
+          },
+          {
+            "model_input": "wagon_count",
+            "value": 42,
+            "source": "Wagon_Count",
+            "raw": "42",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_hour",
+            "value": 6,
+            "source": "Arrival_Hour",
+            "raw": "6",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "inbound",
+            "value": 1,
+            "source": "Direction",
+            "raw": "INBOUND",
+            "rule": "Inbound -> 1 (arriving loaded to unload)",
+            "observed": true
+          },
+          {
+            "model_input": "container_count",
+            "value": 90,
+            "source": "Container_Count",
+            "raw": "90",
+            "rule": "observed fill 2.14 boxes/wagon (corpus fallback ratio is 1.15)",
+            "observed": true
+          },
+          {
+            "model_input": "terminal_count",
+            "value": 1,
+            "source": "Destination_Terminal",
+            "raw": "NSIGT",
+            "rule": "1 distinct destination terminal(s)",
+            "observed": true
+          },
+          {
+            "model_input": "eta_utc",
+            "value": "2026-06-15T06:20:00Z",
+            "source": "Arrival_Timestamp",
+            "raw": "2026-06-15 06:20",
+            "rule": "enables calendar milestone times",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 8,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M2",
+      "tatHours": 6.93,
+      "p10Hours": 5.47,
+      "p50Hours": 6.93,
+      "p90Hours": 8.35,
+      "etaPlacementH": 1.73,
+      "etaRemovalH": 5.55,
+      "departureWindowH": [
+        5.93,
+        7.93
+      ],
+      "handlingModelHours": 6.93,
+      "learnedVsHandlingDeltaH": 0.0,
+      "engine": "handling",
+      "degraded": false,
+      "decision_path": "primary=deterministic_handling_model | learned_engine=hist_gradient_boosting | served=handling | composition=CORPUS | no_observed_tat_label_in_corpus | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m2-rake-tat-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "siding": 1,
+        "sidingName": "T2",
+        "cto_idx": 1,
+        "cto": "GATEWAY",
+        "wagon_count": 45,
+        "arrival_hour": 14,
+        "inbound": 1,
+        "direction": "INBOUND",
+        "container_count": 90,
+        "effective_containers": 90.0,
+        "terminal_count": 1
+      },
+      "breakdown": {
+        "engine": "deterministic_handling_model",
+        "steps": [
+          {
+            "step": "placement",
+            "formula": "base + per_10_wagons * wagons/10 + t2_penalty * siding",
+            "substitution": "0.55 + 0.12 * 45/10 + 0.3 * 1 = 1.390 h",
+            "hours": 1.39
+          },
+          {
+            "step": "handling",
+            "formula": "containers / (rmg_moves_per_hour / cto_efficiency)",
+            "substitution": "90.0 / (19.5 / 1.06) = 4.892 h",
+            "hours": 4.892,
+            "note": "CTO GATEWAY efficiency factor 1.06"
+          },
+          {
+            "step": "release",
+            "formula": "release_base",
+            "substitution": "release_base = 0.65 h",
+            "hours": 0.65,
+            "note": "documentation, brake test, path request"
+          }
+        ],
+        "total_h": 6.932,
+        "constants_version": "m2-rake-tat-v1.0.0",
+        "note": "Every coefficient is named in HANDLING and CTO_EFFICIENCY. The corpus records no observed rake TAT, so these are operating assumptions -- auditable, but not validated against outcomes.",
+        "learned_engine_h": 5.335,
+        "served_engine": "handling",
+        "milestones": {
+          "etaPlacementH": 1.733,
+          "etaRemovalH": 5.546,
+          "formula": "placement = 0.25 * TAT, removal = 0.8 * TAT"
+        }
+      },
+      "rakeId": "RK-AGM-0654",
+      "terminal": "NSICT",
+      "etaUtc": "2026-06-11T14:00:00Z",
+      "etaPlacementUtc": "2026-06-11T15:43:59Z",
+      "etaRemovalUtc": "2026-06-11T19:32:45Z",
+      "departureWindowUtc": [
+        "2026-06-11T19:55:56Z",
+        "2026-06-11T21:55:56Z"
+      ],
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J7_Rail_Rake",
+        "target_module": "UC2-M2",
+        "derived": [
+          {
+            "model_input": "siding",
+            "value": 1,
+            "source": "Siding",
+            "raw": "T2",
+            "rule": "SIDING_TO_IDX[T2]",
+            "observed": true
+          },
+          {
+            "model_input": "cto_idx",
+            "value": 1,
+            "source": "CTO_Index",
+            "raw": "CTO-2",
+            "rule": "CTO_TO_IDX[CTO-2] -> GATEWAY (sheet is 1-based, model is 0-based)",
+            "observed": true
+          },
+          {
+            "model_input": "wagon_count",
+            "value": 45,
+            "source": "Wagon_Count",
+            "raw": "45",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_hour",
+            "value": 14,
+            "source": "Arrival_Hour",
+            "raw": "14",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "inbound",
+            "value": 1,
+            "source": "Direction",
+            "raw": "INBOUND",
+            "rule": "Inbound -> 1 (arriving loaded to unload)",
+            "observed": true
+          },
+          {
+            "model_input": "container_count",
+            "value": 90,
+            "source": "Container_Count",
+            "raw": "90",
+            "rule": "observed fill 2.00 boxes/wagon (corpus fallback ratio is 1.15)",
+            "observed": true
+          },
+          {
+            "model_input": "terminal_count",
+            "value": 1,
+            "source": "Destination_Terminal",
+            "raw": "NSICT",
+            "rule": "1 distinct destination terminal(s)",
+            "observed": true
+          },
+          {
+            "model_input": "eta_utc",
+            "value": "2026-06-11T14:00:00Z",
+            "source": "Arrival_Timestamp",
+            "raw": "2026-06-11 14:00",
+            "rule": "enables calendar milestone times",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 8,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M2",
+      "tatHours": 6.79,
+      "p10Hours": 5.33,
+      "p50Hours": 6.79,
+      "p90Hours": 8.2,
+      "etaPlacementH": 1.7,
+      "etaRemovalH": 5.43,
+      "departureWindowH": [
+        5.79,
+        7.79
+      ],
+      "handlingModelHours": 6.79,
+      "learnedVsHandlingDeltaH": 0.0,
+      "engine": "handling",
+      "degraded": false,
+      "decision_path": "primary=deterministic_handling_model | learned_engine=hist_gradient_boosting | served=handling | composition=CORPUS | no_observed_tat_label_in_corpus | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m2-rake-tat-v1.0.0",
+      "trained_at": "2026-08-03T18:00:59Z",
+      "features": {
+        "siding": 1,
+        "sidingName": "T2",
+        "cto_idx": 1,
+        "cto": "GATEWAY",
+        "wagon_count": 40,
+        "arrival_hour": 22,
+        "inbound": 1,
+        "direction": "INBOUND",
+        "container_count": 82,
+        "effective_containers": 82.0,
+        "terminal_count": 1
+      },
+      "breakdown": {
+        "engine": "deterministic_handling_model",
+        "steps": [
+          {
+            "step": "placement",
+            "formula": "base + per_10_wagons * wagons/10 + t2_penalty * siding",
+            "substitution": "0.55 + 0.12 * 40/10 + 0.3 * 1 = 1.330 h",
+            "hours": 1.33
+          },
+          {
+            "step": "handling",
+            "formula": "containers / (rmg_moves_per_hour / cto_efficiency)",
+            "substitution": "82.0 / (19.5 / 1.06) = 4.457 h",
+            "hours": 4.457,
+            "note": "CTO GATEWAY efficiency factor 1.06"
+          },
+          {
+            "step": "congestion",
+            "formula": "night_penalty + peak_penalty + multi_terminal_penalty * (n-1)",
+            "substitution": "= 0.350 h",
+            "hours": 0.35,
+            "note": "night shift changeover"
+          },
+          {
+            "step": "release",
+            "formula": "release_base",
+            "substitution": "release_base = 0.65 h",
+            "hours": 0.65,
+            "note": "documentation, brake test, path request"
+          }
+        ],
+        "total_h": 6.787,
+        "constants_version": "m2-rake-tat-v1.0.0",
+        "note": "Every coefficient is named in HANDLING and CTO_EFFICIENCY. The corpus records no observed rake TAT, so these are operating assumptions -- auditable, but not validated against outcomes.",
+        "learned_engine_h": 5.505,
+        "served_engine": "handling",
+        "milestones": {
+          "etaPlacementH": 1.697,
+          "etaRemovalH": 5.43,
+          "formula": "placement = 0.25 * TAT, removal = 0.8 * TAT"
+        }
+      },
+      "rakeId": "RK-BMC-0651",
+      "terminal": "BMCT",
+      "etaUtc": "2026-06-09T22:45:00Z",
+      "etaPlacementUtc": "2026-06-10T00:26:48Z",
+      "etaRemovalUtc": "2026-06-10T04:10:47Z",
+      "departureWindowUtc": [
+        "2026-06-10T04:32:14Z",
+        "2026-06-10T06:32:14Z"
+      ],
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J7_Rail_Rake",
+        "target_module": "UC2-M2",
+        "derived": [
+          {
+            "model_input": "siding",
+            "value": 1,
+            "source": "Siding",
+            "raw": "T2",
+            "rule": "SIDING_TO_IDX[T2]",
+            "observed": true
+          },
+          {
+            "model_input": "cto_idx",
+            "value": 1,
+            "source": "CTO_Index",
+            "raw": "CTO-2",
+            "rule": "CTO_TO_IDX[CTO-2] -> GATEWAY (sheet is 1-based, model is 0-based)",
+            "observed": true
+          },
+          {
+            "model_input": "wagon_count",
+            "value": 40,
+            "source": "Wagon_Count",
+            "raw": "40",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "arrival_hour",
+            "value": 22,
+            "source": "Arrival_Hour",
+            "raw": "22",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "inbound",
+            "value": 1,
+            "source": "Direction",
+            "raw": "INBOUND",
+            "rule": "Inbound -> 1 (arriving loaded to unload)",
+            "observed": true
+          },
+          {
+            "model_input": "container_count",
+            "value": 82,
+            "source": "Container_Count",
+            "raw": "82",
+            "rule": "observed fill 2.05 boxes/wagon (corpus fallback ratio is 1.15)",
+            "observed": true
+          },
+          {
+            "model_input": "terminal_count",
+            "value": 1,
+            "source": "Destination_Terminal",
+            "raw": "BMCT",
+            "rule": "1 distinct destination terminal(s)",
+            "observed": true
+          },
+          {
+            "model_input": "eta_utc",
+            "value": "2026-06-09T22:45:00Z",
+            "source": "Arrival_Timestamp",
+            "raw": "2026-06-09 22:45",
+            "rule": "enables calendar milestone times",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 8,
+        "inputs_assumed": 0
+      }
+    }
+  ],
+  "M3_from_J4": [
+    {
+      "moduleId": "UC2-M3",
+      "queueVehicles": 3.18,
+      "p10": 2.49,
+      "p50": 3.18,
+      "p90": 3.92,
+      "deferralRecommended": false,
+      "deferralThreshold": 8,
+      "estimatedWaitMinutes": 21.2,
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "decision_path": "engine=hist_gradient_boosting | series=CORPUS | split=chronological | uc3_truck_inflow=caller_supplied | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m3-gate-queue-v2.0.0",
+      "trained_at": "2026-08-03T18:01:01Z",
+      "features": {
+        "queue_lag1": 4.0,
+        "queue_lag2": 6.0,
+        "hour_sin": 0.5,
+        "hour_cos": 0.866,
+        "hour_of_day": 2,
+        "uc3_truck_inflow": 11.0
+      },
+      "breakdown": {
+        "rule": "deferralRecommended = queue > 8",
+        "queue_vs_threshold": -4.82,
+        "wait_formula": "queue * 20 min / 3 lanes",
+        "service_capacity_per_hour": 3.0,
+        "interval_method": "empirical held-out residual quantiles (P10/P90)",
+        "feature_notes": {
+          "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+          "queue_lag2": "Derived queue two hours ago.",
+          "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+          "hour_cos": "cos(2*pi*hour/24).",
+          "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+        }
+      },
+      "gateId": "NSICT-G1",
+      "terminal": "NSICT",
+      "forecastForUtc": "2026-06-12T03:00:00Z",
+      "estimatedWaitMinutesAtObservedLanes": 21.2,
+      "lanesOpen": 3.0,
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J4_Gate_Queue_Forecast",
+        "target_module": "UC2-M3",
+        "derived": [
+          {
+            "model_input": "queue_lag1",
+            "value": 4.0,
+            "source": "Queue_Lag1",
+            "raw": "4.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "queue_lag2",
+            "value": 6.0,
+            "source": "Queue_Lag2",
+            "raw": "6.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "hour",
+            "value": 2,
+            "source": "Hour_Of_Day",
+            "raw": "2",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "uc3_truck_inflow",
+            "value": 11.0,
+            "source": "UC3_Truck_Inflow_Per_Hr",
+            "raw": "11.0",
+            "rule": "road-side truck count supplied by the caller",
+            "observed": true
+          },
+          {
+            "model_input": "lanes_open",
+            "value": 3.0,
+            "source": "Lanes_Open",
+            "raw": "3.0",
+            "rule": "used only to restate the wait; the model's own estimatedWaitMinutes assumes 3 lanes",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 5,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M3",
+      "queueVehicles": 8.93,
+      "p10": 8.24,
+      "p50": 8.93,
+      "p90": 9.68,
+      "deferralRecommended": true,
+      "deferralThreshold": 8,
+      "estimatedWaitMinutes": 59.5,
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "decision_path": "engine=hist_gradient_boosting | series=CORPUS | split=chronological | uc3_truck_inflow=caller_supplied | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m3-gate-queue-v2.0.0",
+      "trained_at": "2026-08-03T18:01:01Z",
+      "features": {
+        "queue_lag1": 9.0,
+        "queue_lag2": 7.0,
+        "hour_sin": 0.866,
+        "hour_cos": 0.5,
+        "hour_of_day": 4,
+        "uc3_truck_inflow": 24.0
+      },
+      "breakdown": {
+        "rule": "deferralRecommended = queue > 8",
+        "queue_vs_threshold": 0.93,
+        "wait_formula": "queue * 20 min / 3 lanes",
+        "service_capacity_per_hour": 3.0,
+        "interval_method": "empirical held-out residual quantiles (P10/P90)",
+        "feature_notes": {
+          "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+          "queue_lag2": "Derived queue two hours ago.",
+          "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+          "hour_cos": "cos(2*pi*hour/24).",
+          "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+        }
+      },
+      "gateId": "NSICT-G1",
+      "terminal": "NSICT",
+      "forecastForUtc": "2026-06-12T05:45:00Z",
+      "estimatedWaitMinutesAtObservedLanes": 59.5,
+      "lanesOpen": 3.0,
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J4_Gate_Queue_Forecast",
+        "target_module": "UC2-M3",
+        "derived": [
+          {
+            "model_input": "queue_lag1",
+            "value": 9.0,
+            "source": "Queue_Lag1",
+            "raw": "9.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "queue_lag2",
+            "value": 7.0,
+            "source": "Queue_Lag2",
+            "raw": "7.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "hour",
+            "value": 4,
+            "source": "Hour_Of_Day",
+            "raw": "4",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "uc3_truck_inflow",
+            "value": 24.0,
+            "source": "UC3_Truck_Inflow_Per_Hr",
+            "raw": "24.0",
+            "rule": "road-side truck count supplied by the caller",
+            "observed": true
+          },
+          {
+            "model_input": "lanes_open",
+            "value": 3.0,
+            "source": "Lanes_Open",
+            "raw": "3.0",
+            "rule": "used only to restate the wait; the model's own estimatedWaitMinutes assumes 3 lanes",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 5,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M3",
+      "queueVehicles": 13.56,
+      "p10": 12.87,
+      "p50": 13.56,
+      "p90": 14.3,
+      "deferralRecommended": true,
+      "deferralThreshold": 8,
+      "estimatedWaitMinutes": 90.4,
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "decision_path": "engine=hist_gradient_boosting | series=CORPUS | split=chronological | uc3_truck_inflow=caller_supplied | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m3-gate-queue-v2.0.0",
+      "trained_at": "2026-08-03T18:01:01Z",
+      "features": {
+        "queue_lag1": 15.0,
+        "queue_lag2": 15.0,
+        "hour_sin": -0.5,
+        "hour_cos": -0.866,
+        "hour_of_day": 14,
+        "uc3_truck_inflow": 31.0
+      },
+      "breakdown": {
+        "rule": "deferralRecommended = queue > 8",
+        "queue_vs_threshold": 5.56,
+        "wait_formula": "queue * 20 min / 3 lanes",
+        "service_capacity_per_hour": 3.0,
+        "interval_method": "empirical held-out residual quantiles (P10/P90)",
+        "feature_notes": {
+          "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+          "queue_lag2": "Derived queue two hours ago.",
+          "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+          "hour_cos": "cos(2*pi*hour/24).",
+          "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+        }
+      },
+      "gateId": "GTI-G1",
+      "terminal": "GTI",
+      "forecastForUtc": "2026-06-10T15:45:00Z",
+      "estimatedWaitMinutesAtObservedLanes": 54.2,
+      "lanesOpen": 5.0,
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J4_Gate_Queue_Forecast",
+        "target_module": "UC2-M3",
+        "derived": [
+          {
+            "model_input": "queue_lag1",
+            "value": 15.0,
+            "source": "Queue_Lag1",
+            "raw": "15.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "queue_lag2",
+            "value": 15.0,
+            "source": "Queue_Lag2",
+            "raw": "15.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "hour",
+            "value": 14,
+            "source": "Hour_Of_Day",
+            "raw": "14",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "uc3_truck_inflow",
+            "value": 31.0,
+            "source": "UC3_Truck_Inflow_Per_Hr",
+            "raw": "31.0",
+            "rule": "road-side truck count supplied by the caller",
+            "observed": true
+          },
+          {
+            "model_input": "lanes_open",
+            "value": 5.0,
+            "source": "Lanes_Open",
+            "raw": "5.0",
+            "rule": "used only to restate the wait; the model's own estimatedWaitMinutes assumes 3 lanes",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 5,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M3",
+      "queueVehicles": 18.12,
+      "p10": 17.42,
+      "p50": 18.12,
+      "p90": 18.86,
+      "deferralRecommended": true,
+      "deferralThreshold": 8,
+      "estimatedWaitMinutes": 120.8,
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "decision_path": "engine=hist_gradient_boosting | series=CORPUS | split=chronological | uc3_truck_inflow=caller_supplied | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "model_version": "m3-gate-queue-v2.0.0",
+      "trained_at": "2026-08-03T18:01:01Z",
+      "features": {
+        "queue_lag1": 19.0,
+        "queue_lag2": 17.0,
+        "hour_sin": 0.0,
+        "hour_cos": -1.0,
+        "hour_of_day": 12,
+        "uc3_truck_inflow": 38.0
+      },
+      "breakdown": {
+        "rule": "deferralRecommended = queue > 8",
+        "queue_vs_threshold": 10.12,
+        "wait_formula": "queue * 20 min / 3 lanes",
+        "service_capacity_per_hour": 3.0,
+        "interval_method": "empirical held-out residual quantiles (P10/P90)",
+        "feature_notes": {
+          "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+          "queue_lag2": "Derived queue two hours ago.",
+          "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+          "hour_cos": "cos(2*pi*hour/24).",
+          "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+        }
+      },
+      "gateId": "NSIGT-G1",
+      "terminal": "NSIGT",
+      "forecastForUtc": "2026-06-10T13:15:00Z",
+      "estimatedWaitMinutesAtObservedLanes": 72.5,
+      "lanesOpen": 5.0,
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J4_Gate_Queue_Forecast",
+        "target_module": "UC2-M3",
+        "derived": [
+          {
+            "model_input": "queue_lag1",
+            "value": 19.0,
+            "source": "Queue_Lag1",
+            "raw": "19.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "queue_lag2",
+            "value": 17.0,
+            "source": "Queue_Lag2",
+            "raw": "17.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "hour",
+            "value": 12,
+            "source": "Hour_Of_Day",
+            "raw": "12",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "uc3_truck_inflow",
+            "value": 38.0,
+            "source": "UC3_Truck_Inflow_Per_Hr",
+            "raw": "38.0",
+            "rule": "road-side truck count supplied by the caller",
+            "observed": true
+          },
+          {
+            "model_input": "lanes_open",
+            "value": 5.0,
+            "source": "Lanes_Open",
+            "raw": "5.0",
+            "rule": "used only to restate the wait; the model's own estimatedWaitMinutes assumes 3 lanes",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 5,
+        "inputs_assumed": 0
+      }
+    }
+  ],
+  "M4_from_J9": [
+    {
+      "moduleId": "UC2-M4",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "eventId": "EVT-0001",
+      "entityRef": "DPWU9011100",
+      "entityType": "Container",
+      "terminal": "NSICT",
+      "eventTimestampUtc": "2026-06-12T04:46:00Z",
+      "clean": false,
+      "findingCount": 1,
+      "worstSeverity": "WARN",
+      "findings": [
+        {
+          "ruleId": "J9-F1",
+          "type": "ANOMALY_ISO_MISMATCH",
+          "severity": "WARN",
+          "reason": "ISO size/type disagrees between the manifest and the gate move.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "ISO_Code_Mismatch_Flag",
+            "event_id": "EVT-0001",
+            "event_type": "codeco.gate_out",
+            "event_ts": "2026-06-12T04:46:00Z",
+            "source_system": "CODECO",
+            "message_type": "CODECO"
+          }
+        }
+      ],
+      "priorAnomalyCount": 0,
+      "engine": "j9_flag_passthrough",
+      "degraded": false,
+      "decision_path": "engine=j9_flag_passthrough | rules=J9-F1..F7,J9-Z1,J9-Z2 | note=M4 R1-R6 evaluate an event trail, not these flags | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "rulesNote": "These findings come from flags an upstream detector already raised and from z-score thresholds applied here. They are NOT M4's R1-R6 trail rules. Send an event trail to /uc2/m4/predict to run those.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J9_Event_Anomaly",
+        "target_module": "UC2-M4",
+        "derived": [
+          {
+            "model_input": "flag:ISO_Code_Mismatch_Flag",
+            "value": true,
+            "source": "ISO_Code_Mismatch_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F1 ANOMALY_ISO_MISMATCH",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 1,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M4",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "eventId": "EVT-0002",
+      "entityRef": "MSGU9266060",
+      "entityType": "Container",
+      "terminal": "NSICT",
+      "eventTimestampUtc": "2026-06-12T04:18:00Z",
+      "clean": false,
+      "findingCount": 2,
+      "worstSeverity": "CRIT",
+      "findings": [
+        {
+          "ruleId": "J9-F6",
+          "type": "ANOMALY_DATA_QUALITY",
+          "severity": "CRIT",
+          "reason": "A field declared numeric carries non-numeric text.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Numeric_Field_Non_Numeric_Flag",
+            "event_id": "EVT-0002",
+            "event_type": "codeco.gate_in",
+            "event_ts": "2026-06-12T04:18:00Z",
+            "source_system": "CODECO",
+            "message_type": "CODECO"
+          }
+        },
+        {
+          "ruleId": "J9-F2",
+          "type": "ANOMALY_DOC_FIELD_MISMATCH",
+          "severity": "WARN",
+          "reason": "A document field disagrees with the same field on a linked document.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Doc_Field_Mismatch_Flag",
+            "event_id": "EVT-0002",
+            "event_type": "codeco.gate_in",
+            "event_ts": "2026-06-12T04:18:00Z",
+            "source_system": "CODECO",
+            "message_type": "CODECO"
+          }
+        }
+      ],
+      "priorAnomalyCount": 0,
+      "engine": "j9_flag_passthrough",
+      "degraded": false,
+      "decision_path": "engine=j9_flag_passthrough | rules=J9-F1..F7,J9-Z1,J9-Z2 | note=M4 R1-R6 evaluate an event trail, not these flags | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "rulesNote": "These findings come from flags an upstream detector already raised and from z-score thresholds applied here. They are NOT M4's R1-R6 trail rules. Send an event trail to /uc2/m4/predict to run those.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J9_Event_Anomaly",
+        "target_module": "UC2-M4",
+        "derived": [
+          {
+            "model_input": "flag:Doc_Field_Mismatch_Flag",
+            "value": true,
+            "source": "Doc_Field_Mismatch_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F2 ANOMALY_DOC_FIELD_MISMATCH",
+            "observed": true
+          },
+          {
+            "model_input": "flag:Numeric_Field_Non_Numeric_Flag",
+            "value": true,
+            "source": "Numeric_Field_Non_Numeric_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F6 ANOMALY_DATA_QUALITY",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 2,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M4",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "eventId": "EVT-0003",
+      "entityRef": "250720653",
+      "entityType": "Document",
+      "terminal": "NSIGT",
+      "eventTimestampUtc": "2026-06-10T12:29:00Z",
+      "clean": false,
+      "findingCount": 1,
+      "worstSeverity": "WARN",
+      "findings": [
+        {
+          "ruleId": "J9-F3",
+          "type": "ANOMALY_DUPLICATE_DOC",
+          "severity": "WARN",
+          "reason": "The same physical document was ingested more than once.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Duplicate_Doc_Flag",
+            "event_id": "EVT-0003",
+            "event_type": "gate_doc.ingested",
+            "event_ts": "2026-06-10T12:29:00Z",
+            "source_system": "GATE_DOC",
+            "message_type": "EIR"
+          }
+        }
+      ],
+      "priorAnomalyCount": 1,
+      "engine": "j9_flag_passthrough",
+      "degraded": false,
+      "decision_path": "engine=j9_flag_passthrough | rules=J9-F1..F7,J9-Z1,J9-Z2 | note=M4 R1-R6 evaluate an event trail, not these flags | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "rulesNote": "These findings come from flags an upstream detector already raised and from z-score thresholds applied here. They are NOT M4's R1-R6 trail rules. Send an event trail to /uc2/m4/predict to run those.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J9_Event_Anomaly",
+        "target_module": "UC2-M4",
+        "derived": [
+          {
+            "model_input": "flag:Duplicate_Doc_Flag",
+            "value": true,
+            "source": "Duplicate_Doc_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F3 ANOMALY_DUPLICATE_DOC",
+            "observed": true
+          },
+          {
+            "model_input": "prior_anomaly_count",
+            "value": 1,
+            "source": "Entity_Prior_Anomaly_Count",
+            "raw": "1",
+            "rule": "repeat offender -- raise this in the exception queue",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 2,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M4",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "eventId": "EVT-0004",
+      "entityRef": "COARRI-CHUNK-4",
+      "entityType": "Message",
+      "terminal": "VCT",
+      "eventTimestampUtc": "2026-03-18T14:55:00Z",
+      "clean": false,
+      "findingCount": 1,
+      "worstSeverity": "CRIT",
+      "findings": [
+        {
+          "ruleId": "J9-F7",
+          "type": "ANOMALY_TRUNCATED_MESSAGE",
+          "severity": "CRIT",
+          "reason": "The EDI message was cut short; items after the cut were lost.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Truncated_Message_Flag",
+            "event_id": "EVT-0004",
+            "event_type": "coarri.parse",
+            "event_ts": "2026-03-18T14:55:00Z",
+            "source_system": "EDI",
+            "message_type": "COARRI"
+          }
+        }
+      ],
+      "priorAnomalyCount": 0,
+      "engine": "j9_flag_passthrough",
+      "degraded": false,
+      "decision_path": "engine=j9_flag_passthrough | rules=J9-F1..F7,J9-Z1,J9-Z2 | note=M4 R1-R6 evaluate an event trail, not these flags | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "rulesNote": "These findings come from flags an upstream detector already raised and from z-score thresholds applied here. They are NOT M4's R1-R6 trail rules. Send an event trail to /uc2/m4/predict to run those.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J9_Event_Anomaly",
+        "target_module": "UC2-M4",
+        "derived": [
+          {
+            "model_input": "flag:Truncated_Message_Flag",
+            "value": true,
+            "source": "Truncated_Message_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F7 ANOMALY_TRUNCATED_MESSAGE",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 1,
+        "inputs_assumed": 0
+      }
+    },
+    {
+      "moduleId": "UC2-M4",
+      "model_version": "m4-event-anomaly-v2.0.0",
+      "eventId": "EVT-0005",
+      "entityRef": "GESU4419077",
+      "entityType": "Container",
+      "terminal": "CFSCLP",
+      "eventTimestampUtc": "2026-07-15T21:33:00Z",
+      "clean": false,
+      "findingCount": 2,
+      "worstSeverity": "WARN",
+      "findings": [
+        {
+          "ruleId": "J9-F5",
+          "type": "ANOMALY_OUT_OF_SEQUENCE",
+          "severity": "WARN",
+          "reason": "Events arrived in an order the lifecycle does not allow.",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Out_Of_Sequence_Flag",
+            "event_id": "EVT-0005",
+            "event_type": "cargo.gate_in",
+            "event_ts": "2026-07-15T21:33:00Z",
+            "source_system": "CFS_CODECO",
+            "message_type": "CODECO"
+          }
+        },
+        {
+          "ruleId": "J9-Z1",
+          "type": "ANOMALY_DWELL_OUTLIER",
+          "severity": "INFO",
+          "reason": "Dwell is 2.4 standard deviations from the facility mean (threshold 2.0).",
+          "ageHours": null,
+          "evidence": {
+            "source_column": "Dwell_Zscore",
+            "z": 2.4,
+            "threshold": 2.0
+          }
+        }
+      ],
+      "priorAnomalyCount": 0,
+      "engine": "j9_flag_passthrough",
+      "degraded": false,
+      "decision_path": "engine=j9_flag_passthrough | rules=J9-F1..F7,J9-Z1,J9-Z2 | note=M4 R1-R6 evaluate an event trail, not these flags | adapter=adapter-v1.0.0 | all_inputs_observed",
+      "rulesNote": "These findings come from flags an upstream detector already raised and from z-score thresholds applied here. They are NOT M4's R1-R6 trail rules. Send an event trail to /uc2/m4/predict to run those.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J9_Event_Anomaly",
+        "target_module": "UC2-M4",
+        "derived": [
+          {
+            "model_input": "flag:Out_Of_Sequence_Flag",
+            "value": true,
+            "source": "Out_Of_Sequence_Flag",
+            "raw": "Yes",
+            "rule": "raised J9-F5 ANOMALY_OUT_OF_SEQUENCE",
+            "observed": true
+          },
+          {
+            "model_input": "dwell_zscore",
+            "value": 2.4,
+            "source": "Dwell_Zscore",
+            "raw": "2.4",
+            "rule": "|z| >= 2.0 -> outlier",
+            "observed": true
+          }
+        ],
+        "assumptions": [],
+        "warnings": [],
+        "inputs_observed": 2,
+        "inputs_assumed": 0
+      }
+    }
+  ],
+  "M5_from_J10": [
+    {
+      "moduleId": "UC2-M5",
+      "viaNo": "NTPS0633",
+      "terminal": "NSICT",
+      "movesTotal": 1765,
+      "movesDone": 0,
+      "elapsedHours": 0.0,
+      "observedRateMovesPerHour": 100.0,
+      "remainingMoves": 1765,
+      "remainingHours": 17.65,
+      "remainingWindowHours": [
+        10.16,
+        25.14
+      ],
+      "projectedTotalStayHours": 20.05,
+      "plannedStayHours": null,
+      "varianceVsPlanHours": null,
+      "status": "UNKNOWN",
+      "rateSource": "assumption",
+      "breakdown": {
+        "steps": [
+          {
+            "step": "observed rate",
+            "formula": "moves_done / elapsed_h",
+            "substitution": "0 / 0.00 = 0.00 moves/h",
+            "used": false
+          },
+          {
+            "step": "assumed rate",
+            "formula": "terminal_crane_productivity * cranes",
+            "substitution": "25.0 * 4 = 100.00 moves/h",
+            "used": true
+          },
+          {
+            "step": "remaining work",
+            "formula": "(moves_total - moves_done) / rate",
+            "substitution": "(1765 - 0) / 100.00 = 17.65 h"
+          },
+          {
+            "step": "projected total stay",
+            "formula": "elapsed + remaining + berth_overhead",
+            "substitution": "0.00 + 17.65 + 2.4 = 20.05 h"
+          }
+        ],
+        "rate_gate": "The observed rate is only trusted after 0.5 h elapsed AND 5% of the parcel worked. Below that the terminal assumption is used, because a rate from a handful of moves in the first minutes would drive the whole projection.",
+        "interval_source": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        },
+        "constants": {
+          "TERMINAL_CRANE_PRODUCTIVITY": {
+            "BMCT": 28.0,
+            "NSICT": 25.0,
+            "NSIGT": 26.0,
+            "NSFT": 24.0,
+            "GTI": 27.0,
+            "GTIL": 27.0,
+            "APMT": 29.0,
+            "DEFAULT": 26.0
+          },
+          "BERTH_STAY_OVERHEAD_H": 2.4,
+          "cranes": 4.0
+        }
+      },
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "degraded": true,
+      "decision_path": "deterministic_rate_projection | rate=assumption | interval=observed_stay_variance_spread | adapter=adapter-v1.0.0 | assumed=2",
+      "vesselName": "NORTHERN PRACTISE",
+      "imo": "9450301",
+      "etaUtc": "2026-06-10T02:01:00Z",
+      "projectedDepartureUtc": "2026-06-10T22:04:00Z",
+      "declaredSailingUtc": "2026-06-15T08:01:00Z",
+      "declaredWindowHours": 126.0,
+      "declaredWindowNote": "ETA to declared sailing. This is the export receiving/cutoff window, not the berth plan -- do not render it as planned stay.",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J10_Vessel_Call_Berthing",
+        "target_module": "UC2-M5",
+        "derived": [
+          {
+            "model_input": "via_no",
+            "value": "NTPS0633",
+            "source": "VIA_Visit",
+            "raw": "NTPS0633",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "terminal",
+            "value": "NSICT",
+            "source": "Terminal_Code",
+            "raw": "NSICT",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_total",
+            "value": 1765,
+            "source": "Export_Containers_On_EAL + Import_Containers_Manifested",
+            "raw": "1765+0",
+            "rule": "declared box counts; one move per box",
+            "observed": true
+          },
+          {
+            "model_input": "cranes",
+            "value": 4.0,
+            "source": "Cranes_Allocated",
+            "raw": "4.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_done",
+            "value": 0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+            "observed": false
+          },
+          {
+            "model_input": "elapsed_h",
+            "value": 0.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no live elapsed time supplied; the projection is from berthing, not from current progress",
+            "observed": false
+          }
+        ],
+        "assumptions": [
+          "moves_done=0 -- live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+          "elapsed_h=0.0 -- no live elapsed time supplied; the projection is from berthing, not from current progress"
+        ],
+        "warnings": [
+          "ETA to Declared_Sailing_DateTime spans 126.0 h, but that is the export receiving/cutoff window, NOT a berth plan. It is reported as declaredWindowHours and is deliberately not used as planned_stay_h -- supply Planned_Stay_H for a variance and a status badge."
+        ],
+        "inputs_observed": 4,
+        "inputs_assumed": 2
+      }
+    },
+    {
+      "moduleId": "UC2-M5",
+      "viaNo": "S0666",
+      "terminal": "BMCT",
+      "movesTotal": 587,
+      "movesDone": 0,
+      "elapsedHours": 0.0,
+      "observedRateMovesPerHour": 112.0,
+      "remainingMoves": 587,
+      "remainingHours": 5.24,
+      "remainingWindowHours": [
+        0.0,
+        12.73
+      ],
+      "projectedTotalStayHours": 7.64,
+      "plannedStayHours": null,
+      "varianceVsPlanHours": null,
+      "status": "UNKNOWN",
+      "rateSource": "assumption",
+      "breakdown": {
+        "steps": [
+          {
+            "step": "observed rate",
+            "formula": "moves_done / elapsed_h",
+            "substitution": "0 / 0.00 = 0.00 moves/h",
+            "used": false
+          },
+          {
+            "step": "assumed rate",
+            "formula": "terminal_crane_productivity * cranes",
+            "substitution": "28.0 * 4 = 112.00 moves/h",
+            "used": true
+          },
+          {
+            "step": "remaining work",
+            "formula": "(moves_total - moves_done) / rate",
+            "substitution": "(587 - 0) / 112.00 = 5.24 h"
+          },
+          {
+            "step": "projected total stay",
+            "formula": "elapsed + remaining + berth_overhead",
+            "substitution": "0.00 + 5.24 + 2.4 = 7.64 h"
+          }
+        ],
+        "rate_gate": "The observed rate is only trusted after 0.5 h elapsed AND 5% of the parcel worked. Below that the terminal assumption is used, because a rate from a handful of moves in the first minutes would drive the whole projection.",
+        "interval_source": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        },
+        "constants": {
+          "TERMINAL_CRANE_PRODUCTIVITY": {
+            "BMCT": 28.0,
+            "NSICT": 25.0,
+            "NSIGT": 26.0,
+            "NSFT": 24.0,
+            "GTI": 27.0,
+            "GTIL": 27.0,
+            "APMT": 29.0,
+            "DEFAULT": 26.0
+          },
+          "BERTH_STAY_OVERHEAD_H": 2.4,
+          "cranes": 4.0
+        }
+      },
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "degraded": true,
+      "decision_path": "deterministic_rate_projection | rate=assumption | interval=observed_stay_variance_spread | adapter=adapter-v1.0.0 | assumed=2",
+      "vesselName": "X PRESS PYXIS",
+      "imo": "9967536",
+      "etaUtc": "2026-06-09T00:00:00Z",
+      "projectedDepartureUtc": "2026-06-09T07:38:27Z",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J10_Vessel_Call_Berthing",
+        "target_module": "UC2-M5",
+        "derived": [
+          {
+            "model_input": "via_no",
+            "value": "S0666",
+            "source": "VIA_Visit",
+            "raw": "S0666",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "terminal",
+            "value": "BMCT",
+            "source": "Terminal_Code",
+            "raw": "BMCT",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_total",
+            "value": 587,
+            "source": "Export_Containers_On_EAL + Import_Containers_Manifested",
+            "raw": "587+0",
+            "rule": "declared box counts; one move per box",
+            "observed": true
+          },
+          {
+            "model_input": "cranes",
+            "value": 4.0,
+            "source": "Cranes_Allocated",
+            "raw": "4.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_done",
+            "value": 0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+            "observed": false
+          },
+          {
+            "model_input": "elapsed_h",
+            "value": 0.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no live elapsed time supplied; the projection is from berthing, not from current progress",
+            "observed": false
+          }
+        ],
+        "assumptions": [
+          "moves_done=0 -- live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+          "elapsed_h=0.0 -- no live elapsed time supplied; the projection is from berthing, not from current progress"
+        ],
+        "warnings": [
+          "no Planned_Stay_H column; the response carries no variance-vs-plan and no status badge"
+        ],
+        "inputs_observed": 4,
+        "inputs_assumed": 2
+      }
+    },
+    {
+      "moduleId": "UC2-M5",
+      "viaNo": "S0622",
+      "terminal": "NSFT",
+      "movesTotal": 1200,
+      "movesDone": 0,
+      "elapsedHours": 0.0,
+      "observedRateMovesPerHour": 120.0,
+      "remainingMoves": 1200,
+      "remainingHours": 10.0,
+      "remainingWindowHours": [
+        2.51,
+        17.49
+      ],
+      "projectedTotalStayHours": 12.4,
+      "plannedStayHours": null,
+      "varianceVsPlanHours": null,
+      "status": "UNKNOWN",
+      "rateSource": "assumption",
+      "breakdown": {
+        "steps": [
+          {
+            "step": "observed rate",
+            "formula": "moves_done / elapsed_h",
+            "substitution": "0 / 0.00 = 0.00 moves/h",
+            "used": false
+          },
+          {
+            "step": "assumed rate",
+            "formula": "terminal_crane_productivity * cranes",
+            "substitution": "24.0 * 5 = 120.00 moves/h",
+            "used": true
+          },
+          {
+            "step": "remaining work",
+            "formula": "(moves_total - moves_done) / rate",
+            "substitution": "(1200 - 0) / 120.00 = 10.00 h"
+          },
+          {
+            "step": "projected total stay",
+            "formula": "elapsed + remaining + berth_overhead",
+            "substitution": "0.00 + 10.00 + 2.4 = 12.40 h"
+          }
+        ],
+        "rate_gate": "The observed rate is only trusted after 0.5 h elapsed AND 5% of the parcel worked. Below that the terminal assumption is used, because a rate from a handful of moves in the first minutes would drive the whole projection.",
+        "interval_source": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        },
+        "constants": {
+          "TERMINAL_CRANE_PRODUCTIVITY": {
+            "BMCT": 28.0,
+            "NSICT": 25.0,
+            "NSIGT": 26.0,
+            "NSFT": 24.0,
+            "GTI": 27.0,
+            "GTIL": 27.0,
+            "APMT": 29.0,
+            "DEFAULT": 26.0
+          },
+          "BERTH_STAY_OVERHEAD_H": 2.4,
+          "cranes": 5.0
+        }
+      },
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "degraded": true,
+      "decision_path": "deterministic_rate_projection | rate=assumption | interval=observed_stay_variance_spread | adapter=adapter-v1.0.0 | assumed=3",
+      "vesselName": "CMA CGM RIMBAUD",
+      "imo": "9635640",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J10_Vessel_Call_Berthing",
+        "target_module": "UC2-M5",
+        "derived": [
+          {
+            "model_input": "via_no",
+            "value": "S0622",
+            "source": "VIA_Visit",
+            "raw": "S0622",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "terminal",
+            "value": "NSFT",
+            "source": "Terminal_Code",
+            "raw": "NSFT",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_total",
+            "value": 1200,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "neither Export_Containers_On_EAL nor Import_Containers_Manifested supplied; 1200 is the corpus median call size",
+            "observed": false
+          },
+          {
+            "model_input": "cranes",
+            "value": 5.0,
+            "source": "Cranes_Allocated",
+            "raw": "5.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_done",
+            "value": 0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+            "observed": false
+          },
+          {
+            "model_input": "elapsed_h",
+            "value": 0.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no live elapsed time supplied; the projection is from berthing, not from current progress",
+            "observed": false
+          }
+        ],
+        "assumptions": [
+          "moves_total=1200 -- neither Export_Containers_On_EAL nor Import_Containers_Manifested supplied; 1200 is the corpus median call size",
+          "moves_done=0 -- live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+          "elapsed_h=0.0 -- no live elapsed time supplied; the projection is from berthing, not from current progress"
+        ],
+        "warnings": [
+          "no Planned_Stay_H column; the response carries no variance-vs-plan and no status badge"
+        ],
+        "inputs_observed": 3,
+        "inputs_assumed": 3
+      }
+    },
+    {
+      "moduleId": "UC2-M5",
+      "viaNo": "BNIS0544",
+      "terminal": "NSICT",
+      "movesTotal": 21,
+      "movesDone": 0,
+      "elapsedHours": 0.0,
+      "observedRateMovesPerHour": 100.0,
+      "remainingMoves": 21,
+      "remainingHours": 0.21,
+      "remainingWindowHours": [
+        0.0,
+        7.7
+      ],
+      "projectedTotalStayHours": 2.61,
+      "plannedStayHours": null,
+      "varianceVsPlanHours": null,
+      "status": "UNKNOWN",
+      "rateSource": "assumption",
+      "breakdown": {
+        "steps": [
+          {
+            "step": "observed rate",
+            "formula": "moves_done / elapsed_h",
+            "substitution": "0 / 0.00 = 0.00 moves/h",
+            "used": false
+          },
+          {
+            "step": "assumed rate",
+            "formula": "terminal_crane_productivity * cranes",
+            "substitution": "25.0 * 4 = 100.00 moves/h",
+            "used": true
+          },
+          {
+            "step": "remaining work",
+            "formula": "(moves_total - moves_done) / rate",
+            "substitution": "(21 - 0) / 100.00 = 0.21 h"
+          },
+          {
+            "step": "projected total stay",
+            "formula": "elapsed + remaining + berth_overhead",
+            "substitution": "0.00 + 0.21 + 2.4 = 2.61 h"
+          }
+        ],
+        "rate_gate": "The observed rate is only trusted after 0.5 h elapsed AND 5% of the parcel worked. Below that the terminal assumption is used, because a rate from a handful of moves in the first minutes would drive the whole projection.",
+        "interval_source": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        },
+        "constants": {
+          "TERMINAL_CRANE_PRODUCTIVITY": {
+            "BMCT": 28.0,
+            "NSICT": 25.0,
+            "NSIGT": 26.0,
+            "NSFT": 24.0,
+            "GTI": 27.0,
+            "GTIL": 27.0,
+            "APMT": 29.0,
+            "DEFAULT": 26.0
+          },
+          "BERTH_STAY_OVERHEAD_H": 2.4,
+          "cranes": 4.0
+        }
+      },
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "degraded": true,
+      "decision_path": "deterministic_rate_projection | rate=assumption | interval=observed_stay_variance_spread | adapter=adapter-v1.0.0 | assumed=2",
+      "vesselName": "BSG BIMINI",
+      "imo": "9333058",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J10_Vessel_Call_Berthing",
+        "target_module": "UC2-M5",
+        "derived": [
+          {
+            "model_input": "via_no",
+            "value": "BNIS0544",
+            "source": "VIA_Visit",
+            "raw": "BNIS0544",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "terminal",
+            "value": "NSICT",
+            "source": "Terminal_Code",
+            "raw": "NSICT",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_total",
+            "value": 21,
+            "source": "Export_Containers_On_EAL + Import_Containers_Manifested",
+            "raw": "0+21",
+            "rule": "declared box counts; one move per box",
+            "observed": true
+          },
+          {
+            "model_input": "cranes",
+            "value": 4.0,
+            "source": "Cranes_Allocated",
+            "raw": "4.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_done",
+            "value": 0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+            "observed": false
+          },
+          {
+            "model_input": "elapsed_h",
+            "value": 0.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no live elapsed time supplied; the projection is from berthing, not from current progress",
+            "observed": false
+          }
+        ],
+        "assumptions": [
+          "moves_done=0 -- live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+          "elapsed_h=0.0 -- no live elapsed time supplied; the projection is from berthing, not from current progress"
+        ],
+        "warnings": [
+          "no Planned_Stay_H column; the response carries no variance-vs-plan and no status badge",
+          "moves_total is only 21; a J10 row whose box count comes from a scan list rather than the full manifest will under-project the stay. Check Import_Containers_Manifested."
+        ],
+        "inputs_observed": 4,
+        "inputs_assumed": 2
+      }
+    },
+    {
+      "moduleId": "UC2-M5",
+      "viaNo": "SRES0711",
+      "terminal": "NSIGT",
+      "movesTotal": 1456,
+      "movesDone": 0,
+      "elapsedHours": 0.0,
+      "observedRateMovesPerHour": 130.0,
+      "remainingMoves": 1456,
+      "remainingHours": 11.2,
+      "remainingWindowHours": [
+        3.71,
+        18.69
+      ],
+      "projectedTotalStayHours": 13.6,
+      "plannedStayHours": null,
+      "varianceVsPlanHours": null,
+      "status": "UNKNOWN",
+      "rateSource": "assumption",
+      "breakdown": {
+        "steps": [
+          {
+            "step": "observed rate",
+            "formula": "moves_done / elapsed_h",
+            "substitution": "0 / 0.00 = 0.00 moves/h",
+            "used": false
+          },
+          {
+            "step": "assumed rate",
+            "formula": "terminal_crane_productivity * cranes",
+            "substitution": "26.0 * 5 = 130.00 moves/h",
+            "used": true
+          },
+          {
+            "step": "remaining work",
+            "formula": "(moves_total - moves_done) / rate",
+            "substitution": "(1456 - 0) / 130.00 = 11.20 h"
+          },
+          {
+            "step": "projected total stay",
+            "formula": "elapsed + remaining + berth_overhead",
+            "substitution": "0.00 + 11.20 + 2.4 = 13.60 h"
+          }
+        ],
+        "rate_gate": "The observed rate is only trusted after 0.5 h elapsed AND 5% of the parcel worked. Below that the terminal assumption is used, because a rate from a handful of moves in the first minutes would drive the whole projection.",
+        "interval_source": {
+          "source": "CORPUS",
+          "degraded": false,
+          "file": "data/reference/dsr_berth_stays.csv",
+          "n_berth_stays": 720,
+          "median_h": 26.7,
+          "mean_h": 29.48,
+          "sd_h": 14.98,
+          "p10_h": 13.7,
+          "p90_h": 48.8
+        },
+        "constants": {
+          "TERMINAL_CRANE_PRODUCTIVITY": {
+            "BMCT": 28.0,
+            "NSICT": 25.0,
+            "NSIGT": 26.0,
+            "NSFT": 24.0,
+            "GTI": 27.0,
+            "GTIL": 27.0,
+            "APMT": 29.0,
+            "DEFAULT": 26.0
+          },
+          "BERTH_STAY_OVERHEAD_H": 2.4,
+          "cranes": 5.0
+        }
+      },
+      "model_version": "m5-discharge-berth-v1.0.0",
+      "degraded": true,
+      "decision_path": "deterministic_rate_projection | rate=assumption | interval=observed_stay_variance_spread | adapter=adapter-v1.0.0 | assumed=2",
+      "vesselName": "MSC SARA ELENA",
+      "imo": "",
+      "etaUtc": "2026-06-17T14:00:00Z",
+      "projectedDepartureUtc": "2026-06-18T03:36:00Z",
+      "mapping": {
+        "adapter_version": "adapter-v1.0.0",
+        "sheet": "J10_Vessel_Call_Berthing",
+        "target_module": "UC2-M5",
+        "derived": [
+          {
+            "model_input": "via_no",
+            "value": "SRES0711",
+            "source": "VIA_Visit",
+            "raw": "SRES0711",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "terminal",
+            "value": "NSIGT",
+            "source": "Terminal_Code",
+            "raw": "NSIGT",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_total",
+            "value": 1456,
+            "source": "Export_Containers_On_EAL + Import_Containers_Manifested",
+            "raw": "1456+0",
+            "rule": "declared box counts; one move per box",
+            "observed": true
+          },
+          {
+            "model_input": "cranes",
+            "value": 5.0,
+            "source": "Cranes_Allocated",
+            "raw": "5.0",
+            "rule": "direct",
+            "observed": true
+          },
+          {
+            "model_input": "moves_done",
+            "value": 0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+            "observed": false
+          },
+          {
+            "model_input": "elapsed_h",
+            "value": 0.0,
+            "source": "DEFAULT",
+            "raw": null,
+            "rule": "no live elapsed time supplied; the projection is from berthing, not from current progress",
+            "observed": false
+          }
+        ],
+        "assumptions": [
+          "moves_done=0 -- live progress is a TOS field, not a J10 column; with 0 moves done the response is a plan projection at the assumed crane rate, not a re-forecast from observed progress",
+          "elapsed_h=0.0 -- no live elapsed time supplied; the projection is from berthing, not from current progress"
+        ],
+        "warnings": [
+          "no Planned_Stay_H column; the response carries no variance-vs-plan and no status badge"
+        ],
+        "inputs_observed": 4,
+        "inputs_assumed": 2
+      }
+    }
+  ],
+  "M6_from_J3_J4_J10": {
+    "moduleId": "UC2-M6",
+    "scenarioId": "AD_HOC",
+    "title": "Ad-hoc plan",
+    "openLanes": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L5",
+      "L6"
+    ],
+    "closedLanes": [],
+    "assignments": [
+      {
+        "laneId": "L1",
+        "name": "Lane 1 - Import",
+        "assigned": {
+          "IMPORT_LADEN": 51.03
+        },
+        "loadPerHour": 51.03,
+        "capacityPerHour": 30.0,
+        "utilisation": 1.7008,
+        "projectedWaitMinutes": 192.1,
+        "saturated": true
+      },
+      {
+        "laneId": "L2",
+        "name": "Lane 2 - Import",
+        "assigned": {
+          "IMPORT_LADEN": 30.0
+        },
+        "loadPerHour": 30.0,
+        "capacityPerHour": 30.0,
+        "utilisation": 1.0,
+        "projectedWaitMinutes": 150.0,
+        "saturated": true
+      },
+      {
+        "laneId": "L3",
+        "name": "Lane 3 - Export",
+        "assigned": {
+          "EMPTY": 17.92
+        },
+        "loadPerHour": 17.92,
+        "capacityPerHour": 28.0,
+        "utilisation": 0.64,
+        "projectedWaitMinutes": 3.8,
+        "saturated": false
+      },
+      {
+        "laneId": "L4",
+        "name": "Lane 4 - Export",
+        "assigned": {
+          "EMPTY": 10.68
+        },
+        "loadPerHour": 10.68,
+        "capacityPerHour": 28.0,
+        "utilisation": 0.3814,
+        "projectedWaitMinutes": 1.3,
+        "saturated": false
+      },
+      {
+        "laneId": "L5",
+        "name": "Lane 5 - Reefer",
+        "assigned": {
+          "REEFER": 5.21,
+          "IMPORT_LADEN": 16.79
+        },
+        "loadPerHour": 22.0,
+        "capacityPerHour": 22.0,
+        "utilisation": 1.0,
+        "projectedWaitMinutes": 150.0,
+        "saturated": true
+      },
+      {
+        "laneId": "L6",
+        "name": "Lane 6 - Hazardous",
+        "assigned": {
+          "HAZARDOUS": 1.42,
+          "IMPORT_LADEN": 16.58
+        },
+        "loadPerHour": 18.0,
+        "capacityPerHour": 18.0,
+        "utilisation": 1.0,
+        "projectedWaitMinutes": 150.0,
+        "saturated": true
+      }
+    ],
+    "unservableDemandPerHour": {},
+    "totalDemandPerHour": 149.62,
+    "totalCapacityPerHour": 156.0,
+    "capacityHeadroomPerHour": 6.38,
+    "worstWaitMinutes": 192.1,
+    "meanWaitMinutes": 107.9,
+    "throttleRecommended": true,
+    "throttleClasses": [
+      "HAZARDOUS",
+      "IMPORT_LADEN",
+      "REEFER"
+    ],
+    "status": "CRITICAL",
+    "demand_source": "caller_rows",
+    "model_version": "m6-lane-assignment-v1.0.0",
+    "generated_at_utc": "2026-08-03T18:01:01Z",
+    "degraded": false,
+    "decision_path": "deterministic_allocator | demand=caller | 6/6 lanes open | adapter=adapter-v1.0.0 | all_inputs_observed",
+    "breakdown": {
+      "policy": "Most-constrained movement class first, then spread across compatible open lanes in proportion to spare capacity. Overflow beyond total compatible capacity is placed on the least-loaded lane and reported, never dropped.",
+      "wait_formula": "rho/(mu*(1-rho)) below saturation; at or above saturation the one-hour backlog delay is reported instead of infinity, because a blank cell tells a gate supervisor nothing.",
+      "thresholds": {
+        "throttle_wait_minutes": 45.0,
+        "critical_wait_minutes": 90.0
+      },
+      "steps": [
+        {
+          "step": "assign REEFER",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "5.2/h over 1 lane(s): L5=5.2",
+          "compatibleLanes": [
+            "L5"
+          ]
+        },
+        {
+          "step": "assign HAZARDOUS",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "1.4/h over 1 lane(s): L6=1.4",
+          "compatibleLanes": [
+            "L6"
+          ]
+        },
+        {
+          "step": "overflow IMPORT_LADEN",
+          "formula": "excess -> least-loaded compatible lane",
+          "substitution": "21.0/h beyond capacity pushed to L1 (lane goes over 100%)",
+          "overflow": 21.03
+        },
+        {
+          "step": "assign IMPORT_LADEN",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "114.4/h over 4 lane(s): L1=51.0, L2=30.0, L5=16.8, L6=16.6",
+          "compatibleLanes": [
+            "L1",
+            "L2",
+            "L5",
+            "L6"
+          ]
+        },
+        {
+          "step": "overflow EMPTY",
+          "formula": "excess -> least-loaded compatible lane",
+          "substitution": "0.1/h beyond capacity pushed to L4 (lane goes over 100%)",
+          "overflow": 0.09
+        },
+        {
+          "step": "assign EMPTY",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "28.6/h over 2 lane(s): L3=17.9, L4=10.7",
+          "compatibleLanes": [
+            "L1",
+            "L2",
+            "L3",
+            "L4"
+          ]
+        },
+        {
+          "step": "capacity balance",
+          "formula": "sum(open lane throughput) - sum(demand)",
+          "substitution": "156.0 - 149.6 = 6.4 trucks/h headroom"
+        }
+      ],
+      "lanes": [
+        {
+          "laneId": "L1",
+          "name": "Lane 1 - Import",
+          "throughputPerHour": 30.0,
+          "accepts": [
+            "IMPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L2",
+          "name": "Lane 2 - Import",
+          "throughputPerHour": 30.0,
+          "accepts": [
+            "IMPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L3",
+          "name": "Lane 3 - Export",
+          "throughputPerHour": 28.0,
+          "accepts": [
+            "EXPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L4",
+          "name": "Lane 4 - Export",
+          "throughputPerHour": 28.0,
+          "accepts": [
+            "EXPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L5",
+          "name": "Lane 5 - Reefer",
+          "throughputPerHour": 22.0,
+          "accepts": [
+            "REEFER",
+            "IMPORT_LADEN",
+            "EXPORT_LADEN"
+          ],
+          "powered": true,
+          "hazmat": false
+        },
+        {
+          "laneId": "L6",
+          "name": "Lane 6 - Hazardous",
+          "throughputPerHour": 18.0,
+          "accepts": [
+            "HAZARDOUS",
+            "IMPORT_LADEN",
+            "EXPORT_LADEN"
+          ],
+          "powered": false,
+          "hazmat": true
+        }
+      ]
+    },
+    "mapping": {
+      "adapter_version": "adapter-v1.0.0",
+      "sheet": "J3/J4 gate rows + J10 vessel rows",
+      "target_module": "UC2-M6",
+      "derived": [
+        {
+          "model_input": "total_demand_per_hour",
+          "value": 143.0,
+          "source": "Trucks_In_Last_Hour",
+          "raw": "4 gate-hour bucket(s)",
+          "rule": "summed observed hourly truck arrivals across the supplied buckets",
+          "observed": true
+        },
+        {
+          "model_input": "class_shares",
+          "value": {
+            "IMPORT_LADEN": 0.8,
+            "EMPTY": 0.2
+          },
+          "source": "Move_Type / Container_Status",
+          "raw": "{'IMPORT_LADEN': 4, 'EMPTY': 1}",
+          "rule": "share of the hourly total sent to each movement class",
+          "observed": true
+        },
+        {
+          "model_input": "reefer_hazmat_demand",
+          "value": {
+            "REEFER": 5.208,
+            "HAZARDOUS": 1.417
+          },
+          "source": "J10 Reefer_Count + Hazardous_Count",
+          "raw": "125 reefer, 34 hazmat",
+          "rule": "counts spread over a 24 h evacuation window",
+          "observed": true
+        }
+      ],
+      "assumptions": [],
+      "warnings": [],
+      "inputs_observed": 3,
+      "inputs_assumed": 0
+    }
+  },
+  "M6_from_J3_J4_J10_hazmat_lane_closed": {
+    "moduleId": "UC2-M6",
+    "scenarioId": "AD_HOC",
+    "title": "Ad-hoc plan",
+    "openLanes": [
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+      "L5"
+    ],
+    "closedLanes": [
+      "L6"
+    ],
+    "assignments": [
+      {
+        "laneId": "L1",
+        "name": "Lane 1 - Import",
+        "assigned": {
+          "IMPORT_LADEN": 67.61
+        },
+        "loadPerHour": 67.61,
+        "capacityPerHour": 30.0,
+        "utilisation": 2.2536,
+        "projectedWaitMinutes": 225.2,
+        "saturated": true
+      },
+      {
+        "laneId": "L2",
+        "name": "Lane 2 - Import",
+        "assigned": {
+          "IMPORT_LADEN": 30.0
+        },
+        "loadPerHour": 30.0,
+        "capacityPerHour": 30.0,
+        "utilisation": 1.0,
+        "projectedWaitMinutes": 150.0,
+        "saturated": true
+      },
+      {
+        "laneId": "L3",
+        "name": "Lane 3 - Export",
+        "assigned": {
+          "EMPTY": 17.92
+        },
+        "loadPerHour": 17.92,
+        "capacityPerHour": 28.0,
+        "utilisation": 0.64,
+        "projectedWaitMinutes": 3.8,
+        "saturated": false
+      },
+      {
+        "laneId": "L4",
+        "name": "Lane 4 - Export",
+        "assigned": {
+          "EMPTY": 10.68
+        },
+        "loadPerHour": 10.68,
+        "capacityPerHour": 28.0,
+        "utilisation": 0.3814,
+        "projectedWaitMinutes": 1.3,
+        "saturated": false
+      },
+      {
+        "laneId": "L5",
+        "name": "Lane 5 - Reefer",
+        "assigned": {
+          "REEFER": 5.21,
+          "IMPORT_LADEN": 16.79
+        },
+        "loadPerHour": 22.0,
+        "capacityPerHour": 22.0,
+        "utilisation": 1.0,
+        "projectedWaitMinutes": 150.0,
+        "saturated": true
+      }
+    ],
+    "unservableDemandPerHour": {
+      "HAZARDOUS": 1.42
+    },
+    "totalDemandPerHour": 149.62,
+    "totalCapacityPerHour": 138.0,
+    "capacityHeadroomPerHour": -11.62,
+    "worstWaitMinutes": 225.2,
+    "meanWaitMinutes": 106.1,
+    "throttleRecommended": true,
+    "throttleClasses": [
+      "HAZARDOUS",
+      "IMPORT_LADEN",
+      "REEFER"
+    ],
+    "status": "UNSERVABLE_DEMAND",
+    "demand_source": "caller_rows",
+    "model_version": "m6-lane-assignment-v1.0.0",
+    "generated_at_utc": "2026-08-03T18:01:01Z",
+    "degraded": false,
+    "decision_path": "deterministic_allocator | demand=caller | 5/6 lanes open | adapter=adapter-v1.0.0 | all_inputs_observed",
+    "breakdown": {
+      "policy": "Most-constrained movement class first, then spread across compatible open lanes in proportion to spare capacity. Overflow beyond total compatible capacity is placed on the least-loaded lane and reported, never dropped.",
+      "wait_formula": "rho/(mu*(1-rho)) below saturation; at or above saturation the one-hour backlog delay is reported instead of infinity, because a blank cell tells a gate supervisor nothing.",
+      "thresholds": {
+        "throttle_wait_minutes": 45.0,
+        "critical_wait_minutes": 90.0
+      },
+      "steps": [
+        {
+          "step": "assign HAZARDOUS",
+          "formula": "compatible open lanes",
+          "substitution": "HAZARDOUS: no compatible lane open -> 1.4/h UNSERVABLE",
+          "unservable": 1.42
+        },
+        {
+          "step": "assign REEFER",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "5.2/h over 1 lane(s): L5=5.2",
+          "compatibleLanes": [
+            "L5"
+          ]
+        },
+        {
+          "step": "overflow IMPORT_LADEN",
+          "formula": "excess -> least-loaded compatible lane",
+          "substitution": "37.6/h beyond capacity pushed to L1 (lane goes over 100%)",
+          "overflow": 37.61
+        },
+        {
+          "step": "assign IMPORT_LADEN",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "114.4/h over 3 lane(s): L1=67.6, L2=30.0, L5=16.8",
+          "compatibleLanes": [
+            "L1",
+            "L2",
+            "L5"
+          ]
+        },
+        {
+          "step": "overflow EMPTY",
+          "formula": "excess -> least-loaded compatible lane",
+          "substitution": "0.1/h beyond capacity pushed to L4 (lane goes over 100%)",
+          "overflow": 0.09
+        },
+        {
+          "step": "assign EMPTY",
+          "formula": "spread across compatible lanes in proportion to spare capacity",
+          "substitution": "28.6/h over 2 lane(s): L3=17.9, L4=10.7",
+          "compatibleLanes": [
+            "L1",
+            "L2",
+            "L3",
+            "L4"
+          ]
+        },
+        {
+          "step": "capacity balance",
+          "formula": "sum(open lane throughput) - sum(demand)",
+          "substitution": "138.0 - 149.6 = -11.6 trucks/h headroom"
+        }
+      ],
+      "lanes": [
+        {
+          "laneId": "L1",
+          "name": "Lane 1 - Import",
+          "throughputPerHour": 30.0,
+          "accepts": [
+            "IMPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L2",
+          "name": "Lane 2 - Import",
+          "throughputPerHour": 30.0,
+          "accepts": [
+            "IMPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L3",
+          "name": "Lane 3 - Export",
+          "throughputPerHour": 28.0,
+          "accepts": [
+            "EXPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L4",
+          "name": "Lane 4 - Export",
+          "throughputPerHour": 28.0,
+          "accepts": [
+            "EXPORT_LADEN",
+            "EMPTY"
+          ],
+          "powered": false,
+          "hazmat": false
+        },
+        {
+          "laneId": "L5",
+          "name": "Lane 5 - Reefer",
+          "throughputPerHour": 22.0,
+          "accepts": [
+            "REEFER",
+            "IMPORT_LADEN",
+            "EXPORT_LADEN"
+          ],
+          "powered": true,
+          "hazmat": false
+        },
+        {
+          "laneId": "L6",
+          "name": "Lane 6 - Hazardous",
+          "throughputPerHour": 18.0,
+          "accepts": [
+            "HAZARDOUS",
+            "IMPORT_LADEN",
+            "EXPORT_LADEN"
+          ],
+          "powered": false,
+          "hazmat": true
+        }
+      ]
+    },
+    "mapping": {
+      "adapter_version": "adapter-v1.0.0",
+      "sheet": "J3/J4 gate rows + J10 vessel rows",
+      "target_module": "UC2-M6",
+      "derived": [
+        {
+          "model_input": "total_demand_per_hour",
+          "value": 143.0,
+          "source": "Trucks_In_Last_Hour",
+          "raw": "4 gate-hour bucket(s)",
+          "rule": "summed observed hourly truck arrivals across the supplied buckets",
+          "observed": true
+        },
+        {
+          "model_input": "class_shares",
+          "value": {
+            "IMPORT_LADEN": 0.8,
+            "EMPTY": 0.2
+          },
+          "source": "Move_Type / Container_Status",
+          "raw": "{'IMPORT_LADEN': 4, 'EMPTY': 1}",
+          "rule": "share of the hourly total sent to each movement class",
+          "observed": true
+        },
+        {
+          "model_input": "reefer_hazmat_demand",
+          "value": {
+            "REEFER": 5.208,
+            "HAZARDOUS": 1.417
+          },
+          "source": "J10 Reefer_Count + Hazardous_Count",
+          "raw": "125 reefer, 34 hazmat",
+          "rule": "counts spread over a 24 h evacuation window",
+          "observed": true
+        }
+      ],
+      "assumptions": [],
+      "warnings": [],
+      "inputs_observed": 3,
+      "inputs_assumed": 0
+    }
+  },
+  "M7_reefer_from_J8_J10": {
+    "moduleId": "UC2-M7",
+    "scenarioId": "WEBAPP",
+    "title": "Reefer allocation from live yard and vessel rows",
+    "reefersArriving": 125,
+    "plugsTotal": 490,
+    "plugsFailed": 321,
+    "plugsAvailable": 169,
+    "plugsReserved": 9,
+    "plugsAllocatable": 160,
+    "allocatedBySensitivity": {
+      "PHARMA": 8,
+      "FROZEN": 37,
+      "CHILLED": 62,
+      "AMBIENT_CONTROLLED": 18
+    },
+    "unpluggedBySensitivity": {},
+    "shortfall": 0,
+    "hoursToFirstRisk": null,
+    "priorityEvacuation": [],
+    "status": "OK",
+    "model_version": "m7-empty-reefer-v1.0.0",
+    "generated_at_utc": "2026-08-03T18:01:01Z",
+    "degraded": true,
+    "decision_path": "deterministic_priority_matcher | order=PHARMA>FROZEN>CHILLED>AMBIENT_CONTROLLED>UNKNOWN | adapter=adapter-v1.0.0 | assumed=1",
+    "breakdown": {
+      "policy": "Plugs are allocated in ascending order of how long the cargo holds temperature unplugged: PHARMA > FROZEN > CHILLED > AMBIENT_CONTROLLED > UNKNOWN. Reefer power is a safety and commercial risk, so the decision is rule-auditable rather than learned.",
+      "hold_hours": {
+        "PHARMA": 4.0,
+        "FROZEN": 8.0,
+        "CHILLED": 12.0,
+        "AMBIENT_CONTROLLED": 24.0,
+        "UNKNOWN": 8.0
+      },
+      "steps": [
+        {
+          "step": "plug bank",
+          "formula": "total - failed - reserve",
+          "substitution": "490 - 321 - 9 = 160 allocatable",
+          "note": "5% held back; never plan to the last plug"
+        },
+        {
+          "step": "allocate PHARMA",
+          "formula": "min(arriving_in_class, plugs_remaining)",
+          "substitution": "min(8, 160) = 8 plugged, 0 exposed",
+          "holdHours": 4.0
+        },
+        {
+          "step": "allocate FROZEN",
+          "formula": "min(arriving_in_class, plugs_remaining)",
+          "substitution": "min(37, 152) = 37 plugged, 0 exposed",
+          "holdHours": 8.0
+        },
+        {
+          "step": "allocate CHILLED",
+          "formula": "min(arriving_in_class, plugs_remaining)",
+          "substitution": "min(62, 115) = 62 plugged, 0 exposed",
+          "holdHours": 12.0
+        },
+        {
+          "step": "allocate AMBIENT_CONTROLLED",
+          "formula": "min(arriving_in_class, plugs_remaining)",
+          "substitution": "min(18, 53) = 18 plugged, 0 exposed",
+          "holdHours": 24.0
+        },
+        {
+          "step": "exposure",
+          "formula": "hours_to_first_risk = min(hold_hours of unplugged classes)",
+          "substitution": "0 boxes unplugged"
+        }
+      ],
+      "constants": {
+        "CPP_REEFER_PLUGS": 96,
+        "PLUG_RESERVE_PCT": 0.05
+      }
+    },
+    "plugsInUse": 321,
+    "plugsFailedReported": 0,
+    "plugsUnavailableTotal": 321,
+    "mapping": {
+      "adapter_version": "adapter-v1.0.0",
+      "sheet": "J8_Yard_Empty_Pendency + J10",
+      "target_module": "UC2-M7",
+      "derived": [
+        {
+          "model_input": "plugs_total",
+          "value": 490,
+          "source": "Reefer_Plugs_Total",
+          "raw": "490.0",
+          "rule": "summed across 4 yard block(s); M7's own default is 96",
+          "observed": true
+        },
+        {
+          "model_input": "plugs_in_use",
+          "value": 321,
+          "source": "Reefer_Plugs_Used",
+          "raw": "321.0",
+          "rule": "occupied plugs are unavailable to arriving boxes and are counted as failed for allocation purposes",
+          "observed": true
+        },
+        {
+          "model_input": "reefers_arriving",
+          "value": 125,
+          "source": "Reefer_Count",
+          "raw": "125.0",
+          "rule": "summed across 5 vessel call(s)",
+          "observed": true
+        },
+        {
+          "model_input": "plugs_failed",
+          "value": 0,
+          "source": "DEFAULT",
+          "raw": null,
+          "rule": "plug faults are an operations input, not a sheet column; assuming every plug in the bank is live",
+          "observed": false
+        }
+      ],
+      "assumptions": [
+        "plugs_failed=0 -- plug faults are an operations input, not a sheet column; assuming every plug in the bank is live"
+      ],
+      "warnings": [],
+      "inputs_observed": 3,
+      "inputs_assumed": 1
+    }
+  },
+  "M7_empties_from_J8": {
+    "status": "balanced",
+    "degraded": true,
+    "model_version": "m7-empty-reefer-v1.0.0",
+    "generated_at_utc": "2026-08-03T18:01:01Z",
+    "demand_source": "caller",
+    "demand_note": "Supplied by the caller.",
+    "thresholds": {
+      "min_days_cover": 1.5,
+      "target_days_cover": 3.0
+    },
+    "balances": [
+      {
+        "terminal": "NSICT",
+        "emptiesAvailable": 168,
+        "dailyDemand": 240.0,
+        "daysCover": 0.7,
+        "status": "SHORT",
+        "repositionUnits": 552
+      },
+      {
+        "terminal": "BMCT",
+        "emptiesAvailable": 380,
+        "dailyDemand": 480.0,
+        "daysCover": 0.79,
+        "status": "SHORT",
+        "repositionUnits": 1060
+      },
+      {
+        "terminal": "NSFT",
+        "emptiesAvailable": 288,
+        "dailyDemand": 350.0,
+        "daysCover": 0.82,
+        "status": "SHORT",
+        "repositionUnits": 762
+      },
+      {
+        "terminal": "OFFDOCK",
+        "emptiesAvailable": 91,
+        "dailyDemand": 84.0,
+        "daysCover": 1.08,
+        "status": "SHORT",
+        "repositionUnits": 161
+      }
+    ],
+    "short_terminals": [
+      "NSICT",
+      "BMCT",
+      "NSFT",
+      "OFFDOCK"
+    ],
+    "surplus_terminals": [],
+    "reposition_plan": [
+      {
+        "from": null,
+        "to": "NSICT",
+        "units": 552,
+        "reason": "no surplus available in the pool -- escalate to the line for an inbound empty reposition"
+      },
+      {
+        "from": null,
+        "to": "BMCT",
+        "units": 1060,
+        "reason": "no surplus available in the pool -- escalate to the line for an inbound empty reposition"
+      },
+      {
+        "from": null,
+        "to": "NSFT",
+        "units": 762,
+        "reason": "no surplus available in the pool -- escalate to the line for an inbound empty reposition"
+      },
+      {
+        "from": null,
+        "to": "OFFDOCK",
+        "units": 161,
+        "reason": "no surplus available in the pool -- escalate to the line for an inbound empty reposition"
+      }
+    ],
+    "provenance": {
+      "source": "J8_Yard_Empty_Pendency rows supplied by the caller",
+      "rows": 4,
+      "terminals": [
+        "BMCT",
+        "NSFT",
+        "NSICT",
+        "OFFDOCK"
+      ],
+      "note": "Supply and demand both come from these rows, so the days-of-cover figure describes one consistent snapshot rather than mixing two datasets."
+    },
+    "supplySource": "WEBAPP_J8",
+    "mapping": {
+      "adapter_version": "adapter-v1.0.0",
+      "sheet": "J8_Yard_Empty_Pendency",
+      "target_module": "UC2-M7",
+      "derived": [
+        {
+          "model_input": "daily_demand_by_terminal",
+          "value": {
+            "NSFT": 350.0,
+            "NSICT": 240.0,
+            "OFFDOCK": 84.0,
+            "BMCT": 480.0
+          },
+          "source": "Empties_Out_Last_24h",
+          "raw": "{'NSFT': 350.0, 'NSICT': 240.0, 'OFFDOCK': 84.0, 'BMCT': 480.0}",
+          "rule": "observed 24 h empty outflow IS the daily demand; this replaces M7's export-laden proxy",
+          "observed": true
+        },
+        {
+          "model_input": "empties_on_hand",
+          "value": {
+            "NSFT": 288,
+            "NSICT": 168,
+            "OFFDOCK": 91,
+            "BMCT": 380
+          },
+          "source": "Empty_Boxes",
+          "raw": "{'NSFT': 288.0, 'NSICT': 168.0, 'OFFDOCK': 91.0, 'BMCT': 380.0}",
+          "rule": "supply side of the balance, taken from the same rows as demand",
+          "observed": true
+        }
+      ],
+      "assumptions": [],
+      "warnings": [],
+      "inputs_observed": 2,
+      "inputs_assumed": 0
+    },
+    "decision_path": "adapter=adapter-v1.0.0 | all_inputs_observed"
+  }
+}

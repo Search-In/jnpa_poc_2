@@ -1,0 +1,214 @@
+{
+  "schema_version": "uc2-corpus/1.0.0",
+  "module_version": "uc2-corpus-v1.0.0",
+  "corpus_dir": "data/corpus/UC-II_Cargo_Handling",
+  "corpus_present": true,
+  "sources_total": 13,
+  "sources_from_corpus": 12,
+  "sources": {
+    "events": {
+      "label": "CODECO container gate events",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/CFS-CODECO.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/ECY-CODECO.xlsx"
+      ],
+      "missing": [],
+      "record_count": 1929,
+      "note": "all rows parsed"
+    },
+    "dwell": {
+      "label": "Paired container stays",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/CFS-CODECO.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/CFS_ECY_Container_Events_and_LDB_Benchmark/ECY-CODECO.xlsx"
+      ],
+      "missing": [],
+      "record_count": 1202,
+      "note": "483 complete IN->OUT pairs, 719 open/orphan"
+    },
+    "edi": {
+      "label": "EDI CODECO messages",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M1_Container_Dwell_Prediction/EDI_CODECO/CODECO.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/EDI_CODECO_COARRI_COPRAR/EDI Message Format.xlsx"
+      ],
+      "missing": [],
+      "record_count": 5,
+      "note": "EDI format samples, not a volume feed"
+    },
+    "rakes": {
+      "label": "FOIS train intimations",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/NLDS_FOIS_TrainIntimation_TOS/JNPA Train Intimation 09052026_083002.csv"
+      ],
+      "missing": [],
+      "record_count": 59,
+      "note": ""
+    },
+    "manifests": {
+      "label": "CTO rake manifests",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261076 HTPL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261546 GRFL.TXT",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261591 CRRS.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261610 ADNI.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261628 JKTI.TXT",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261630  DLIL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261648 PMLL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261673 CONR.TXT"
+      ],
+      "missing": [],
+      "record_count": 8,
+      "note": ""
+    },
+    "tos_containers": {
+      "label": "TOS container entry/exit",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/NLDS_FOIS_TrainIntimation_TOS/TOS File 01.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M5_Discharge_Rate_Berth_Stay/TOS_Performance/TOS File 01.xlsx"
+      ],
+      "missing": [],
+      "record_count": 10,
+      "note": "schema reference + external check only; too few rows to train"
+    },
+    "tos_vessels": {
+      "label": "TOS vessel calls (plan vs actual)",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/NLDS_FOIS_TrainIntimation_TOS/TOS File 02.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M5_Discharge_Rate_Berth_Stay/TOS_Performance/TOS File 02.xlsx"
+      ],
+      "missing": [],
+      "record_count": 5,
+      "note": ""
+    },
+    "leo": {
+      "label": "Customs let-export orders",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/LEO/leodetails.xlsx"
+      ],
+      "missing": [],
+      "record_count": 100,
+      "note": ""
+    },
+    "shipping_bills": {
+      "label": "Shipping bill headers",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/Shipping Bill/shippingbill.xlsx"
+      ],
+      "missing": [],
+      "record_count": 100,
+      "note": ""
+    },
+    "scanning": {
+      "label": "RMS scanning lists",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/1.txt",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/2.txt",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/3.txt",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/Customs_Chain_IGM_OOC_SMTP_RMS_SB_LEO/RMS/4.txt"
+      ],
+      "missing": [],
+      "record_count": 99,
+      "note": ""
+    },
+    "igm": {
+      "label": "ICEGATE IGM headers",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1191042_08-06-2026-102123290.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1193206_07-06-2026-025126628.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1193598_09-06-2026-025118186.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1193670_06-06-2026-092127911.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1193671_04-06-2026-112153747.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1193671_07-06-2026-092121597.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1194313_07-06-2026-025128265.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1194379_03-06-2026-185209733.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1194564_06-06-2026-172128325.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1194914_08-06-2026-015129898.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1196360_06-06-2026-162147885.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1196715_07-06-2026-025128389.xml",
+        "data/corpus/UC-II_Cargo_Handling/M4_Event_Sequence_Anomaly/ICEGATE_IGM_XML/CHPOI03_1196874_06-06-2026-172129240.xml"
+      ],
+      "missing": [],
+      "record_count": 13,
+      "note": ""
+    },
+    "gate_docs": {
+      "label": "EIR / Form 13 / pick-up tickets",
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/EIR/eir_parsed/eir1_psa_bmct.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/EIR/eir_parsed/eir2_dpworld_nsict.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/EIR/eir_parsed/eir3_gateway_maersk.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/EIR/eir_parsed/eir4_gateway_one.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/Form 13/form13_parsed/form13_igt_eir.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/Form 13/form13_parsed/form13_nsft_eadvice.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/Form 13/form13_parsed/form13_nsict_egate.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/Form 13/form13_parsed/form13_psa_bmct.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/PIN_Pickup/terminal_tickets_parsed/ticket1.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/PIN_Pickup/terminal_tickets_parsed/ticket2.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/PIN_Pickup/terminal_tickets_parsed/ticket3.json",
+        "data/corpus/UC-II_Cargo_Handling/M3_Gate_Queue_Forecast/Gate_Documents_Form13_EIR_PIN/PIN_Pickup/terminal_tickets_parsed/ticket4.json"
+      ],
+      "missing": [],
+      "record_count": 12,
+      "note": ""
+    },
+    "inventory": {
+      "label": "Shipping-line EAL / IAL inventories",
+      "source": "PARTIAL",
+      "degraded": true,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_BMCT.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_GTI.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSFT.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL APMT.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL BMCT.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSFT.csv",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSICT.xlsx",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/IAL FORMAT/IAL NSIGT.xlsx"
+      ],
+      "missing": [
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSICT.xls",
+        "data/corpus/UC-II_Cargo_Handling/M7_Empty_Pool_Reefer/Shipping_Lines_EAL_IAL_EDO/EAL_FORMAT/EAL_NSIGT.xls"
+      ],
+      "record_count": 6467,
+      "note": "2 file(s) skipped: legacy .xls or unrecognised header (EAL_NSICT.xls, EAL_NSIGT.xls)"
+    }
+  }
+}

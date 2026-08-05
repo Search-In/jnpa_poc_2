@@ -33,6 +33,8 @@ import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
 import { CargoWorkflowDialog } from './CargoWorkflowDialog.js';
 import { NldsTrackDialog } from './NldsTrackDialog.js';
+import { ContainerPredictionsDrawer } from '../components/predictions/ContainerPredictionsDrawer.js';
+import { predictionStore } from '../state/predictionStore.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
@@ -548,6 +550,16 @@ export function ContainerMovements() {
   const [workflowTarget, setWorkflowTarget] = useState<string | null>(null);
   // Container whose NLDS/LDB inland-transit track dialog is open.
   const [trackTarget, setTrackTarget] = useState<string | null>(null);
+  // Container whose AI/ML predictions drawer is open (null = closed). The
+  // predictions themselves live in predictionStore, because ONE scoring call
+  // serves every row: opening a second container inside the 5-minute TTL is
+  // instant. This state is only "which drawer is on screen".
+  const [predictionsTarget, setPredictionsTarget] = useState<string | null>(null);
+  // The page that was on screen when Predictions was opened. Held here because
+  // the drawer is mounted OUTSIDE the Panel (see the note at the bottom of this
+  // file) and so cannot reach the render prop's row list, and because a
+  // re-score must use the same set the numbers were built from.
+  const [predictionsPage, setPredictionsPage] = useState<ContainerMovementDTO[]>([]);
   // Container Search + POC-3 list filters (Appendix-C UC-II R1 "visibility of
   // container movements … container details" + R3 customs-flagged real-time status).
   // ADDITIVE: reuses the existing ContainerMovementFilter the adapter already honours
@@ -580,7 +592,13 @@ export function ContainerMovements() {
   return (
     <>
     <Panel heading={t('panel_movements', lang)} state={state} isEmpty={(d) => d.length === 0}>
-      {(moves) => (
+      {(moves) => {
+        // The rows actually on screen. Predictions scores exactly THIS set:
+        // arrival cadence is only measurable across rows, and the gate/yard
+        // figures describe a set — so the visible page is the unit, and the
+        // number the panel reports as "page of N" is the number rendered here.
+        const visible = moves.slice(0, 50);
+        return (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             {/* Create a new cargo record in the POC-3 shared backend (POST). */}
@@ -696,10 +714,14 @@ export function ContainerMovements() {
               <CalciteTableHeader heading="Source" />
               <CalciteTableHeader heading="Events" />
               <CalciteTableHeader heading="Customs" />
+              {/* AI/ML predictions — an ACTION, not a value. Scoring runs real
+                  models, so it happens when someone asks, never eagerly for
+                  every row. Additive: no existing column changed. */}
+              <CalciteTableHeader heading="Predictions" />
               <CalciteTableHeader heading="Discharge" />
               <CalciteTableHeader heading="Manage" />
             </CalciteTableRow>
-            {moves.slice(0, 50).map((m) => (
+            {visible.map((m) => (
               <CalciteTableRow key={m.container.containerNo}>
                 <CalciteTableCell>{m.container.containerNo}</CalciteTableCell>
                 <CalciteTableCell>
@@ -766,6 +788,26 @@ export function ContainerMovements() {
                   )}
                 </CalciteTableCell>
                 <CalciteTableCell>
+                  {/* AI/ML predictions for THIS container. The whole visible page
+                      is sent in one call — arrival cadence is only measurable
+                      across rows — so opening a second container inside the
+                      5-minute TTL costs nothing. */}
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="brand"
+                    iconStart="lightbulb"
+                    title="What every UC-II model predicts for this container"
+                    onClick={() => {
+                      setPredictionsPage(visible);
+                      setPredictionsTarget(m.container.containerNo);
+                      void predictionStore.open(m.container.containerNo, visible);
+                    }}
+                  >
+                    Predict
+                  </CalciteButton>
+                </CalciteTableCell>
+                <CalciteTableCell>
                   {/* Per-container discharge report (lifecycle step 2/3). Opens a
                       dialog with this container's vessel/ETA facts; the confirm
                       action is UI-level only — no backend discharge write exists. */}
@@ -822,7 +864,8 @@ export function ContainerMovements() {
             ))}
           </CalciteTable>
         </>
-      )}
+        );
+      }}
     </Panel>
     {/* Dialogs are mounted OUTSIDE the Panel so they survive the post-write refetch.
         (The Panel unmounts its children while useAsync reloads — mounting a dialog
@@ -833,6 +876,20 @@ export function ContainerMovements() {
     {selected && <TimelineDrawer move={selected} onClose={() => setSelected(null)} />}
     {workflowTarget && <CargoWorkflowDialog containerNo={workflowTarget} onClose={() => setWorkflowTarget(null)} />}
     {trackTarget && <NldsTrackDialog containerNo={trackTarget} onClose={() => setTrackTarget(null)} />}
+    {/* Conditionally mounted, exactly like the drawers above it. That is also
+        what makes the UC-1 "blank on second open" defect impossible here: there
+        is no persistent web component whose internal `closed` state could
+        survive React's prop diffing (see the drawer's module docstring). */}
+    {predictionsTarget && (
+      <ContainerPredictionsDrawer
+        containerNo={predictionsTarget}
+        moves={predictionsPage}
+        onClose={() => {
+          setPredictionsTarget(null);
+          predictionStore.close();
+        }}
+      />
+    )}
     </>
   );
 }

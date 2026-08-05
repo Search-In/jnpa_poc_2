@@ -123,6 +123,31 @@ services:
     <<: *ai
     environment: { AI_MODEL: event-anomaly-detector }
 
+  # --- UC-II WS2 model service (Predictions panel) -----------------------------
+  # The seven WS2 UC-II models + the journey-sheet adapter + the per-container
+  # fan-out the Movements tab's Predictions column calls.
+  #
+  # Distinct from the four ai-* services above: those are sklearn models trained
+  # on synthetic datasets and wired to the gateway; this is the audited WS2
+  # delivery, and it covers M5/M6/M7 which the others do not implement at all.
+  # Both are running until the ai-* set is retired.
+  #
+  # NO `ports:` ENTRY, DELIBERATELY. The service is stateless and carries no auth
+  # of its own, so it must not be reachable from outside the compose network.
+  # nginx proxies /ml-api to it (apps/web/nginx.conf) and that is the only door.
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    environment:
+      # 8200 explicitly: the gateway holds 8000 and the WS2 delivery's own
+      # default is 8000 too, so leaving it implicit is a silent collision.
+      JNPA_PORT: 8200
+      JNPA_HOST: 0.0.0.0
+    expose:
+      - "8200"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   miniodata:

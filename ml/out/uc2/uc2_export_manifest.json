@@ -1,0 +1,26 @@
+{
+  "generated_at_utc": "2026-08-02T07:12:07Z",
+  "exports": {
+    "m1": {
+      "dir": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor",
+      "model": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor\\model.joblib",
+      "metrics": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor\\metrics.json",
+      "card": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor\\model_card.json",
+      "warnings": []
+    },
+    "m2": {
+      "dir": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster",
+      "model": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster\\model.joblib",
+      "metrics": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster\\metrics.json",
+      "card": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster\\model_card.json",
+      "warnings": []
+    },
+    "m3": {
+      "dir": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster",
+      "model": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster\\model.joblib",
+      "metrics": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster\\metrics.json",
+      "card": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster\\model_card.json",
+      "warnings": []
+    }
+  }
+}

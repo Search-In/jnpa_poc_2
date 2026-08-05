@@ -1,0 +1,61 @@
+# =============================================================================
+# JNPA UC-II model service — RUNTIME dependencies only
+# Tender ref GeM/2026/B/7297343
+# =============================================================================
+#
+# The delivery's requirements.txt covers UC-I and UC-II, training, corpus
+# extraction and the test suite. This is the subset the SERVICE needs to answer
+# a request on :8200. Every omission below names the documented fallback it
+# triggers, so a thinner image is a known trade rather than a surprise in
+# production.
+#
+# The seven model modules import and run on a bare CPython install:
+#
+#     python src/uc2_models/uc2_m1_container_dwell.py --selftest
+#
+# -----------------------------------------------------------------------------
+
+# --- HTTP layer — genuinely required -------------------------------------
+# api_uc2.py and every build_router() need these. Without them the modules
+# still run as CLIs but nothing is served.
+fastapi>=0.115
+pydantic>=2.7
+uvicorn[standard]>=0.30
+
+# --- M1 / M2 / M3 learned engines ----------------------------------------
+# Fallback chain (src/uc2_models/uc2_learn.py):
+#   HistGradientBoosting -> GradientBoosting -> RandomForest -> a stdlib ridge
+#   solved by Gauss-Jordan on the normal equations.
+# OMITTING scikit-learn: the three learned models still train and still report
+# honest held-out metrics on the stdlib ridge — degraded, and badged as such in
+# `engine_trace` and in `degraded`. Kept in, because the panel's headline M1
+# number is the one an operator reads first and the ridge is materially worse.
+scikit-learn>=1.3
+
+# --- Legacy .xls shipping-line inventories -------------------------------
+# Two of the nine EAL/IAL exports are pre-2007 .xls (EAL_NSICT, EAL_NSIGT).
+# OMITTING xlrd: they are skipped, named in the provenance, and M7 reports
+# `degraded: true` rather than balancing a pool missing two terminals.
+# Kept in — but note this checkout excludes the corpus entirely, so M7 is
+# degraded here regardless (see data/corpus/README.md).
+xlrd>=2.0
+
+# -----------------------------------------------------------------------------
+# DELIBERATELY OMITTED from the service image
+# -----------------------------------------------------------------------------
+# openpyxl   — reads/writes .xlsx. Only jnpa_input.py needs it, and it carries a
+#              stdlib zipfile+ElementTree reader as a fallback. The service does
+#              not read spreadsheets on the request path.
+# joblib     — writes trained_models/uc2/<model>/model.joblib for the tender's
+#              "Link to Model Weights" column. A build-time export concern, not
+#              a serving one; `run.py uc2 --export` records the skipped file in
+#              the manifest's `warnings` rather than failing.
+# lightgbm   — UC-1 M3 only. No UC-II model uses it.
+# ortools    — UC-1 M5's CP-SAT berth solver. No UC-II model uses it.
+# pdfplumber — UC-1's DSR extraction. Not vendored here.
+# pytest,
+# httpx      — test-only. See requirements-dev.txt.
+# numpy /
+# pandas     — never a direct dependency; the modules use stdlib statistics and
+#              plain lists so they stay importable anywhere. numpy arrives
+#              transitively with scikit-learn.

@@ -1,0 +1,16 @@
+# Test + tooling dependencies, on top of requirements-service.txt.
+#
+#     python -m venv .venv
+#     .venv/bin/pip install -r requirements-service.txt -r requirements-dev.txt
+#     .venv/bin/python -m pytest -q
+
+-r requirements-service.txt
+
+pytest>=8.0
+# Starlette's TestClient, used by tests/test_uc2_models.py to exercise the HTTP
+# surface and the inference log without starting a server.
+httpx>=0.27
+# Read the .xlsx sample workbook the adapter's selftest loads.
+openpyxl>=3.1
+# Export trained_models/uc2/<model>/model.joblib ("Link to Model Weights").
+joblib>=1.3

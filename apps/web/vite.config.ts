@@ -44,6 +44,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/poc3/, ''),
         },
+        // AI/ML: proxy /ml-api → the vendored UC-II model service (ml/, :8200)
+        // so the browser stays same-origin and the model service is NEVER
+        // published directly — it is stateless and carries no auth of its own.
+        // Port 8200, not the WS2 delivery's 8000: POC-3's Cargo API already
+        // holds 8000 above. nginx mirrors this path in prod (deploy/nginx.conf).
+        '/ml-api': {
+          target: env.ML_URL ?? 'http://127.0.0.1:8200',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/ml-api/, ''),
+        },
         // NLDS Logistics Data Bank — Manage → Track. Browser calls /ldb/…;
         // Vite rewrites to the public LDB origin (avoids CORS). LDB rejects
         // requests whose Origin is localhost ("Invalid CORS request" → 403), so

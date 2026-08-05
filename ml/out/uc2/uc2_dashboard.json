@@ -1,0 +1,131 @@
+{
+  "schema_version": "uc2-dashboard/1.0.0",
+  "generated_at_utc": "2026-08-03T18:04:06Z",
+  "glossary": {
+    "degraded": "A fallback produced this number. Render the badge.",
+    "headline": "One line fit for a card title.",
+    "metricIsFidelityNotAccuracy": "UC2-M2 only: the error is measured against a deterministic model, not against an observed rake TAT, because the corpus has none.",
+    "realCorpusMaeH": "UC2-M1 only: error on real container stays, published beside the synthetic headline and NOT interchangeable with it.",
+    "leakageCheck": "UC2-M3 only: the same model scored under all three split protocols. servedRmse is the one that counts."
+  },
+  "models": {
+    "UC2-M1": {
+      "headline": "102.2 h dwell",
+      "dwellHours": 102.16,
+      "windowHours": [
+        96.44,
+        108.35
+      ],
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "headlineAccuracyMaeH": 3.691,
+      "realCorpusMaeH": 21.3555,
+      "realCorpusBeatsBaseline": false,
+      "calibrationSource": "CORPUS",
+      "realStaysObserved": 254
+    },
+    "UC2-M2": {
+      "headline": "5.81 h rake TAT",
+      "tatHours": 5.81,
+      "etaPlacementH": 1.45,
+      "etaRemovalH": 4.65,
+      "engine": "handling",
+      "degraded": false,
+      "fidelityMaeH": 0.85,
+      "metricIsFidelityNotAccuracy": true,
+      "realRakesExercised": 67,
+      "realTatMedianH": 4.79
+    },
+    "UC2-M3": {
+      "headline": "8.3 vehicles queued",
+      "queueVehicles": 8.33,
+      "deferralRecommended": true,
+      "estimatedWaitMinutes": 55.6,
+      "engine": "hist_gradient_boosting",
+      "degraded": false,
+      "rmse": 0.9087,
+      "splitPolicy": "rolling-origin (expanding window)",
+      "seriesSource": "CORPUS",
+      "realGateMovements": 1929,
+      "leakageCheck": {
+        "servedRmse": 0.9087,
+        "shuffledRmse": 1.1731,
+        "tailRmse": 0.2349
+      }
+    },
+    "UC2-M4": {
+      "headline": "2 finding(s) on this container",
+      "findings": [
+        "ANOMALY_MISSING_GATE_OUT",
+        "ANOMALY_SCAN_FLAG_NO_SCAN"
+      ],
+      "worstSeverity": "CRIT",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "corpusContainersScanned": 1401,
+      "corpusFindings": 1139,
+      "corpusClean": 265,
+      "corpusByType": {
+        "ANOMALY_ORPHAN_GATE_OUT": 529,
+        "ANOMALY_MISSING_GATE_OUT": 408,
+        "ANOMALY_LEO_NO_MOVE": 100,
+        "ANOMALY_SCAN_FLAG_NO_SCAN": 99,
+        "ANOMALY_DWELL_OUTLIER": 3
+      },
+      "degraded": false
+    },
+    "UC2-M5": {
+      "headline": "26.4 h projected stay",
+      "projectedTotalStayHours": 26.4,
+      "varianceVsPlanHours": 2.4,
+      "status": "AT_RISK",
+      "rateSource": "observed",
+      "degraded": false,
+      "realCallsTracked": 5,
+      "meanStayVarianceH": 4.73
+    },
+    "UC2-M6": {
+      "headline": "UNSERVABLE_DEMAND, worst wait 186 min",
+      "status": "UNSERVABLE_DEMAND",
+      "worstWaitMinutes": 185.5,
+      "throttleRecommended": true,
+      "unservable": {
+        "HAZARDOUS": 4.0
+      },
+      "openLanes": [
+        "L1",
+        "L3",
+        "L5"
+      ],
+      "closedLanes": [
+        "L2",
+        "L4",
+        "L6"
+      ],
+      "waitIncreaseVsBaselineMin": 176.8,
+      "degraded": false
+    },
+    "UC2-M7": {
+      "headline": "668 reefers with no plug",
+      "status": "AT_RISK",
+      "shortfall": 668,
+      "hoursToFirstRisk": 8.0,
+      "priorityEvacuation": [
+        "FROZEN",
+        "CHILLED",
+        "AMBIENT_CONTROLLED"
+      ],
+      "poolTotal": 6467,
+      "poolEmpties": 1885,
+      "poolReefers": 212,
+      "poolSource": "PARTIAL",
+      "shortTerminals": [
+        "NSFT",
+        "APMT"
+      ],
+      "degraded": true
+    }
+  },
+  "failures": {}
+}
