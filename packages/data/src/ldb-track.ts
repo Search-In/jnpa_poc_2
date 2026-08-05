@@ -1,12 +1,13 @@
 /**
  * NLDS Logistics Data Bank (LDB) container track client.
  *
- * Mirrors the public LDB search used by https://ldb.co.in :
+ * Live LDB only — no mock/sim/synthetic track payloads. Normalises the public
+ * LDB search response used by https://ldb.co.in :
  *   GET /api/ldb/container/search?cntrNo={ISO-6346}&searchType=39  (Single)
  *
- * The web app proxies `/ldb` → LDB origin in dev so the browser stays same-origin.
- * Response shapes vary (`object` is either one ContainerSearchData or a ListN
- * array on "partial"); this module normalises both into {@link NldsContainerTrack}.
+ * The web app proxies `/ldb` → LDB origin in dev/prod so the browser stays
+ * same-origin. Response shapes vary (`object` is either one ContainerSearchData
+ * or a ListN array on "partial"); both are normalised into {@link NldsContainerTrack}.
  */
 
 /** One event row inside a location stop (PORT IN, CFS IN, DPD, …). */

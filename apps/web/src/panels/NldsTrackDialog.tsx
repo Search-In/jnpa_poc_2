@@ -1,11 +1,10 @@
 /**
- * NldsTrackDialog — NLDS Logistics Data Bank inland-transit timeline for one
- * container (Manage → Track). Mirrors the public LDB "Inland Transit Information"
- * journey view (https://ldb.co.in) using:
+ * NldsTrackDialog — NLDS Logistics Data Bank track for one container
+ * (Manage → Track). Renders ONLY live LDB data from:
  *   GET /ldb/api/ldb/container/search?cntrNo={id}&searchType=39
  *
- * Layout is a single left-rail timeline (better readability in a slide-over than
- * a full-page zig-zag). Presentation-only — no cargo writes.
+ * No mock/sim/local trail is merged in — if LDB has no record, the UI shows
+ * "not available on NLDS". Presentation-only — no cargo writes.
  */
 import { useState, type ReactNode } from 'react';
 import {
