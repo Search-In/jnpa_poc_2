@@ -17,7 +17,7 @@
 /** Which dashboard tab a step is about (matches Dashboard TABS ids). */
 export type TabId =
   | 'movements' | 'igm' | 'rail' | 'itrho' | 'gate' | 'pendency'
-  | 'scan' | 'empty' | 'cfsecy' | 'scenarios' | 'health' | 'notifications'
+  | 'scan' | 'empty' | 'export' | 'cfsecy' | 'scenarios' | 'health' | 'notifications'
   | 'models' | 'methodology' | 'workflows';
 
 /** A single human-readable metric change surfaced in the coach-mark. */

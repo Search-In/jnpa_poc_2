@@ -20,6 +20,9 @@ import type {
   IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer,
   GateMovement, GateMovementGate, OocRecord, OocDetail, EdoRecord, EdoDetail, EirTransaction, PinTicket,
   CfsEcyChainStats, CfsEcyDwellItem, CfsEcyFacility, CfsEcyStats,
+  ShippingBillRecord, LeoRecord, SmtpRecord, TerminalYardStatus,
+  AdvanceListContainer, AdvanceListFilter, SourceGateDocument,
+  Form11Entry, CoprarItem, CoarriMove, VesselDeparture, VesselCutoff, SyntheticChain,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -142,6 +145,52 @@ export class SimAdapter implements DataAdapter {
   }
   getGateMovements(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]> {
     return this.base.getGateMovements ? this.base.getGateMovements(gateNo, filter) : SimAdapter.unavailable();
+  }
+  /** Export-chain reads — filed documents and vessel calls; never simulated. */
+  getForm11(container?: string): Promise<Form11Entry[]> {
+    return this.base.getForm11 ? this.base.getForm11(container) : SimAdapter.unavailable();
+  }
+  getCoprarItems(): Promise<CoprarItem[]> {
+    return this.base.getCoprarItems ? this.base.getCoprarItems() : SimAdapter.unavailable();
+  }
+  getCoarriMoves(): Promise<CoarriMove[]> {
+    return this.base.getCoarriMoves ? this.base.getCoarriMoves() : SimAdapter.unavailable();
+  }
+  getVesselCutoffs(): Promise<VesselCutoff[]> {
+    return this.base.getVesselCutoffs ? this.base.getVesselCutoffs() : SimAdapter.unavailable();
+  }
+  getVesselDepartures(): Promise<VesselDeparture[]> {
+    return this.base.getVesselDepartures ? this.base.getVesselDepartures() : SimAdapter.unavailable();
+  }
+  getSyntheticChains(): Promise<SyntheticChain[]> {
+    return this.base.getSyntheticChains ? this.base.getSyntheticChains() : SimAdapter.unavailable();
+  }
+  /** Parsed source gate documents are filed originals — never simulated. */
+  getSourceGateDocuments(category?: string, container?: string): Promise<SourceGateDocument[]> {
+    return this.base.getSourceGateDocuments
+      ? this.base.getSourceGateDocuments(category, container) : SimAdapter.unavailable();
+  }
+  /** Advance lists are filed shipping-line documents — never simulated. */
+  getAdvanceList(filter?: AdvanceListFilter): Promise<AdvanceListContainer[]> {
+    return this.base.getAdvanceList ? this.base.getAdvanceList(filter) : SimAdapter.unavailable();
+  }
+  /**
+   * Terminal yard/pendency snapshot — published daily-report figures, not
+   * simulator output, so the levers do not overlay it. Shown alongside the
+   * simulated pendency ledger with its own provenance badge.
+   */
+  getTerminalYardStatus(reportDate?: string): Promise<TerminalYardStatus[]> {
+    return this.base.getTerminalYardStatus ? this.base.getTerminalYardStatus(reportDate) : SimAdapter.unavailable();
+  }
+  /** Shipping Bills / LEO / SMTP are filed customs documents — never simulated. */
+  getShippingBills(filter?: IgmContainerFilter): Promise<ShippingBillRecord[]> {
+    return this.base.getShippingBills ? this.base.getShippingBills(filter) : SimAdapter.unavailable();
+  }
+  getLeoRecords(filter?: IgmContainerFilter): Promise<LeoRecord[]> {
+    return this.base.getLeoRecords ? this.base.getLeoRecords(filter) : SimAdapter.unavailable();
+  }
+  getSmtpRecords(filter?: IgmContainerFilter): Promise<SmtpRecord[]> {
+    return this.base.getSmtpRecords ? this.base.getSmtpRecords(filter) : SimAdapter.unavailable();
   }
   /**
    * CFS/ECY off-dock movements are filed CODECO messages — never simulated. These

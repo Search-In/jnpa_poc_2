@@ -9,8 +9,10 @@ import type {
 } from '@jnpa/schemas';
 import {
   bufferPendency,
+  containerDwell,
   improvement,
   interTerminalTransferTat,
+  percentile,
   rakeTurnaroundTime,
   scannerTurnaroundTime,
   trailerTurnaroundTime,
@@ -149,3 +151,69 @@ function mkEvent(containerNo: string, eventType: CargoEvent['eventType'], ts: st
     facilityId, sourceSystem: 'TOS', rawRef: 'raw/x', payload: {},
   };
 }
+
+describe('percentile() — linear interpolation (R-7)', () => {
+  it('returns the median at p=0.5', () => {
+    expect(percentile([1, 2, 3, 4, 5], 0.5)).toBe(3);
+  });
+  it('interpolates between neighbours rather than jumping to nearest rank', () => {
+    // 10 values 1..10 → P90 index = 9*0.9 = 8.1 → 9 + 0.1*(10-9) = 9.1
+    expect(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.9)).toBeCloseTo(9.1, 5);
+  });
+  it('is safe on empty and single-element samples', () => {
+    expect(percentile([], 0.9)).toBe(0);
+    expect(percentile([7], 0.9)).toBe(7);
+  });
+});
+
+describe('Container Dwell — median + P90 per branch (WS4 KPI #9)', () => {
+  /** One container: arrives, then leaves `hours` later via GATE_OUT. */
+  const journey = (containerNo: string, hours: number): CargoEvent[] => [
+    { eventId: `${containerNo}-in`, containerNo, eventType: 'GATE_IN', ts: '2026-06-10T00:00:00.000Z',
+      sourceOffsetMin: 330, facilityId: 'F1', sourceSystem: 'TOS' } as CargoEvent,
+    { eventId: `${containerNo}-out`, containerNo, eventType: 'GATE_OUT',
+      ts: new Date(Date.parse('2026-06-10T00:00:00.000Z') + hours * 3_600_000).toISOString(),
+      sourceOffsetMin: 330, facilityId: 'F1', sourceSystem: 'TOS' } as CargoEvent,
+  ];
+  const box = (containerNo: string, originStream: string): Container =>
+    ({ containerNo, originStream } as unknown as Container);
+
+  it('reports median and P90 separately, and never a mean', () => {
+    // 1,2,3,4,100 → mean 22, median 3. A mean would hide the 100-hour box.
+    const hours = [1, 2, 3, 4, 100];
+    const events = hours.flatMap((h, i) => journey(`MSKU000000${i}`, h));
+    const containers = hours.map((_, i) => box(`MSKU000000${i}`, 'IMPORT_CFS'));
+    const r = containerDwell(emptyInputs({ events, containers }));
+    expect(r.distribution?.median).toBe(3);
+    expect(r.distribution?.p90).toBeGreaterThan(3);   // the tail is visible
+    expect(r.value).toBe(3);                          // headline is the median
+    expect(r.value).not.toBe(22);                     // explicitly NOT the mean
+  });
+
+  it('splits by branch using originStream', () => {
+    const events = [...journey('MSKU0000001', 2), ...journey('MSKU0000002', 50)];
+    const containers = [box('MSKU0000001', 'IMPORT_CFS'), box('MSKU0000002', 'EXPORT_ICD')];
+    const r = containerDwell(emptyInputs({ events, containers }));
+    const byBranch = r.distribution?.byBranch ?? [];
+    expect(byBranch.map((b) => b.branch).sort()).toEqual(['EXPORT_ICD', 'IMPORT_CFS']);
+    expect(byBranch.find((b) => b.branch === 'IMPORT_CFS')?.median).toBe(2);
+    expect(byBranch.find((b) => b.branch === 'EXPORT_ICD')?.median).toBe(50);
+    // worst tail first, so the actionable branch leads
+    expect(byBranch[0]!.branch).toBe('EXPORT_ICD');
+  });
+
+  it('measures an in-port container against asOf, not its last event', () => {
+    // GATE_IN only, no terminal event → still in port at asOf (12 h later).
+    const events = [journey('MSKU0000003', 0)[0]!];
+    const r = containerDwell(emptyInputs({
+      events, containers: [box('MSKU0000003', 'IMPORT_DPD')], asOf: '2026-06-10T12:00:00.000Z',
+    }));
+    expect(r.distribution?.byBranch[0]?.median).toBe(12);
+  });
+
+  it('is empty-safe', () => {
+    const r = containerDwell(emptyInputs({}));
+    expect(r.distribution?.count).toBe(0);
+    expect(r.value).toBe(0);
+  });
+});

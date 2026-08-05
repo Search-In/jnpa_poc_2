@@ -63,7 +63,7 @@ describe('MockAdapter — runs the whole dashboard surface offline', () => {
 
   it('getKPIs returns 10 KPIs (7 + 3 rollups)', async () => {
     const kpis = await a.getKPIs();
-    expect(kpis.length).toBe(10);
+    expect(kpis.length).toBe(11);
   });
 
   it('getIntegrationHealth returns 6 sources, all SYNTHETIC in mock', async () => {
@@ -94,8 +94,8 @@ describe('MockAdapter — scenarios produce before/after deltas + actions', () =
     it(`${id} recomputes A/B KPIs and fires an automated action`, async () => {
       const r = await a.runScenario(id, {});
       expect(r.scenarioId).toBe(id);
-      expect(r.before.length).toBe(10);
-      expect(r.after.length).toBe(10);
+      expect(r.before.length).toBe(11);
+      expect(r.after.length).toBe(11);
       expect(r.actions.length).toBeGreaterThan(0);
       // twin-vs-shadow: at least one KPI differs between A (before) and B (after)
       const changed = r.after.some((k, i) => k.value !== r.before[i]!.value);

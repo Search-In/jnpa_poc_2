@@ -1,0 +1,301 @@
+/**
+ * Customs documents — the WS4 §2 "Customs views" surface.
+ *
+ * WS4 names five customs views: IGM, Shipping Bill, LEO, OOC and SMTP. IGM has
+ * its own panel and OOC lives in the Scan tab; the remaining three had no client
+ * at all until now. This wraps them into one tab with a document-type switch, so
+ * the claimed set is complete without adding three more tabs.
+ *
+ * Data source (POC-3 customs layer, parsed from the filed documents):
+ *   GET /api/customs/shipping-bills  -> export declarations
+ *   GET /api/customs/leo             -> Let Export Orders
+ *   GET /api/customs/smtp            -> Sub-Manifest Transhipment Permits (CHPOI13)
+ *
+ * ⚠ SHIPPING BILL AND LEO DO NOT JOIN — see the notice rendered on the LEO view.
+ * The two sets share no `sb_no` in this dataset. They are shown as two separate
+ * document registers, never as one document's status, and nothing here joins them.
+ */
+import { useState } from 'react';
+import {
+  CalciteTable, CalciteTableRow, CalciteTableHeader, CalciteTableCell,
+  CalciteNotice, CalciteLoader, CalciteInput, CalciteLabel, CalciteChip,
+  CalciteSegmentedControl, CalciteSegmentedControlItem,
+} from '@esri/calcite-components-react';
+import type { LeoRecord, ShippingBillRecord, SmtpRecord } from '@jnpa/data';
+import { useApp } from '../state/AppContext.js';
+import { useAsync } from '../state/useAsync.js';
+import { Igm } from './Igm.js';
+import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { SourceBadge } from './SourceBadge.js';
+import { tokens } from '../theme/tokens.js';
+
+type DocType = 'igm' | 'sb' | 'leo' | 'smtp';
+
+const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
+
+const fmtDate = (v?: string | null) => {
+  if (!v) return '—';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString();
+};
+
+/** Shared empty/error/loading shell so the three registers read identically. */
+function Register<T>({
+  state, source, caption, search, setSearch, searchLabel, placeholder,
+  exportRows, exportName, notice, columns, row, keyOf, emptyMessage,
+}: {
+  state: { data?: T[]; loading: boolean; error?: string | null };
+  source: string;
+  caption: string;
+  search: string;
+  setSearch: (v: string) => void;
+  searchLabel: string;
+  placeholder: string;
+  exportRows: (rows: T[]) => Array<Record<string, unknown>>;
+  exportName: string;
+  notice?: React.ReactNode;
+  columns: string[];
+  row: (r: T) => React.ReactNode;
+  keyOf: (r: T, i: number) => string;
+  emptyMessage: string;
+}) {
+  const rows = state.data ?? [];
+  return (
+    <>
+      <SourceBadge source={source} live />
+      {notice}
+      {state.loading ? (
+        <CalciteLoader scale="s" label={`Loading ${caption}`} />
+      ) : state.error ? (
+        <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s">
+          <div slot="title">Could not load {caption}</div>
+          <div slot="message">{state.error}</div>
+        </CalciteNotice>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', margin: '4px 0 8px' }}>
+            <CalciteLabel scale="s" style={{ minWidth: 250 }}>{searchLabel}
+              <CalciteInput
+                scale="s"
+                value={search}
+                placeholder={placeholder}
+                onCalciteInputInput={(e) => setSearch((e.target as unknown as { value: string }).value)}
+              />
+            </CalciteLabel>
+            <div style={{ marginLeft: 'auto' }}>
+              <ImportExportToolbar data={exportRows(rows)} filename={exportName} />
+            </div>
+          </div>
+
+          <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: '0 0 6px' }}>
+            {rows.length} {caption}
+          </p>
+
+          {rows.length === 0 ? (
+            <CalciteNotice open kind="info" icon="information" scale="s">
+              <div slot="title">Nothing to show</div>
+              <div slot="message">{emptyMessage}</div>
+            </CalciteNotice>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <CalciteTable caption={caption}>
+                <CalciteTableRow slot="table-header">
+                  {columns.map((c) => <CalciteTableHeader key={c} heading={c} />)}
+                </CalciteTableRow>
+                {rows.map((r, i) => (
+                  <CalciteTableRow key={keyOf(r, i)}>{row(r)}</CalciteTableRow>
+                ))}
+              </CalciteTable>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+const unavailable = () =>
+  Promise.reject(new Error('The customs API is unavailable in this data mode.'));
+
+/** Shipping Bills — the filed export declarations. */
+function ShippingBills() {
+  const { adapter } = useApp();
+  const [search, setSearch] = useState('');
+  const state = useAsync<ShippingBillRecord[]>(
+    () => (adapter.getShippingBills ? adapter.getShippingBills({ limit: 200 }) : unavailable()),
+    [adapter],
+  );
+  const q = search.trim().toUpperCase();
+  const filtered = (state.data ?? []).filter(
+    (r) => !q || String(r.sb_no).includes(q) || (r.site_id ?? '').toUpperCase().includes(q));
+
+  return (
+    <Register<ShippingBillRecord>
+      state={{ ...state, data: filtered }}
+      source="ICEGATE · Shipping Bill (export declaration)"
+      caption="shipping bills"
+      search={search}
+      setSearch={setSearch}
+      searchLabel="Search (SB number / site)"
+      placeholder="4014226"
+      exportRows={(rows) => rows.map((r) => ({ 'SB No': r.sb_no, 'SB Date': r.sb_date, 'Site': r.site_id }))}
+      exportName="shipping-bills.csv"
+      columns={['SB number', 'SB date', 'Filing site']}
+      keyOf={(r, i) => `${r.sb_no}-${i}`}
+      emptyMessage="No shipping bill matches the current search."
+      row={(r) => (
+        <>
+          <CalciteTableCell><strong>{val(r.sb_no)}</strong></CalciteTableCell>
+          <CalciteTableCell>{fmtDate(r.sb_date)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.site_id)}</CalciteTableCell>
+        </>
+      )}
+    />
+  );
+}
+
+/** Let Export Orders — customs clearance for an export declaration. */
+function Leo() {
+  const { adapter } = useApp();
+  const [search, setSearch] = useState('');
+  const state = useAsync<LeoRecord[]>(
+    () => (adapter.getLeoRecords ? adapter.getLeoRecords({ limit: 200 }) : unavailable()),
+    [adapter],
+  );
+  const q = search.trim().toUpperCase();
+  const filtered = (state.data ?? []).filter(
+    (r) => !q || String(r.sb_no).includes(q) || String(r.rotation_no ?? '').includes(q));
+
+  return (
+    <Register<LeoRecord>
+      state={{ ...state, data: filtered }}
+      source="ICEGATE · Let Export Order"
+      caption="let export orders"
+      search={search}
+      setSearch={setSearch}
+      searchLabel="Search (SB number / rotation)"
+      placeholder="2343823"
+      exportRows={(rows) => rows.map((r) => ({
+        'SB No': r.sb_no, 'SB Date': r.sb_date, 'Site': r.site_id,
+        'Rotation No': r.rotation_no, 'LEO Date': r.leo_date,
+      }))}
+      exportName="let-export-orders.csv"
+      // The single most important thing on this screen: these LEOs are NOT the
+      // clearance status of the shipping bills on the previous view.
+      notice={(
+        <CalciteNotice open kind="warning" icon="information" scale="s" style={{ margin: '4px 0 10px' }}>
+          <div slot="title">Not linked to the Shipping Bills view</div>
+          <div slot="message">
+            These Let Export Orders and the filed Shipping Bills are two separate document
+            sets in this dataset — they share no SB number, so no LEO here is the clearance
+            status of any shipping bill shown under “Shipping Bill”. Treat each register on
+            its own until customs supply matching records.
+          </div>
+        </CalciteNotice>
+      )}
+      columns={['SB number', 'SB date', 'LEO date', 'Rotation', 'Site']}
+      keyOf={(r, i) => `${r.sb_no}-${i}`}
+      emptyMessage="No let export order matches the current search."
+      row={(r) => (
+        <>
+          <CalciteTableCell><strong>{val(r.sb_no)}</strong></CalciteTableCell>
+          <CalciteTableCell>{fmtDate(r.sb_date)}</CalciteTableCell>
+          <CalciteTableCell>
+            {r.leo_date
+              ? <CalciteChip scale="s" value={String(r.leo_date)}>{fmtDate(r.leo_date)}</CalciteChip>
+              : '—'}
+          </CalciteTableCell>
+          <CalciteTableCell>{val(r.rotation_no)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.site_id)}</CalciteTableCell>
+        </>
+      )}
+    />
+  );
+}
+
+/** SMTP — Sub-Manifest Transhipment Permits (ICEGATE CHPOI13). */
+function Smtp() {
+  const { adapter } = useApp();
+  const [search, setSearch] = useState('');
+  const state = useAsync<SmtpRecord[]>(
+    () => (adapter.getSmtpRecords ? adapter.getSmtpRecords({ limit: 200 }) : unavailable()),
+    [adapter],
+  );
+  const q = search.trim().toUpperCase();
+  const filtered = (state.data ?? []).filter(
+    (r) => !q
+      || String(r.smtp_no).includes(q)
+      || String(r.igm_no ?? '').includes(q)
+      || String(r.bond_no ?? '').includes(q)
+      || (r.destination_code ?? '').toUpperCase().includes(q));
+
+  return (
+    <Register<SmtpRecord>
+      state={{ ...state, data: filtered }}
+      source="ICEGATE · CHPOI13 (Sub-Manifest Transhipment Permit)"
+      caption="transhipment permits"
+      search={search}
+      setSearch={setSearch}
+      searchLabel="Search (SMTP / IGM / bond / destination)"
+      placeholder="2697411"
+      exportRows={(rows) => rows.map((r) => ({
+        'SMTP No': r.smtp_no, 'SMTP Date': r.smtp_date, 'IGM No': r.igm_no,
+        'IGM Date': r.igm_date, 'Destination': r.destination_code,
+        'Carrier': r.carrier_code, 'Bond No': r.bond_no,
+        'Terminal': r.terminal_operator_code, 'Containers': r.line_count,
+      }))}
+      exportName="transhipment-permits.csv"
+      columns={['SMTP number', 'SMTP date', 'IGM', 'Destination', 'Bond', 'Terminal', 'Containers']}
+      keyOf={(r, i) => `${r.smtp_no}-${i}`}
+      emptyMessage="No transhipment permit matches the current search."
+      row={(r) => (
+        <>
+          <CalciteTableCell><strong>{val(r.smtp_no)}</strong></CalciteTableCell>
+          <CalciteTableCell>{fmtDate(r.smtp_date)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.igm_no)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.destination_code)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.bond_no)}</CalciteTableCell>
+          <CalciteTableCell>{val(r.terminal_operator_code)}</CalciteTableCell>
+          {/* Count only — there is no per-permit container endpoint, so this
+              must not look clickable. */}
+          <CalciteTableCell>{val(r.line_count)}</CalciteTableCell>
+        </>
+      )}
+    />
+  );
+}
+
+const DOC_TABS: Array<{ id: DocType; label: string }> = [
+  { id: 'igm', label: 'IGM' },
+  { id: 'sb', label: 'Shipping Bill' },
+  { id: 'leo', label: 'LEO' },
+  { id: 'smtp', label: 'SMTP' },
+];
+
+export function CustomsDocs() {
+  const [doc, setDoc] = useState<DocType>('igm');
+
+  return (
+    <>
+      <div style={{ marginBottom: 10 }}>
+        <CalciteSegmentedControl
+          scale="s"
+          onCalciteSegmentedControlChange={(e) =>
+            setDoc((e.target as unknown as { selectedItem?: { value?: string } })
+              .selectedItem?.value as DocType)}
+        >
+          {DOC_TABS.map((d) => (
+            <CalciteSegmentedControlItem key={d.id} value={d.id} checked={doc === d.id}>
+              {d.label}
+            </CalciteSegmentedControlItem>
+          ))}
+        </CalciteSegmentedControl>
+      </div>
+
+      {doc === 'igm' && <Igm />}
+      {doc === 'sb' && <ShippingBills />}
+      {doc === 'leo' && <Leo />}
+      {doc === 'smtp' && <Smtp />}
+    </>
+  );
+}
