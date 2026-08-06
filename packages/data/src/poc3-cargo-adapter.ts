@@ -35,6 +35,8 @@ import type {
   CargoWorkflowActionInput,
   CargoWorkflowHistoryEntry,
   CargoWorkflowState,
+  AdvanceListContainer,
+  AdvanceListFilter,
   CfsEcyChainStats,
   CfsEcyDwellItem,
   CfsEcyFacility,
@@ -68,6 +70,17 @@ import type {
   RmsScanList,
   ScenarioParams,
   ScenarioResultDTO,
+  CoarriMove,
+  CoprarItem,
+  Form11Entry,
+  ShippingBillRecord,
+  SourceGateDocument,
+  SyntheticChain,
+  VesselCutoff,
+  VesselDeparture,
+  TerminalYardStatus,
+  LeoRecord,
+  SmtpRecord,
   TimeWindow,
   YardOptimization,
   YardPlanningInput,
@@ -123,6 +136,13 @@ export interface Poc3CargoAdapterDeps {
   setToken?: (token: string | undefined) => void;
   /** Re-mint a POC-3 JWT (called once on a 401 before retrying the request). */
   refreshToken?: () => Promise<string | undefined>;
+  /**
+   * Current data-SOURCE mode — the provenance filter the backend applies via the
+   * `X-Data-Mode` header. 'LIVE' returns JNPA-API-sourced rows, 'DEMO' the
+   * manually-imported pre-loaded rows. When omitted (or it returns undefined) no
+   * header is sent and the backend leaves the data unfiltered.
+   */
+  getDataMode?: () => 'LIVE' | 'DEMO' | undefined;
   fetchImpl?: typeof fetch;
 }
 
@@ -132,6 +152,7 @@ export class Poc3CargoAdapter implements DataAdapter {
   private getToken: () => string | undefined;
   private setToken: (token: string | undefined) => void;
   private refreshToken?: () => Promise<string | undefined>;
+  private getDataMode: () => 'LIVE' | 'DEMO' | undefined;
   private fetchImpl: typeof fetch;
 
   constructor(base: DataAdapter, deps: Poc3CargoAdapterDeps) {
@@ -140,6 +161,7 @@ export class Poc3CargoAdapter implements DataAdapter {
     this.getToken = deps.getToken ?? (() => undefined);
     this.setToken = deps.setToken ?? (() => {});
     this.refreshToken = deps.refreshToken;
+    this.getDataMode = deps.getDataMode ?? (() => undefined);
     // Keep `fetch` bound to its global (a bare property call throws "Illegal
     // invocation" in the browser). Mirrors LiveAdapter.
     this.fetchImpl = deps.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
@@ -174,12 +196,16 @@ export class Poc3CargoAdapter implements DataAdapter {
     opts: { query?: Record<string, string | undefined>; body?: unknown } = {},
   ): Promise<Response> {
     const url = this.buildUrl(path, opts.query);
+    // Data-source provenance filter (LIVE = JNPA-API rows, DEMO = pre-loaded).
+    // Omitted when unset so the backend leaves the data unfiltered.
+    const dataMode = this.getDataMode();
     const send = (token: string | undefined) =>
       this.fetchImpl(url, {
         method,
         headers: {
           ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}),
           ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(dataMode ? { 'x-data-mode': dataMode } : {}),
         },
         ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
       });
@@ -571,6 +597,134 @@ export class Poc3CargoAdapter implements DataAdapter {
       terminal_code: split ? split[1] : undefined,
       gate_no: split ? split[2] : (scoped ? raw : undefined),
       limit: String(filter.limit ?? 500),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 12b) Shipping-lines API — advance lists (IAL / EAL) ----------------------
+  /**
+   * The terminal load list. `list_type: 'EAL'` gives the export side — 5,743 rows
+   * across 5 vessel visits. Filters are applied server-side, so a container search
+   * hits the whole list rather than the loaded page.
+   */
+  async getAdvanceList(filter: AdvanceListFilter = {}): Promise<AdvanceListContainer[]> {
+    return this.getList<AdvanceListContainer>('/api/shipping-lines', {
+      list_type: filter.list_type,
+      terminal: filter.terminal,
+      category: filter.category,
+      freight_kind: filter.freight_kind,
+      shipping_line: filter.shipping_line,
+      container: filter.container,
+      bl: filter.bl,
+      q: filter.q,
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  // 12b2) Export-chain API — the steps that had no read endpoint ------------
+  /** Form 11 rail pre-advice. ⚠ One row per source workbook (templates). */
+  async getForm11(container?: string): Promise<Form11Entry[]> {
+    return this.getList<Form11Entry>('/api/export-chain/form11', { container, limit: '200' });
+  }
+
+  /** COPRAR advance load list. ⚠ Corpus sample is Kolkata/Haldia, not JNPA. */
+  async getCoprarItems(): Promise<CoprarItem[]> {
+    return this.getList<CoprarItem>('/api/export-chain/load-list', { limit: '200' });
+  }
+
+  /**
+   * Vessel gate-open / cut-off windows — the EC-1 input.
+   * ⚠ Vessel-level only; see the note on VesselCutoff before adding a per-box column.
+   */
+  async getVesselCutoffs(): Promise<VesselCutoff[]> {
+    return this.getList<VesselCutoff>('/api/export-chain/cutoffs', { limit: '300' });
+  }
+
+  /** COARRI load confirmations. ⚠ Corpus sample is Vizag; 150 of 200 items landed. */
+  async getCoarriMoves(): Promise<CoarriMove[]> {
+    return this.getList<CoarriMove>('/api/export-chain/load-confirmations', { limit: '200' });
+  }
+
+  /**
+   * Vessel departures — the final export step. Served by the EXISTING
+   * `/api/marine/calls`, filtered client-side to calls with a real `atd`, since
+   * the endpoint has no has-departed filter.
+   */
+  async getVesselDepartures(): Promise<VesselDeparture[]> {
+    const all = await this.getList<VesselDeparture>('/api/marine/calls', { limit: '500' });
+    return all
+      .filter((c) => !!c.atd)
+      .sort((a, b) => String(b.atd).localeCompare(String(a.atd)));
+  }
+
+  /**
+   * ⚠⚠ SYNTHETIC chains. The response envelope carries `synthetic: true` and a
+   * `notice`; both are asserted here so a backend that ever stopped stamping them
+   * fails loudly rather than leaking unlabelled demo data into the UI.
+   */
+  async getSyntheticChains(): Promise<SyntheticChain[]> {
+    const body = await this.getJson<{ synthetic?: boolean; items?: SyntheticChain[] }>(
+      '/api/export-chain/synthetic', { limit: '100' });
+    if (body?.synthetic !== true) {
+      throw new Error('Refusing to render /api/export-chain/synthetic: the response is not stamped synthetic:true.');
+    }
+    return Array.isArray(body.items) ? body.items : [];
+  }
+
+  // 12c) Gate-docs API — parsed source documents ----------------------------
+  /**
+   * The customer's own Form 13 / EIR / PIN documents, as filed.
+   *
+   * ⚠ Deliberately NOT `/api/gate-docs/form13`: that endpoint reads
+   * `core.gate_capture`, where 202 of 203 rows are seeded and carry synthetic
+   * shipping-bill numbers. Anything presented as document evidence must come
+   * from here.
+   */
+  async getSourceGateDocuments(category?: string, container?: string): Promise<SourceGateDocument[]> {
+    return this.getList<SourceGateDocument>('/api/gate-docs/documents', {
+      category, container, limit: '100',
+    });
+  }
+
+  // 13a) Performance API — terminal yard / pendency snapshot -----------------
+  /**
+   * Detection signal for the yard-congestion edge case (WS1 EC-3): utilisation
+   * per terminal plus the pendency ledger, from the JNPA daily status reports.
+   * Omit `reportDate` for the latest published day.
+   */
+  async getTerminalYardStatus(reportDate?: string): Promise<TerminalYardStatus[]> {
+    return this.getList<TerminalYardStatus>('/api/performance/daily/status', {
+      date: reportDate,
+      limit: '50',
+    });
+  }
+
+  // 13b) Customs API — export documents (Shipping Bill, LEO, SMTP) -----------
+  /**
+   * The three customs families that had no client until now (WS4 §2).
+   *
+   * ⚠ `getShippingBills` and `getLeoRecords` return DISJOINT document sets: the
+   * filed SBs and the granted LEOs share no `sb_no` in this dataset. Never join
+   * them client-side and never render one as the other's status.
+   */
+  async getShippingBills(filter: IgmContainerFilter = {}): Promise<ShippingBillRecord[]> {
+    return this.getList<ShippingBillRecord>('/api/customs/shipping-bills', {
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  async getLeoRecords(filter: IgmContainerFilter = {}): Promise<LeoRecord[]> {
+    return this.getList<LeoRecord>('/api/customs/leo', {
+      limit: String(filter.limit ?? 200),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  async getSmtpRecords(filter: IgmContainerFilter = {}): Promise<SmtpRecord[]> {
+    return this.getList<SmtpRecord>('/api/customs/smtp', {
+      limit: String(filter.limit ?? 200),
       offset: String(filter.offset ?? 0),
     });
   }

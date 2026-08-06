@@ -24,6 +24,29 @@ export function round(x: number, dp = 2): number {
 }
 
 /**
+ * Linear-interpolated percentile (the "R-7" / Excel PERCENTILE convention).
+ * `p` is a fraction: 0.5 = median, 0.9 = P90. Returns 0 for an empty sample so
+ * callers never propagate NaN into a KPI value.
+ *
+ * Interpolating rather than nearest-rank matters at PoC sample sizes: with 8
+ * containers, nearest-rank P90 would just return the largest observation and the
+ * "long tail" reading would be a single box.
+ */
+export function percentile(xs: number[], p: number): number {
+  if (xs.length === 0) return 0;
+  const sorted = [...xs].sort((a, b) => a - b);
+  if (sorted.length === 1) return sorted[0]!;
+  const idx = (sorted.length - 1) * Math.min(Math.max(p, 0), 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo]!;
+  return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (idx - lo);
+}
+
+/** Convenience: the 50th percentile. Used wherever a mean would mislead. */
+export const median = (xs: number[]): number => percentile(xs, 0.5);
+
+/**
  * Compute signed improvement-% vs baseline.
  *  - lower-is-better: improvement = (baseline − value) / baseline × 100
  *  - higher-is-better: improvement = (value − baseline) / baseline × 100

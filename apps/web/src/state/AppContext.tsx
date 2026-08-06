@@ -19,6 +19,7 @@ import type { Lang } from '../i18n/strings.js';
 import { SimAdapter } from '../sim/SimAdapter.js';
 import { cargoRefreshStore } from './cargoRefreshStore.js';
 import { cargoTokenStore } from './cargoTokenStore.js';
+import { getDataSourceMode } from './dataSourceMode.js';
 
 interface AppState {
   adapter: DataAdapter;
@@ -134,6 +135,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // On a 401 the adapter re-mints the POC-3 JWT and retries once, so an
           // absent/expired token self-heals. A pre-issued static token opts out.
           refreshToken: CARGO_STATIC_TOKEN ? undefined : mintCargoToken,
+          // Data-source provenance filter (LIVE = JNPA-API rows, DEMO = pre-loaded).
+          // Read fresh on every request, so the header always reflects the toggle.
+          getDataMode: () => getDataSourceMode(),
         })
       : CARGO_FROM_REFERENCE
         ? new ReferenceCargoAdapter(base, {

@@ -25,7 +25,8 @@ import { tokens } from './theme/tokens.js';
 import { t, type Lang } from './i18n/strings.js';
 import { KpiStrip } from './panels/KpiStrip.js';
 import { ContainerMovements } from './panels/ContainerMovements.js';
-import { Igm } from './panels/Igm.js';
+import { CustomsDocs } from './panels/CustomsDocs.js';
+import { ExportList } from './panels/ExportList.js';
 import { Pendency } from './panels/Pendency.js';
 import { RailSide } from './panels/RailSide.js';
 import { Itrho } from './panels/Itrho.js';
@@ -49,6 +50,7 @@ import { getScript, type TabId } from './sim/scenarioPlayer.js';
 import { IntegrationConsole } from './console/IntegrationConsole.js';
 import { faultStore } from './console/faultStore.js';
 import { useFaultStore } from './console/useFaultStore.js';
+import { DataSourceToggle } from './components/DataSourceToggle.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
@@ -58,13 +60,15 @@ const DEMO_WINDOW = {
 /** Stable tab ids ↔ labels; ids drive the controlled tab selection. */
 const TABS = [
   { id: 'movements', label: 'Movements' },
-  { id: 'igm', label: 'IGM' },
+  // Hosts the WS4 §2 customs views: IGM, Shipping Bill, LEO, SMTP (OOC is in Scan).
+  { id: 'igm', label: 'Customs' },
   { id: 'rail', label: 'Rail T1/T2' },
   { id: 'itrho', label: 'ITRHO' },
   { id: 'gate', label: 'Gate' },
   { id: 'pendency', label: 'Pendency' },
   { id: 'scan', label: 'Scan' },
   { id: 'empty', label: 'Empty' },
+  { id: 'export', label: 'Export' },
   { id: 'cfsecy', label: 'CFS/ECY' },
   { id: 'scenarios', label: 'What-If' },
   { id: 'workflows', label: 'Workflows' },
@@ -84,14 +88,14 @@ const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
   DTCCC_ADMIN: TABS.map((tb) => tb.id), // full access
   JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
   JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'cfsecy', 'notifications', 'scenarios', 'methodology'],
-  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'cfsecy', 'notifications', 'methodology'],
+  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'export', 'cfsecy', 'notifications', 'methodology'],
   // IGM mirrors the POC-3 backend audience for /api/customs (control room + customs),
   // so only DTCCC_ADMIN (full access, above) and CUSTOMS see the tab.
-  CUSTOMS: ['movements', 'igm', 'scan', 'pendency', 'notifications', 'scenarios', 'methodology'],
+  CUSTOMS: ['movements', 'igm', 'scan', 'pendency', 'export', 'notifications', 'scenarios', 'methodology'],
   CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
   ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
   CFS_OPERATOR: ['movements', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
-  SHIPPING_LINE: ['movements', 'empty', 'cfsecy', 'notifications', 'methodology'],
+  SHIPPING_LINE: ['movements', 'empty', 'export', 'cfsecy', 'notifications', 'methodology'],
 };
 
 export function Dashboard() {
@@ -199,6 +203,9 @@ export function Dashboard() {
           description={`JNPA UC2 · ${adapter.mode.toUpperCase()} mode`}
         />
         <div slot="content-end" style={{ display: 'flex', gap: 16, alignItems: 'center', paddingInline: 16 }}>
+          {/* Data-SOURCE toggle (LIVE JNPA-API rows | DEMO pre-loaded rows). Injects
+              the X-Data-Mode header on every cargo request; separate from DATA_MODE. */}
+          <DataSourceToggle />
           {hasSimOverrides(sim) && (
             <CalciteChip value="sim" kind="brand" icon={sim.running ? 'play-f' : 'pause-f'}>
               SIM {sim.running ? 'LIVE' : 'PAUSED'}
@@ -513,13 +520,14 @@ export function Dashboard() {
               {/* UI-only: each panel renders only when the role may see its tab
                   (ROLE_TAB_IDS). Data behind each panel is unchanged/role-scoped. */}
               {canSeeTab('movements') && <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>}
-              {canSeeTab('igm') && <CalciteTab tab="igm" selected={activeTab === 'igm'}><div data-tour-tab="igm"><Igm /></div></CalciteTab>}
+              {canSeeTab('igm') && <CalciteTab tab="igm" selected={activeTab === 'igm'}><div data-tour-tab="igm"><CustomsDocs /></div></CalciteTab>}
               {canSeeTab('rail') && <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('itrho') && <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('gate') && <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('pendency') && <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>}
               {canSeeTab('scan') && <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>}
               {canSeeTab('empty') && <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>}
+              {canSeeTab('export') && <CalciteTab tab="export" selected={activeTab === 'export'}><div data-tour-tab="export"><ExportList /></div></CalciteTab>}
               {canSeeTab('cfsecy') && <CalciteTab tab="cfsecy" selected={activeTab === 'cfsecy'}><div data-tour-tab="cfsecy"><CfsEcy /></div></CalciteTab>}
               {canSeeTab('scenarios') && <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>}
               {canSeeTab('workflows') && <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>}

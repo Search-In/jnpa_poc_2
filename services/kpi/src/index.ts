@@ -6,6 +6,7 @@ import type { KpiResult } from '@jnpa/schemas';
 import type { KpiInputs } from './types.js';
 import {
   bufferPendency,
+  containerDwell,
   containerPendency,
   gateThroughput,
   gateTransactionTime,
@@ -34,9 +35,13 @@ export function computeSevenKpis(inp: KpiInputs): KpiResult[] {
   ];
 }
 
-/** Dashboard rollups (bid §8.4.4). */
+/**
+ * Dashboard rollups (bid §8.4.4) + the supporting dwell KPI (WS4 #9). Dwell is a
+ * rollup rather than one of the seven: the tender names seven primary measures,
+ * and `computeSevenKpis` must keep returning exactly those.
+ */
 export function computeRollups(inp: KpiInputs): KpiResult[] {
-  return [gateThroughput(inp), gateTransactionTime(inp), containerPendency(inp)];
+  return [gateThroughput(inp), gateTransactionTime(inp), containerPendency(inp), containerDwell(inp)];
 }
 
 /** Everything: seven KPIs + rollups. */
