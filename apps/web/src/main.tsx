@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 import { setAssetPath } from '@esri/calcite-components';
 import { defineCustomElements } from '@esri/calcite-components/dist/loader';
 import { AppProvider } from './state/AppContext.js';
+import { AuthGate } from './auth/AuthGate.js';
 import { Dashboard } from './Dashboard.js';
 import { SimulatorPage } from './sim/SimulatorPage.js';
 import { useHashRoute } from './sim/useHashRoute.js';
@@ -26,10 +27,15 @@ function App() {
 
 const el = document.getElementById('root');
 if (!el) throw new Error('#root not found');
+// AuthGate sits OUTSIDE AppProvider so no adapter is built and no token is
+// requested until someone has signed in. With VITE_AUTH_ENABLED unset it is a
+// pass-through and the mount is exactly as it was.
 createRoot(el).render(
   <React.StrictMode>
-    <AppProvider>
-      <App />
-    </AppProvider>
+    <AuthGate>
+      <AppProvider>
+        <App />
+      </AppProvider>
+    </AuthGate>
   </React.StrictMode>,
 );
