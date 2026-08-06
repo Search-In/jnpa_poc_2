@@ -16,6 +16,7 @@ import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { InfoPopover } from '../components/InfoPopover.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
@@ -206,6 +207,7 @@ function EirSection({ gate }: { gate: string }) {
                   'Scanner Stamp': e.scanner_stamp,
                 }))}
                 filename={`eir-${terminal.toLowerCase()}.csv`}
+                importTarget={UPLOAD_TARGETS.eir}
               />
             </div>
           </div>
@@ -335,6 +337,7 @@ function PinTicketSection({ gate }: { gate: string }) {
                   'Issued At': p.issued_at,
                 }))}
                 filename={`pin-tickets-${terminal.toLowerCase()}.csv`}
+                importTarget={UPLOAD_TARGETS.pin}
               />
             </div>
           </div>

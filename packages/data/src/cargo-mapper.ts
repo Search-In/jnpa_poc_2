@@ -23,12 +23,37 @@ function lineFromContainerNo(containerNo: string): string {
   return parsed ? containerNo.slice(0, 4) : containerNo.slice(0, 4);
 }
 
-/** Derive the canonical lifecycle status from the cargo record's real state. */
+/** Lifecycle states at or past yard assignment (the box is in the yard). */
+const YARDED_STATES = [
+  'YARD_ASSIGNED', 'YARD_POSITION_ALLOCATED', 'REEFER_PLANNED',
+  'RAKE_ASSIGNED', 'SCAN_PENDING', 'VERIFIED',
+];
+
+/**
+ * Derive the canonical status from the record's real state.
+ *
+ * ⚠ `lifecycle_status` and `customs_status` are INDEPENDENT tracks on POC-3.
+ * `POST /verify` advances the lifecycle to VERIFIED but deliberately does not set
+ * a customs disposition — it only inserts a `cargo_scan_verification` row. This
+ * function used to read customs_status ALONE, so a container that had just been
+ * verified still reported `UNDER_SCAN` (from `customs_status = UNDER_INSPECTION`)
+ * and looked as though nothing had happened.
+ *
+ * The precedence below resolves that:
+ *  1. Released wins outright.
+ *  2. A customs HOLD wins next — a hold is a hold whatever the lifecycle says.
+ *  3. VERIFIED beats UNDER_INSPECTION: the scan has concluded, so the box is no
+ *     longer under scan even though the customs disposition was never updated.
+ *  4. Otherwise fall back to the customs/yard derivation, which is all a legacy
+ *     row without a lifecycle_status has.
+ */
 function deriveStatus(c: CargoRecord): ContainerStatus {
-  if (c.is_released) return 'GATE_OUT';
+  const lc = c.lifecycle_status ?? '';
+  if (c.is_released || lc === 'RELEASED') return 'GATE_OUT';
   if (c.customs_status === 'HELD') return 'HELD_CUSTOMS';
+  if (lc === 'VERIFIED') return 'IN_YARD';
   if (c.customs_status === 'UNDER_INSPECTION') return 'UNDER_SCAN';
-  if (c.yard_block) return 'IN_YARD';
+  if (c.yard_block || YARDED_STATES.includes(lc)) return 'IN_YARD';
   return 'EXPECTED';
 }
 
@@ -66,7 +91,23 @@ function deriveTrail(c: CargoRecord): ContainerMovementDTO['trail'] {
     facilityId: at,
     sourceSystem: 'ICEGATE' as SourceSystem,
   });
-  if (c.is_released) {
+  // The recorded lifecycle transition, appended AFTER the customs milestone so it
+  // becomes `lastEventType`. Without it the panel's "Last event" column reported a
+  // customs disposition that verification never updates — a container advanced to
+  // VERIFIED still read as UNDER_SCAN, with no sign the scan had concluded.
+  //
+  // Only states the customs/yard derivation cannot express are added, so the
+  // column keeps its existing vocabulary everywhere else.
+  const lc = c.lifecycle_status ?? '';
+  if (lc === 'VESSEL_DISCHARGED' || lc === 'VERIFIED' || YARDED_STATES.includes(lc)) {
+    trail.push({
+      eventType: lc,
+      ts: c.updated_at,
+      facilityId: at,
+      sourceSystem: 'TOS' as SourceSystem,
+    });
+  }
+  if (c.is_released || lc === 'RELEASED') {
     trail.push({ eventType: 'GATE_OUT', ts: c.updated_at, facilityId: c.gate ?? at, sourceSystem: 'TOS' as SourceSystem });
   }
   return trail;
@@ -98,7 +139,10 @@ function scanResultFor(status: CargoRecord['customs_status']): ScanResult | unde
  */
 export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
   const result = scanResultFor(c.customs_status);
-  const event: ScanEvent & { sealNo?: string; esealStatus?: string; preDoc?: string; yardBlock?: string } = {
+  const event: ScanEvent & {
+    sealNo?: string; esealStatus?: string; preDoc?: string;
+    yardBlock?: string; lifecycleStatus?: string;
+  } = {
     scanId: `SCAN-${c.container_number}`,
     containerNo: c.container_number,
     scannerId: c.camera_id ?? c.gate ?? 'CUSTOMS-SCANNER',
@@ -112,6 +156,10 @@ export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
     // Carry the yard block (already present on this record) so the Scan Queue can
     // derive Yard-Assignment eligibility WITHOUT a second GET /api/cargo request.
     ...(c.yard_block ? { yardBlock: c.yard_block } : {}),
+    // The lifecycle position, for the same reason: the Scan tab's actions are
+    // GATES (yard-assign → verify → release) and it cannot decide which one is
+    // next without knowing where the container actually is.
+    ...(c.lifecycle_status ? { lifecycleStatus: c.lifecycle_status } : {}),
   };
   return event;
 }

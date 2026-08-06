@@ -11,7 +11,10 @@
  * - Import is a UI-only placeholder: no backend ingest API exists, so it opens
  *   the native file picker (now filtered to CSV) without mutating app state.
  */
+import { useState } from 'react';
 import { CalciteButton } from '@esri/calcite-components-react';
+import type { UploadTarget } from '@jnpa/data';
+import { DataUploadDialog } from './DataUploadDialog.js';
 
 /** RFC-4180 cell escaping; objects/arrays are JSON-encoded so no data is lost. */
 function csvCell(v: unknown): string {
@@ -49,29 +52,54 @@ function exportCsv(data: unknown, filename: string): void {
 }
 
 /**
- * UI-only placeholder — opens the native file picker (CSV, matching Export)
- * using the same transient-input pattern as before, but intentionally does not
- * mutate app state, because no backend ingest API exists for these panels.
+ * Import / Export toolbar.
+ *
+ * **Export** is always available: a client-side CSV of the rows already loaded.
+ *
+ * **Import** renders ONLY when the panel passes an `importTarget` naming a real
+ * POC-3 ingest module. It then opens the shared validate → preview → import
+ * dialog, the same two-step flow the POC-1 upload panels use against the same
+ * endpoints.
+ *
+ * Why it is conditional rather than always-on: the ingest endpoints are per
+ * module (`shipping-lines`, `gate-docs`, `cfs-ecy`), each keyed by a document
+ * discriminator. A panel whose data has no ingest route — the simulator-backed
+ * ones, and the derived views — has nothing to upload TO. Previously every panel
+ * showed an Import button that opened a file picker and silently discarded the
+ * file; a button that isn't there is honest, one that lies is not.
  */
-function importPlaceholder(): void {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'text/csv,.csv';
-  input.onchange = () => {
-    /* Placeholder — no ingest API; intentionally does not mutate app state. */
-  };
-  input.click();
-}
-
-export function ImportExportToolbar({ data, filename }: { data: unknown; filename: string }) {
+export function ImportExportToolbar({ data, filename, importTarget, onImported }: {
+  data: unknown;
+  filename: string;
+  /** Ingest module for this panel. Omit → no Import button. */
+  importTarget?: UploadTarget;
+  /** Called after a successful import so the panel can refetch. */
+  onImported?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
   return (
     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 8 }}>
-      <CalciteButton scale="s" appearance="outline" iconStart="upload" onClick={importPlaceholder}>
-        Import
-      </CalciteButton>
+      {importTarget && (
+        <CalciteButton
+          scale="s"
+          appearance="outline"
+          iconStart="upload"
+          title={`Import ${importTarget.label ?? importTarget.value} — validate, preview, then persist`}
+          onClick={() => setOpen(true)}
+        >
+          Import
+        </CalciteButton>
+      )}
       <CalciteButton scale="s" appearance="outline" iconStart="download" onClick={() => exportCsv(data, filename)}>
         Export
       </CalciteButton>
+      {open && importTarget && (
+        <DataUploadDialog
+          target={importTarget}
+          onClose={() => setOpen(false)}
+          onImported={() => onImported?.()}
+        />
+      )}
     </div>
   );
 }

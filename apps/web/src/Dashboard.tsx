@@ -25,13 +25,12 @@ import { tokens } from './theme/tokens.js';
 import { t, type Lang } from './i18n/strings.js';
 import { KpiStrip } from './panels/KpiStrip.js';
 import { ContainerMovements } from './panels/ContainerMovements.js';
-import { CustomsDocs } from './panels/CustomsDocs.js';
 import { ExportList } from './panels/ExportList.js';
+import { ImportList } from './panels/ImportList.js';
 import { Pendency } from './panels/Pendency.js';
 import { RailSide } from './panels/RailSide.js';
 import { Itrho } from './panels/Itrho.js';
 import { GateOps } from './panels/GateOps.js';
-import { ScanQueue } from './panels/ScanQueue.js';
 import { EmptyPool } from './panels/EmptyPool.js';
 import { CfsEcy } from './panels/CfsEcy.js';
 import { HealthCards } from './panels/HealthCards.js';
@@ -51,51 +50,11 @@ import { IntegrationConsole } from './console/IntegrationConsole.js';
 import { faultStore } from './console/faultStore.js';
 import { useFaultStore } from './console/useFaultStore.js';
 import { DataSourceToggle } from './components/DataSourceToggle.js';
+import { TABS, ROLE_TAB_IDS } from './tabs.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
   to: new Date(Date.UTC(2026, 5, 17, 0, 0, 0)).toISOString(),
-};
-
-/** Stable tab ids ↔ labels; ids drive the controlled tab selection. */
-const TABS = [
-  { id: 'movements', label: 'Movements' },
-  // Hosts the WS4 §2 customs views: IGM, Shipping Bill, LEO, SMTP (OOC is in Scan).
-  { id: 'igm', label: 'Customs' },
-  { id: 'rail', label: 'Rail T1/T2' },
-  { id: 'itrho', label: 'ITRHO' },
-  { id: 'gate', label: 'Gate' },
-  { id: 'pendency', label: 'Pendency' },
-  { id: 'scan', label: 'Scan' },
-  { id: 'empty', label: 'Empty' },
-  { id: 'export', label: 'Export' },
-  { id: 'cfsecy', label: 'CFS/ECY' },
-  { id: 'scenarios', label: 'What-If' },
-  { id: 'workflows', label: 'Workflows' },
-  { id: 'models', label: 'AI Models' },
-  { id: 'health', label: 'Integration' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'methodology', label: 'Methodology' },
-] as const;
-
-/**
- * UI-only role → visible dashboard tabs (temporary mapping, pending business
- * confirmation). PRESENTATION FILTER ONLY — backend RBAC, API authorization and
- * role-based data scoping are unchanged; hidden tabs simply do not render. To
- * revert: delete this map and the `visibleTabs`/`canSeeTab` usages below.
- */
-const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
-  DTCCC_ADMIN: TABS.map((tb) => tb.id), // full access
-  JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
-  JNPA_TRAFFIC: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'cfsecy', 'notifications', 'scenarios', 'methodology'],
-  TERMINAL_OPS: ['movements', 'rail', 'gate', 'itrho', 'pendency', 'scan', 'empty', 'export', 'cfsecy', 'notifications', 'methodology'],
-  // IGM mirrors the POC-3 backend audience for /api/customs (control room + customs),
-  // so only DTCCC_ADMIN (full access, above) and CUSTOMS see the tab.
-  CUSTOMS: ['movements', 'igm', 'scan', 'pendency', 'export', 'notifications', 'scenarios', 'methodology'],
-  CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
-  ICD_OPERATOR: ['movements', 'rail', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
-  CFS_OPERATOR: ['movements', 'gate', 'pendency', 'cfsecy', 'notifications', 'methodology'],
-  SHIPPING_LINE: ['movements', 'empty', 'export', 'cfsecy', 'notifications', 'methodology'],
 };
 
 export function Dashboard() {
@@ -149,7 +108,18 @@ export function Dashboard() {
   );
 
   const [mapOverlay, setMapOverlay] = useState<unknown>(null);
-  const [activeTab, setActiveTab] = useState<string>('movements');
+  // Lands on the inbound leg — the first stop in the lifecycle and the tab that
+  // now carries the per-container chain view.
+  const [activeTab, setActiveTab] = useState<string>('import');
+  // A sub-view a guided-tour step asked for inside Import/Export (see
+  // ScenarioStep.view). Bumped with a nonce so re-selecting the same view on a
+  // later step still re-applies it; the panels treat it as "jump here now",
+  // not as a controlled value, so the user stays free to navigate afterwards.
+  const [tourView, setTourView] = useState<{ view: string; nonce: number } | null>(null);
+  const goToTab = (tab: TabId, view?: string) => {
+    setActiveTab(tab);
+    setTourView(view ? { view, nonce: Date.now() } : null);
+  };
   // Whether the What-If coach-mark is minimised — the Reactive Guide only shows
   // when it is, so the two floating panels never overlap during a scenario.
   const [coachCollapsed, setCoachCollapsed] = useState(false);
@@ -520,14 +490,16 @@ export function Dashboard() {
               {/* UI-only: each panel renders only when the role may see its tab
                   (ROLE_TAB_IDS). Data behind each panel is unchanged/role-scoped. */}
               {canSeeTab('movements') && <CalciteTab tab="movements" selected={activeTab === 'movements'}><div data-tour-tab="movements"><ContainerMovements /></div></CalciteTab>}
-              {canSeeTab('igm') && <CalciteTab tab="igm" selected={activeTab === 'igm'}><div data-tour-tab="igm"><CustomsDocs /></div></CalciteTab>}
               {canSeeTab('rail') && <CalciteTab tab="rail" selected={activeTab === 'rail'}><div data-tour-tab="rail"><RailSide window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('itrho') && <CalciteTab tab="itrho" selected={activeTab === 'itrho'}><div data-tour-tab="itrho"><Itrho window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('gate') && <CalciteTab tab="gate" selected={activeTab === 'gate'}><div data-tour-tab="gate"><GateOps window={DEMO_WINDOW} /></div></CalciteTab>}
               {canSeeTab('pendency') && <CalciteTab tab="pendency" selected={activeTab === 'pendency'}><div data-tour-tab="pendency"><Pendency /></div></CalciteTab>}
-              {canSeeTab('scan') && <CalciteTab tab="scan" selected={activeTab === 'scan'}><div data-tour-tab="scan"><ScanQueue /></div></CalciteTab>}
               {canSeeTab('empty') && <CalciteTab tab="empty" selected={activeTab === 'empty'}><div data-tour-tab="empty"><EmptyPool /></div></CalciteTab>}
-              {canSeeTab('export') && <CalciteTab tab="export" selected={activeTab === 'export'}><div data-tour-tab="export"><ExportList /></div></CalciteTab>}
+              {/* The two lifecycle spines. `onOpenTab` lets a step on the strip
+                  jump to the tab that holds its register (e.g. Shipping Bill →
+                  Customs), so the chain stays navigable across tabs. */}
+              {canSeeTab('import') && <CalciteTab tab="import" selected={activeTab === 'import'}><div data-tour-tab="import"><ImportList onOpenTab={setActiveTab} jumpToView={tourView} /></div></CalciteTab>}
+              {canSeeTab('export') && <CalciteTab tab="export" selected={activeTab === 'export'}><div data-tour-tab="export"><ExportList onOpenTab={setActiveTab} jumpToView={tourView} /></div></CalciteTab>}
               {canSeeTab('cfsecy') && <CalciteTab tab="cfsecy" selected={activeTab === 'cfsecy'}><div data-tour-tab="cfsecy"><CfsEcy /></div></CalciteTab>}
               {canSeeTab('scenarios') && <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>}
               {canSeeTab('workflows') && <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>}
@@ -542,7 +514,7 @@ export function Dashboard() {
     </CalciteShell>
     {/* Guided What-If tour overlay — narrates a scenario as it drives the board.
         Switches the active tab per step so the spotlight lands on the right panel. */}
-    <GuidedTour onTab={(tab: TabId) => setActiveTab(tab)} onCollapsedChange={setCoachCollapsed} />
+    <GuidedTour onTab={goToTab} onCollapsedChange={setCoachCollapsed} />
     {/* Reactive Guide (§8.1, crit 5) — the causal WHICH/WHERE/HOW/WHY panel that
         rides alongside a running scenario; hovering a WHERE node re-rings its
         geography on the map via setHighlights. */}

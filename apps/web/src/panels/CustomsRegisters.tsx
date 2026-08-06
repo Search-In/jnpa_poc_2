@@ -1,10 +1,14 @@
 /**
- * Customs documents — the WS4 §2 "Customs views" surface.
+ * The three customs registers that are NOT the import manifest — Shipping Bill,
+ * LEO and SMTP — each rendered on its own terms.
  *
- * WS4 names five customs views: IGM, Shipping Bill, LEO, OOC and SMTP. IGM has
- * its own panel and OOC lives in the Scan tab; the remaining three had no client
- * at all until now. This wraps them into one tab with a document-type switch, so
- * the claimed set is complete without adding three more tabs.
+ * Extracted from the former `CustomsDocs` tab, which wrapped four registers
+ * belonging to three different legs behind one switch. They now sit at their
+ * actual lifecycle position:
+ *   Shipping Bill -> Export step 5      (ExportList)
+ *   LEO           -> Export step 6      (ExportList)
+ *   SMTP          -> transhipment branch (ImportList)
+ * IGM went to ImportList step 1 as `Igm` itself.
  *
  * Data source (POC-3 customs layer, parsed from the filed documents):
  *   GET /api/customs/shipping-bills  -> export declarations
@@ -14,22 +18,19 @@
  * ⚠ SHIPPING BILL AND LEO DO NOT JOIN — see the notice rendered on the LEO view.
  * The two sets share no `sb_no` in this dataset. They are shown as two separate
  * document registers, never as one document's status, and nothing here joins them.
+ * Being adjacent inside the Export tab does NOT change that; the notice stays.
  */
 import { useState } from 'react';
 import {
   CalciteTable, CalciteTableRow, CalciteTableHeader, CalciteTableCell,
   CalciteNotice, CalciteLoader, CalciteInput, CalciteLabel, CalciteChip,
-  CalciteSegmentedControl, CalciteSegmentedControlItem,
 } from '@esri/calcite-components-react';
 import type { LeoRecord, ShippingBillRecord, SmtpRecord } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
-import { Igm } from './Igm.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
 import { tokens } from '../theme/tokens.js';
-
-type DocType = 'igm' | 'sb' | 'leo' | 'smtp';
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
 
@@ -118,7 +119,7 @@ const unavailable = () =>
   Promise.reject(new Error('The customs API is unavailable in this data mode.'));
 
 /** Shipping Bills — the filed export declarations. */
-function ShippingBills() {
+export function ShippingBills() {
   const { adapter } = useApp();
   const [search, setSearch] = useState('');
   const state = useAsync<ShippingBillRecord[]>(
@@ -155,7 +156,7 @@ function ShippingBills() {
 }
 
 /** Let Export Orders — customs clearance for an export declaration. */
-function Leo() {
+export function Leo() {
   const { adapter } = useApp();
   const [search, setSearch] = useState('');
   const state = useAsync<LeoRecord[]>(
@@ -214,7 +215,7 @@ function Leo() {
 }
 
 /** SMTP — Sub-Manifest Transhipment Permits (ICEGATE CHPOI13). */
-function Smtp() {
+export function Smtp() {
   const { adapter } = useApp();
   const [search, setSearch] = useState('');
   const state = useAsync<SmtpRecord[]>(
@@ -262,40 +263,5 @@ function Smtp() {
         </>
       )}
     />
-  );
-}
-
-const DOC_TABS: Array<{ id: DocType; label: string }> = [
-  { id: 'igm', label: 'IGM' },
-  { id: 'sb', label: 'Shipping Bill' },
-  { id: 'leo', label: 'LEO' },
-  { id: 'smtp', label: 'SMTP' },
-];
-
-export function CustomsDocs() {
-  const [doc, setDoc] = useState<DocType>('igm');
-
-  return (
-    <>
-      <div style={{ marginBottom: 10 }}>
-        <CalciteSegmentedControl
-          scale="s"
-          onCalciteSegmentedControlChange={(e) =>
-            setDoc((e.target as unknown as { selectedItem?: { value?: string } })
-              .selectedItem?.value as DocType)}
-        >
-          {DOC_TABS.map((d) => (
-            <CalciteSegmentedControlItem key={d.id} value={d.id} checked={doc === d.id}>
-              {d.label}
-            </CalciteSegmentedControlItem>
-          ))}
-        </CalciteSegmentedControl>
-      </div>
-
-      {doc === 'igm' && <Igm />}
-      {doc === 'sb' && <ShippingBills />}
-      {doc === 'leo' && <Leo />}
-      {doc === 'smtp' && <Smtp />}
-    </>
   );
 }

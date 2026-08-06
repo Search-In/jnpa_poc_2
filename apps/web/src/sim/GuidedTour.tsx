@@ -186,7 +186,8 @@ export function GuidedTour({
   onTab,
   onCollapsedChange,
 }: {
-  onTab: (tab: TabId) => void;
+  /** `view` is the optional sub-view within that tab (see ScenarioStep.view). */
+  onTab: (tab: TabId, view?: string) => void;
   /** Reports this coach-mark's minimised state so siblings (Reactive Guide) can react. */
   onCollapsedChange?: (collapsed: boolean) => void;
 }) {
@@ -198,9 +199,9 @@ export function GuidedTour({
   // Drive the dashboard's active tab to the current step's tab.
   const lastTab = useRef<string | null>(null);
   useEffect(() => {
-    if (step && lastTab.current !== `${stepIndex}:${step.tab}`) {
-      lastTab.current = `${stepIndex}:${step.tab}`;
-      onTab(step.tab);
+    if (step && lastTab.current !== `${stepIndex}:${step.tab}:${step.view ?? ''}`) {
+      lastTab.current = `${stepIndex}:${step.tab}:${step.view ?? ''}`;
+      onTab(step.tab, step.view);
     }
   }, [step, stepIndex, onTab]);
 

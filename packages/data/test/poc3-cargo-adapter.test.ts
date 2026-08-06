@@ -179,16 +179,43 @@ describe('Scan queue re-sourced from POC-3 cargo (no simulated release targets)'
     expect(mapCargoToScanEvent({ ...RECORD, customs_status: 'PENDING' }).result).toBeUndefined();
   });
 
-  it('getScanQueue fetches only not-yet-released cargo and maps every row', async () => {
+  it('getScanQueue reads the /scan-queue endpoint and enriches each member', async () => {
+    // The queue's membership rule is the SERVER's ("not released AND yard-assigned
+    // AND not yet verified"), so it must come from /api/cargo/scan-queue. It used
+    // to read /api/cargo?is_released=false and let the panel filter on yard_block
+    // client-side, which only matched the real queue by coincidence.
     const inPort: CargoRecord = { ...RECORD, is_released: false, customs_status: 'PENDING' };
-    const fetchImpl = vi.fn(async () => ok([inPort]));
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).includes('/scan-queue')
+        ? ok([{ container_number: 'MAEU6123458', yard_block: 'A-12', status: 'SCAN_PENDING' }])
+        : ok(inPort)); // the per-container enrich returns ONE record, not a list
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
     const scans = await a.getScanQueue();
     expect(scans).toHaveLength(1);
     expect(scans[0]!.containerNo).toBe('MAEU6123458'); // a real POC-3 container, not a sim one
-    const url = String(fetchImpl.mock.calls[0]![0]);
-    expect(url).toContain('/api/cargo');
-    expect(url).toContain('is_released=false');
+
+    const urls = fetchImpl.mock.calls.map((c) => String(c[0]));
+    expect(urls[0]).toContain('/api/cargo/scan-queue');
+    // Enriched from the full record, so the panel's columns keep their values.
+    expect(urls.some((u) => u.includes('/api/cargo/MAEU6123458'))).toBe(true);
+  });
+
+  it('release / verify / yard-assignment use their own endpoints, not a column patch', async () => {
+    // Each is a distinct audited transition that emits its own event. PUT
+    // {is_released:true} faces the same VERIFY gate but reads as a field patch,
+    // which is what made a blocked release look like a failure.
+    const fetchImpl = vi.fn(async () => ok(RECORD));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await a.assignYard('MAEU6123458', 'A-12');
+    await a.verifyCargo('MAEU6123458', { verified: true });
+    await a.releaseCargo('MAEU6123458');
+
+    const calls = fetchImpl.mock.calls.map((c) => [String(c[0]), (c[1] as RequestInit).method]);
+    expect(calls[0]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/yard-assignment'), 'PUT']);
+    expect(calls[1]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/verify'), 'POST']);
+    expect(calls[2]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/release'), 'POST']);
   });
 });
 

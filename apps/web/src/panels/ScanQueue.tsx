@@ -5,8 +5,7 @@
 import { useState } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell, CalciteChip,
-  CalciteButton, CalciteNotice, CalciteIcon, CalciteBlock,
-  CalciteTabs, CalciteTabNav, CalciteTabTitle, CalciteTab,
+  CalciteButton, CalciteIcon,
 } from '@esri/calcite-components-react';
 import type { ScanEvent } from '@jnpa/schemas';
 import { useApp } from '../state/AppContext.js';
@@ -18,10 +17,9 @@ import { SourceBadge } from './SourceBadge.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimStore } from '../sim/useSimStore.js';
-import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
-import { cargoErrorMessage } from '../state/cargoError.js';
-import { OocPanel } from './OocPanel.js';
-import { EdoPanel } from './EdoPanel.js';
+import { useCargoRefresh } from '../state/cargoRefreshStore.js';
+import { nextGate, GATE_UI, uiGate, type CargoGate } from './cargoGates.js';
+import { CargoGateDialog } from './CargoGateDialog.js';
 
 const resultColor = (r?: string) =>
   r === 'EXAM' ? tokens.severity.CRIT : r === 'HOLD' ? tokens.severity.WARN : tokens.kpi.better;
@@ -30,90 +28,47 @@ const resultColor = (r?: string) =>
  *  same GET /api/cargo the queue already fetched) once a yard has been assigned. */
 const isYardAssigned = (s: ScanEvent) => !!(s as ScanEvent & { yardBlock?: string }).yardBlock;
 
+const yardBlockOf = (s: ScanEvent) => (s as ScanEvent & { yardBlock?: string }).yardBlock;
+const lifecycleOf = (s: ScanEvent) =>
+  (s as ScanEvent & { lifecycleStatus?: string }).lifecycleStatus ?? 'CREATED';
+
+/**
+ * Which gate this row is at. Delegates to the shared state-machine mirror so the
+ * Scan tab and Movements cannot disagree.
+ *
+ * ⚠ A row can be IN the queue while its lifecycle is still `CREATED`: the server
+ * admits anything with a `yard_block` set, and the seeded data wrote that column
+ * directly without ever running the transition. `inYard` is therefore always true
+ * here — queue membership implies a block — so such a row's next step is to catch
+ * the record up, not to be discharged again.
+ */
+const gateFor = (s: ScanEvent): CargoGate =>
+  nextGate(lifecycleOf(s), { inYard: true }) ?? 'yard';
+
 // Pre-document-processing status colour (from the e-seal reader state).
 const preDocColor = (p?: string) =>
   p === 'TAMPER' ? tokens.severity.CRIT : p === 'VERIFIED' ? tokens.kpi.better : tokens.severity.WARN;
 
 /**
- * Release confirmation — releases a container from the port by updating the live
- * POC-3 cargo record via the existing Poc3CargoAdapter write
- * (`PUT /api/cargo/{id} { is_released: true }`). Reuses the app's role="dialog"
- * overlay + CalciteNotice feedback. On success it bumps cargoRefreshStore so the
- * Scan Queue + Movement + Yard/Pendency refetch through the existing adapter flow.
+ * The gate confirmation for one scan-queue row, wrapping the shared
+ * {@link CargoGateDialog} so this tab and Movements drive the same transitions.
  */
 function ReleaseDialog({ row, onClose, onReleased }: { row: ScanEvent; onClose: () => void; onReleased?: (row: ScanEvent) => void }) {
-  const { adapter } = useApp();
-  const containerNo = row.containerNo;
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const confirm = async () => {
-    if (!adapter.updateCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
-    // Guard against a duplicate release (double-click / re-confirm).
-    if (busy || done) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await adapter.updateCargo(containerNo, { is_released: true });
-      cargoRefreshStore.bump(); // refresh Scan + Movement + Yard/Pendency
-      setDone(true);
-      onReleased?.(row); // retain row (stays visible) + toast + disable duplicate release
-    } catch (e) {
-      setError(cargoErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const gate = gateFor(row);
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
-      <div
-        role="dialog"
-        aria-label={`Release ${containerNo}`}
-        style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 'min(400px, 96vw)', background: tokens.color.bgPanel, border: `1px solid ${tokens.color.border}`,
-          borderRadius: 12, boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff', borderRadius: '12px 12px 0 0' }}>
-          <CalciteIcon icon="unlock" scale="s" />
-          <strong style={{ fontSize: 14 }}>Release container</strong>
-          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
-            <CalciteIcon icon="x" scale="s" />
-          </button>
-        </div>
-        <div style={{ padding: 14 }}>
-          {done ? (
-            <SuccessNotice title="Container released successfully." details={[{ label: 'Container', value: containerNo }]} />
-          ) : (
-            <p style={{ fontSize: 13, margin: 0 }}>
-              Release <strong>{containerNo}</strong> from the port? This updates the Cargo record (<code>is_released</code>) via POC-3.
-            </p>
-          )}
-          {error && (
-            <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ marginTop: 10 }}>
-              <div slot="title">Release failed</div>
-              <div slot="message">{error}</div>
-            </CalciteNotice>
-          )}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
-          {done ? (
-            <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
-          ) : (
-            <>
-              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy}>Cancel</CalciteButton>
-              <CalciteButton scale="s" kind="brand" iconStart="unlock" loading={busy} disabled={busy} onClick={confirm}>Confirm release</CalciteButton>
-            </>
-          )}
-        </div>
-      </div>
-    </>
+    <CargoGateDialog
+      gate={gate}
+      containerNo={row.containerNo}
+      lifecycle={lifecycleOf(row)}
+      yardBlock={yardBlockOf(row)}
+      customsStatus={row.result === 'HOLD' ? 'HELD' : undefined}
+      onClose={onClose}
+      onDone={(status) => { if (status === 'RELEASED') onReleased?.(row); }}
+    />
   );
 }
 
-export function ScanQueue() {
+export function ScanQueueTable() {
   const { adapter, lang } = useApp();
   // Refetch on the What-If scan lever (scanQueue) — NOT on the clock `tick` that
   // `useSimDep` embeds — so the network-backed Scan tab stops refetching (and
@@ -138,27 +93,8 @@ export function ScanQueue() {
     setReleasedRows((rows) => [row, ...rows.filter((r) => r.containerNo !== row.containerNo)]);
     setToast(row.containerNo); // container number → standardized success toast below
   };
-  // Sub-tab within the Scan tab. Scanning and customs clearance are the two
-  // customs gates a container passes, so OOC lives beside the scan queue rather
-  // than in a tab of its own. Controlled selection (same pattern as Dashboard),
-  // so a re-render never snaps the user back to the first tab.
-  const [sub, setSub] = useState<'queue' | 'ooc' | 'edo'>('queue');
   return (
     <>
-    <CalciteTabs layout="inline">
-      <CalciteTabNav slot="title-group">
-        <CalciteTabTitle tab="queue" selected={sub === 'queue'} onCalciteTabsActivate={() => setSub('queue')}>
-          Scan queue
-        </CalciteTabTitle>
-        <CalciteTabTitle tab="ooc" selected={sub === 'ooc'} onCalciteTabsActivate={() => setSub('ooc')}>
-          OOC
-        </CalciteTabTitle>
-        <CalciteTabTitle tab="edo" selected={sub === 'edo'} onCalciteTabsActivate={() => setSub('edo')}>
-          E-DO
-        </CalciteTabTitle>
-      </CalciteTabNav>
-
-      <CalciteTab tab="queue" selected={sub === 'queue'}>
     <Panel heading={t('panel_scan', lang)} state={state} isEmpty={(d) => d.filter(isYardAssigned).length === 0 && releasedRows.length === 0}>
       {(scans) => {
         // Eligibility: only YARD-ASSIGNED containers (yard_block set) enter the
@@ -202,9 +138,15 @@ export function ScanQueue() {
             <CalciteTableHeader heading="Container" />
             <CalciteTableHeader heading="e-Seal" />
             <CalciteTableHeader heading="Pre-doc" />
-            <CalciteTableHeader heading="Flagged by" />
-            <CalciteTableHeader heading="Start" />
-            <CalciteTableHeader heading="Action" />
+            {/* Was "Flagged by", which rendered a hardcoded 'CUSTOMS' on every row —
+                the mapper sets it as a constant, so it carried no information. The
+                lifecycle position is what actually varies, and it is what decides
+                which action the row offers. */}
+            <CalciteTableHeader heading="Lifecycle" />
+            {/* Was "Start", implying a scan start time. The value is the cargo
+                record's `updated_at`; there is no scan-start timestamp in the data. */}
+            <CalciteTableHeader heading="Last updated" />
+            <CalciteTableHeader heading="Next step" />
             <CalciteTableHeader heading="Result" />
           </CalciteTableRow>
           {displayScans.slice(0, 25).map((s) => {
@@ -236,7 +178,23 @@ export function ScanQueue() {
                   );
                 })()}
               </CalciteTableCell>
-              <CalciteTableCell>{s.flaggedBy}</CalciteTableCell>
+              <CalciteTableCell>
+                {(() => {
+                  const lc = lifecycleOf(s);
+                  return (
+                    <CalciteChip
+                      scale="s"
+                      value={lc}
+                      title={`Lifecycle position — decides the next step offered.\nYard block: ${yardBlockOf(s) ?? 'not set'}`}
+                      style={{ ['--calcite-chip-text-color' as never]:
+                        lc === 'VERIFIED' ? tokens.kpi.better
+                          : lc === 'CREATED' ? tokens.color.textMuted : tokens.color.brand }}
+                    >
+                      {lc.replace(/_/g, ' ')}
+                    </CalciteChip>
+                  );
+                })()}
+              </CalciteTableCell>
               <CalciteTableCell>{new Date(s.startTs).toLocaleString()}</CalciteTableCell>
               <CalciteTableCell>
                 {/* Release the container from the port via the Cargo write API.
@@ -258,11 +216,16 @@ export function ScanQueue() {
                     scale="s"
                     appearance="outline"
                     kind="brand"
-                    iconStart="unlock"
-                    title="Release this container from the port (updates the Cargo record)"
+                    iconStart={GATE_UI[uiGate(gateFor(s))].icon}
+                    title={`Next step for this container (currently ${lifecycleOf(s)})`}
                     onClick={() => setReleaseTarget(s)}
                   >
-                    Release
+                    {/* The label names the NEXT GATE, not always "Release". Offering
+                        Release on an unverified box produced a 409 the operator read
+                        as "release_failed". */}
+                    {gateFor(s) === 'yard' ? 'Assign yard'
+                      : gateFor(s) === 'verify' ? 'Record scan'
+                        : 'Release'}
                   </CalciteButton>
                 )}
               </CalciteTableCell>
@@ -285,35 +248,6 @@ export function ScanQueue() {
         );
       }}
     </Panel>
-      </CalciteTab>
-
-      {/* Customs clearance — the Bill of Entry + out-of-charge that releases the
-          cargo. Rendered outside the scan-queue Panel so it stays available even
-          when the queue itself is empty. */}
-      <CalciteTab tab="ooc" selected={sub === 'ooc'}>
-        <CalciteBlock
-          heading="OOC — Out-Of-Charge / Bill of Entry"
-          description="Customs clearance granted against the Bill of Entry (ICEGATE CHPOI10)"
-          open
-          collapsible
-        >
-          <OocPanel />
-        </CalciteBlock>
-      </CalciteTab>
-
-      {/* Delivery order — the shipping line's authority to release the box, filed
-          between customs clearance and gate-out. */}
-      <CalciteTab tab="edo" selected={sub === 'edo'}>
-        <CalciteBlock
-          heading="E-DO — Electronic Delivery Order"
-          description="Shipping-line authority to release the container to its consignee (AGDORD)"
-          open
-          collapsible
-        >
-          <EdoPanel />
-        </CalciteBlock>
-      </CalciteTab>
-    </CalciteTabs>
     {/* Mounted OUTSIDE the Panel so the dialog survives the post-release refetch
         (the Panel unmounts its children while useAsync reloads, which would reset
         the dialog's success state and re-show the confirmation UI). */}

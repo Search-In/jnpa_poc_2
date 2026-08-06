@@ -23,6 +23,7 @@ import type {
   ShippingBillRecord, LeoRecord, SmtpRecord, TerminalYardStatus,
   AdvanceListContainer, AdvanceListFilter, SourceGateDocument,
   Form11Entry, CoprarItem, CoarriMove, VesselDeparture, VesselCutoff, SyntheticChain,
+  ContainerCustomsView, ContainerGateDocs, UploadTarget, UploadResult, CargoRecord,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -49,6 +50,12 @@ export class SimAdapter implements DataAdapter {
   }
   getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
     return this.base.getContainerMovements(filter);
+  }
+  getContainerMovementsPage(
+    filter: ContainerMovementFilter,
+  ): Promise<{ items: ContainerMovementDTO[]; total: number | null }> {
+    return this.base.getContainerMovementsPage
+      ? this.base.getContainerMovementsPage(filter) : SimAdapter.unavailable();
   }
   /** Cargo writes pass straight through to the base (Poc3CargoAdapter) — the
    *  simulator never overlays cargo, which is sourced solely from POC-3. */
@@ -146,6 +153,50 @@ export class SimAdapter implements DataAdapter {
   getGateMovements(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]> {
     return this.base.getGateMovements ? this.base.getGateMovements(gateNo, filter) : SimAdapter.unavailable();
   }
+  /** Data ingest — real multipart uploads; the simulator never intercepts them. */
+  validateUpload(target: UploadTarget, file: File): Promise<UploadResult> {
+    return this.base.validateUpload ? this.base.validateUpload(target, file) : SimAdapter.unavailable();
+  }
+  importUpload(target: UploadTarget, file: File): Promise<UploadResult> {
+    return this.base.importUpload ? this.base.importUpload(target, file) : SimAdapter.unavailable();
+  }
+  /** Lifecycle gates — real transitions on the shared record, never simulated. */
+  assignYard(containerNo: string, yardBlock: string): Promise<CargoRecord> {
+    return this.base.assignYard ? this.base.assignYard(containerNo, yardBlock) : SimAdapter.unavailable();
+  }
+  verifyCargo(
+    containerNo: string,
+    input?: { verified?: boolean; remarks?: string },
+  ): Promise<{ container_number: string; verified: boolean; lifecycle_status: string }> {
+    return this.base.verifyCargo ? this.base.verifyCargo(containerNo, input) : SimAdapter.unavailable();
+  }
+  releaseCargo(containerNo: string, note?: string): Promise<CargoRecord> {
+    return this.base.releaseCargo ? this.base.releaseCargo(containerNo, note) : SimAdapter.unavailable();
+  }
+  /** Vessel discharge — a real lifecycle transition, never simulated. */
+  dischargeCargo(
+    containerNo: string,
+    input?: { vessel_name?: string; discharge_time?: string },
+  ): Promise<{ container_number: string; lifecycle_status: string; status: string }> {
+    return this.base.dischargeCargo
+      ? this.base.dischargeCargo(containerNo, input) : SimAdapter.unavailable();
+  }
+  /**
+   * Per-container import-chain reads — filed customs and gate documents, so the
+   * simulator's levers never touch them. These back the Import tab's chain view.
+   */
+  getContainerCustoms(containerNo: string): Promise<ContainerCustomsView | null> {
+    return this.base.getContainerCustoms
+      ? this.base.getContainerCustoms(containerNo) : SimAdapter.unavailable();
+  }
+  getContainerGateDocs(containerNo: string): Promise<ContainerGateDocs | null> {
+    return this.base.getContainerGateDocs
+      ? this.base.getContainerGateDocs(containerNo) : SimAdapter.unavailable();
+  }
+  getEdoForContainer(containerNo: string): Promise<EdoRecord[]> {
+    return this.base.getEdoForContainer
+      ? this.base.getEdoForContainer(containerNo) : SimAdapter.unavailable();
+  }
   /** Export-chain reads — filed documents and vessel calls; never simulated. */
   getForm11(container?: string): Promise<Form11Entry[]> {
     return this.base.getForm11 ? this.base.getForm11(container) : SimAdapter.unavailable();
@@ -173,6 +224,11 @@ export class SimAdapter implements DataAdapter {
   /** Advance lists are filed shipping-line documents — never simulated. */
   getAdvanceList(filter?: AdvanceListFilter): Promise<AdvanceListContainer[]> {
     return this.base.getAdvanceList ? this.base.getAdvanceList(filter) : SimAdapter.unavailable();
+  }
+  getAdvanceListPage(
+    filter?: AdvanceListFilter,
+  ): Promise<{ items: AdvanceListContainer[]; total: number | null }> {
+    return this.base.getAdvanceListPage ? this.base.getAdvanceListPage(filter) : SimAdapter.unavailable();
   }
   /**
    * Terminal yard/pendency snapshot — published daily-report figures, not
