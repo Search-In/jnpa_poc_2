@@ -23,7 +23,6 @@ import type {
   Facility, IntegrationHealth, ITRHOMovement, KpiResult, Notification, Role,
   ScanEvent, SidingId, Terminal,
 } from '@jnpa/schemas';
-import { isValidContainerNo } from '@jnpa/schemas';
 import type {
   CargoCreateInput,
   CargoLifecycleEvent,
@@ -278,22 +277,18 @@ export class Poc3CargoAdapter implements DataAdapter {
   }
 
   // -- reads (GET /api/cargo, GET /api/cargo/{id}) ----------------------------
+  /**
+   * The movement list. Every filter — Container Search included — is applied
+   * SERVER-SIDE by {@link getContainerMovementsPage}.
+   *
+   * Search used to take a separate route here: an exact lookup against
+   * `/api/cargo/{id}`, gated on the ISO-6346 check digit. That gate has been
+   * dropped along with the branch. The New Cargo dialog deliberately accepts
+   * numbers whose check digit fails, so validating on the way in made a container
+   * you had just created impossible to find — and the failure was silent, because
+   * an invalid number returned an empty array indistinguishable from "no match".
+   */
   async getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
-    // Container Search: an exact ISO-6346 lookup goes to the single-record
-    // endpoint (never a local array scan). A 404 is an empty result, not an
-    // error, so the panel shows its graceful empty state.
-    if (filter.containerNo) {
-      const norm = filter.containerNo.trim().toUpperCase().replace(/\s+/g, '');
-      if (!isValidContainerNo(norm)) return [];
-      try {
-        const one = await this.getJson<CargoRecord>(`/api/cargo/${encodeURIComponent(norm)}`);
-        return [mapCargoToMovement(one)];
-      } catch (err) {
-        if (err instanceof CargoApiError && err.status === 404) return [];
-        throw err;
-      }
-    }
-
     const { items } = await this.getContainerMovementsPage(filter);
     return items;
   }
@@ -313,6 +308,19 @@ export class Poc3CargoAdapter implements DataAdapter {
     filter: ContainerMovementFilter,
   ): Promise<{ items: ContainerMovementDTO[]; total: number | null }> {
     const query = {
+      // Container Search. `/api/cargo` takes `container_number` as an EXACT match,
+      // so the search runs server-side over the whole register and the row count in
+      // X-Total-Count stays truthful.
+      //
+      // ⚠ Do not drop this again. The single-record branch in getContainerMovements
+      // used to carry the search; when the paged read replaced it, this parameter
+      // went with it and Search silently returned page 1 of everything — which
+      // reads on screen as "no result".
+      //
+      // No ISO-6346 pre-check either: the New Cargo dialog deliberately allows
+      // numbers that fail the check digit, so validating here would make a container
+      // you just created unfindable. Let the server answer.
+      container_number: filter.containerNo?.trim().toUpperCase().replace(/\s+/g, '') || undefined,
       customs_status: filter.customsStatus,
       yard_block: filter.yardBlock,
       is_released: filter.isReleased == null ? undefined : String(filter.isReleased),

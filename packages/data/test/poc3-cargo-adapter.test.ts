@@ -74,25 +74,33 @@ describe('Poc3CargoAdapter — re-sources cargo from GET /api/cargo', () => {
     expect(String(fetchImpl.mock.calls[0]![0])).toContain('limit=100');
   });
 
-  it('search routes an exact container number to the single-record endpoint', async () => {
-    const fetchImpl = vi.fn(async () => ok(RECORD));
+  it('search sends container_number so it filters SERVER-SIDE, normalised', async () => {
+    // Regression guard. Search used to take a separate route (an exact lookup on
+    // /api/cargo/{id}); when the paged read replaced that branch, the parameter went
+    // with it and Search silently returned page 1 of everything — which reads on
+    // screen as "no result". The query MUST carry the container number.
+    const fetchImpl = vi.fn(async () => ok([RECORD]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
     const moves = await a.getContainerMovements({ containerNo: 'maeu 6123458' });
     expect(moves).toHaveLength(1);
-    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/cargo/MAEU6123458');
+    const url = String(fetchImpl.mock.calls[0]![0]);
+    expect(url).toContain('container_number=MAEU6123458'); // upper-cased, spaces stripped
   });
 
-  it('treats a 404 on search as an empty result, not an error', async () => {
-    const fetchImpl = vi.fn(async () => notFound());
+  it('a search that matches nothing is an empty result, not an error', async () => {
+    const fetchImpl = vi.fn(async () => ok([]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
     await expect(a.getContainerMovements({ containerNo: 'MAEU6123458' })).resolves.toEqual([]);
   });
 
-  it('short-circuits an invalid ISO-6346 search without a network call', async () => {
-    const fetchImpl = vi.fn(async () => ok(RECORD));
+  it('does NOT pre-screen the search on the ISO-6346 check digit', async () => {
+    // The New Cargo dialog deliberately accepts numbers whose check digit fails, so
+    // screening here would make a container you just created unfindable — and the
+    // failure was silent, because it returned [] with no request and no message.
+    const fetchImpl = vi.fn(async () => ok([]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
-    await expect(a.getContainerMovements({ containerNo: 'NOTVALID' })).resolves.toEqual([]);
-    expect(fetchImpl).not.toHaveBeenCalled();
+    await a.getContainerMovements({ containerNo: 'NOTVALID' });
+    expect(fetchImpl).toHaveBeenCalled(); // the server decides, not the client
   });
 
   it('delegates a non-cargo method to the base adapter', async () => {

@@ -17,7 +17,9 @@
  * release used to surface as a bare "release_failed".
  */
 import { Fragment, useState } from 'react';
-import { CalciteButton, CalciteIcon, CalciteNotice } from '@esri/calcite-components-react';
+import {
+  CalciteButton, CalciteIcon, CalciteInput, CalciteLabel, CalciteNotice,
+} from '@esri/calcite-components-react';
 import { useApp } from '../state/AppContext.js';
 import { SuccessNotice } from '../components/SuccessNotice.js';
 import { cargoRefreshStore } from '../state/cargoRefreshStore.js';
@@ -49,7 +51,18 @@ export function CargoGateDialog({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
+  /**
+   * The block to park the container in.
+   *
+   * Pre-filled from the record when it already has one (the catch-up case, where
+   * the block was written directly and only the transition is missing). It is
+   * EMPTY for a container that has just been discharged — and the server rejects
+   * an empty block with `400 yard_block is required`, so the gate has to ask for
+   * it rather than send whatever happens to be on the record.
+   */
+  const [block, setBlock] = useState(yardBlock ?? '');
   const ui = GATE_UI[uiGate(gate)];
+  const needsBlock = gate === 'yard' && !block.trim();
 
   const run = async (pass = true) => {
     if (busy || done) return;
@@ -66,7 +79,7 @@ export function CargoGateDialog({
         status = res.lifecycle_status;
       } else if (gate === 'yard') {
         if (!adapter.assignYard) throw new Error('Yard assignment is unavailable in this data mode.');
-        await adapter.assignYard(containerNo, yardBlock ?? '');
+        await adapter.assignYard(containerNo, block.trim());
         status = 'YARD_ASSIGNED';
       } else if (gate === 'verify') {
         if (!adapter.verifyCargo) throw new Error('Verification is unavailable in this data mode.');
@@ -168,6 +181,18 @@ export function CargoGateDialog({
                 <div slot="message">{ui.explain}</div>
               </CalciteNotice>
 
+              {gate === 'yard' && (
+                <CalciteLabel scale="s" style={{ marginTop: 10 }}>Yard block
+                  <CalciteInput
+                    scale="s"
+                    value={block}
+                    placeholder="A-01"
+                    status={needsBlock ? 'invalid' : 'idle'}
+                    onCalciteInputInput={(e) => setBlock((e.target as unknown as { value: string }).value)}
+                  />
+                </CalciteLabel>
+              )}
+
               <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: '8px 0 0' }}>
                 Currently <code>{lifecycle}</code>
                 {yardBlock ? <> · yard <code>{yardBlock}</code></> : null}
@@ -198,7 +223,10 @@ export function CargoGateDialog({
                   Fail — hold for exam
                 </CalciteButton>
               )}
-              <CalciteButton scale="s" kind="brand" iconStart={ui.icon} loading={busy} disabled={busy} onClick={() => run(true)}>
+              <CalciteButton scale="s" kind="brand" iconStart={ui.icon} loading={busy}
+                disabled={busy || needsBlock}
+                title={needsBlock ? 'Enter the yard block first' : undefined}
+                onClick={() => run(true)}>
                 {ui.cta}
               </CalciteButton>
             </>
