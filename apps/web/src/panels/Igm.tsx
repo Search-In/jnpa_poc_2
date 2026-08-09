@@ -29,6 +29,7 @@ import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { RmsScanDrawer } from './RmsScanDrawer.js';
 import { tokens } from '../theme/tokens.js';
@@ -187,6 +188,7 @@ function ContainerDrawer({ manifest, onClose }: { manifest: IgmManifest; onClose
                 </CalciteLabel>
                 <div style={{ marginLeft: 'auto' }}>
                   <ImportExportToolbar
+                    importTarget={UPLOAD_TARGETS.customs}
                     data={rows.map((c) => ({
                       'IGM No': c.igm_no,
                       'Line No': c.line_no,
@@ -429,7 +431,12 @@ export function Igm() {
                 </CalciteSelect>
               </CalciteLabel>
               <div style={{ marginLeft: 'auto' }}>
+                {/* The manifests table is the natural home for a CHPOI03 upload —
+                    a filed IGM XML adds a manifest here, and its container lines
+                    appear in the table above. Same target either way: the server
+                    identifies the document from the filename. */}
                 <ImportExportToolbar
+                  importTarget={UPLOAD_TARGETS.customs}
                   data={manifests.map((m) => ({
                     'IGM No': m.igm_no,
                     'IGM Date': m.igm_date,

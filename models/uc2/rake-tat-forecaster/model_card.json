@@ -1,0 +1,129 @@
+{
+  "module_id": "UC2-M2",
+  "module_name": "Rake TAT Forecast",
+  "model_version": "m2-rake-tat-v1.0.0",
+  "trained_at": "2026-08-02T07:12:02Z",
+  "use_case_solved": "Rake TAT forecast -- railside placement/removal ETAs and departure window, supporting the briefing's rake-assignment item.",
+  "training_data_features": [
+    "siding",
+    "cto_idx",
+    "wagon_count",
+    "arrival_hour",
+    "inbound"
+  ],
+  "training_data_source": "Deterministic handling model over a seeded generator (n=2500, seed=303) whose wagon, container and terminal distributions are measured off 7 real CTO manifests and 59 FOIS intimations.",
+  "objective_function": "Minimise MAE against the handling model; post-process derives placement at 0.25*TAT, removal at 0.8*TAT and a +/-1 h window.",
+  "model_used": "Primary: deterministic handling model (auditable coefficients). Secondary: hist_gradient_boosting.",
+  "rationale": "With no observed rake TAT anywhere in the corpus, an auditable handling model an operations manager can check by hand is worth more than a learned model fitted to a label that does not exist. The regressor proves the feature set and the serving path.",
+  "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\rake-tat-forecaster\\model.joblib",
+  "validation_data": {
+    "headline": "Held-out synthetic slice, n=500",
+    "real_world": "7 CTO manifests + 59 FOIS intimations -- composition only, no TAT label"
+  },
+  "accuracy": {
+    "headline_fidelity_mae_h": 0.85,
+    "metric_is_fidelity_not_accuracy": true,
+    "acceptance_threshold_mae_h": 2.0,
+    "meets_threshold": true,
+    "real_corpus_status": "exercised_not_scored"
+  },
+  "disclosure": "The headline number measures how faithfully the regressor reproduces the deterministic handling model. It is NOT accuracy against observed rake turnaround, because the shared corpus contains no such observation. The handling model's coefficients are operating assumptions, versioned in HANDLING and CTO_EFFICIENCY.",
+  "composition": {
+    "source": "CORPUS",
+    "degraded": false,
+    "n_cto_manifests": 7,
+    "n_fois_intimations": 59,
+    "stats": {
+      "wagon_count_mean": 43.286,
+      "wagon_count_min": 39.0,
+      "wagon_count_max": 45.0,
+      "containers_mean": 49.857,
+      "containers_min": 42.0,
+      "containers_max": 57.0,
+      "teu_mean": 82.571,
+      "terminals_mean": 3.571,
+      "containers_per_wagon": 1.152,
+      "fois_units_mean": 44.254,
+      "fois_units_min": 38.0,
+      "fois_units_max": 49.0,
+      "fois_loaded_share": 0.983
+    },
+    "note": "Composition is real. The TAT label is not: nothing in the corpus records rake placement, removal or departure times."
+  },
+  "split": {
+    "policy": "chronological",
+    "ordering_field": "synthetic_arrival_ts",
+    "boundary": "2027-01-04 20:07:01.925560",
+    "n_train": 2000,
+    "n_test": 500,
+    "test_fraction": 0.2,
+    "shuffled": false,
+    "note": "Cut at a time percentile, never shuffled. Asserted post-condition: every training row is ordered at or before every test row."
+  },
+  "feature_importance": [
+    {
+      "feature": "container_count",
+      "mae_increase": 0.0697,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "terminal_count",
+      "mae_increase": 0.0466,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "inbound",
+      "mae_increase": 0.0448,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "cto_idx",
+      "mae_increase": 0.0264,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "siding",
+      "mae_increase": 0.0154,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "arrival_hour",
+      "mae_increase": 0.0118,
+      "baseline_mae": 0.85
+    },
+    {
+      "feature": "wagon_count",
+      "mae_increase": -0.0067,
+      "baseline_mae": 0.85
+    }
+  ],
+  "engine_report": {
+    "engine": "hist_gradient_boosting",
+    "engine_chain": [
+      "hist_gradient_boosting",
+      "gradient_boosting",
+      "random_forest",
+      "ridge"
+    ],
+    "engine_trace": [
+      {
+        "engine": "hist_gradient_boosting",
+        "status": "used"
+      }
+    ],
+    "n_train": 2000,
+    "n_test": 500,
+    "seed": 303,
+    "features": [
+      "siding",
+      "cto_idx",
+      "wagon_count",
+      "arrival_hour",
+      "inbound",
+      "container_count",
+      "terminal_count"
+    ]
+  },
+  "seed": 303,
+  "reproduce": "python uc2_m2_rake_tat.py --seed 303 --json"
+}

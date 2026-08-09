@@ -29,6 +29,7 @@ import type { LeoRecord, ShippingBillRecord, SmtpRecord } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { tokens } from '../theme/tokens.js';
 
@@ -84,7 +85,16 @@ function Register<T>({
               />
             </CalciteLabel>
             <div style={{ marginLeft: 'auto' }}>
-              <ImportExportToolbar data={exportRows(rows)} filename={exportName} />
+              {/* Customs ingest (UC2-036). One target serves every register here:
+                  the server identifies IGM / OOC / SMTP / RMS / LEO / SB from the
+                  filename, so the operator picks a file rather than declaring a
+                  type — and picking the wrong tab cannot mis-file a document. */}
+              <ImportExportToolbar
+                data={exportRows(rows)}
+                filename={exportName}
+                importTarget={UPLOAD_TARGETS.customs}
+                onImported={() => window.location.reload()}
+              />
             </div>
           </div>
 

@@ -198,6 +198,21 @@ export interface GateQueueForecastDTO {
   /** 30–120 min ahead, per-step queue length. */
   curve: Array<{ ts: string; predictedQueue: number }>;
   recommendedDeferralWindows: Array<{ from: string; to: string; reason: string }>;
+  /**
+   * WHICH engine produced this (ticket UC2-015).
+   *
+   * `MODEL` — the trained Python gate-queue forecaster answered.
+   * `HEURISTIC` — it did not, and a deterministic arrival/service curve stood in.
+   *
+   * Not optional in spirit: the dashboard used to render the heuristic with no
+   * way to tell it apart from a model, which is what made "proven end-to-end"
+   * untrue. Anything that displays a forecast must display this too.
+   */
+  source?: 'MODEL' | 'HEURISTIC';
+  /** Model version from `GET /health`, when a model answered. */
+  modelVersion?: string;
+  /** Why the fallback engaged — shown on the degraded badge. */
+  fallbackReason?: string;
 }
 
 export interface PendencyDTO {
@@ -898,16 +913,35 @@ export interface RmsScanContainer {
 
 /** Which ingest module a panel's Import button targets, and as what document. */
 export interface UploadTarget {
-  /** URL segment: 'shipping-lines' | 'gate-docs' | 'cfs-ecy'. */
+  /** URL segment: 'shipping-lines' | 'gate-docs' | 'cfs-ecy' | 'customs'. */
   module: string;
-  /** The multipart field naming the document kind, e.g. 'list_type'. */
-  param: string;
-  /** The value for `param`, e.g. 'EAL'. */
-  value: string;
+  /**
+   * The multipart field naming the document kind, e.g. 'list_type'.
+   *
+   * OPTIONAL because not every module has one. Customs detects the document type
+   * from the FILENAME (CHPOI03 / CHPOI10 / CHPOI13 prefixes, .TXT, an .XLSX
+   * header probe), so there is nothing for the caller to declare — and sending a
+   * discriminator it does not read would be a field the server silently ignores.
+   */
+  param?: string;
+  /** The value for `param`, e.g. 'EAL'. Omitted with `param`. */
+  value?: string;
   /** `accept` hint for the OS file dialog. The backend detects format by content. */
   accept?: string;
   /** Human label shown in the dialog, e.g. "EAL — Export Advance List". */
   label?: string;
+  /**
+   * Whether `POST /api/{module}/validate` exists for this module. Default true.
+   *
+   * ⚠ Customs has no parse-without-persist path, and faking one by importing then
+   * deleting would leave ledger and event rows behind. Rather than offer a preview
+   * the server cannot honour, the dialog imports directly and says so. Set false
+   * ONLY where the endpoint genuinely does not exist — a false here removes the
+   * operator's chance to see what a file contains before it lands.
+   */
+  dryRun?: boolean;
+  /** Whether `GET /api/{module}/templates/{value}` exists. Default true. */
+  template?: boolean;
 }
 
 /**
@@ -1797,6 +1831,85 @@ export interface DataAdapter {
   /** Per-container CFS dwell rows (`GET /api/cfs-ecy/dwell`). Optional: POC-3 path only. */
   getCfsEcyDwell?(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]>;
 
+  /**
+   * Health of the JNPA Simulated Port-Data API poller
+   * (`GET /api/integrations/jnpa/health`) — the ONE genuinely external live
+   * source in UC-II. Reports the mode, the per-group watermarks and the last
+   * poll, so the dashboard can state whether "LIVE" currently means anything.
+   *
+   * Optional: POC-3 path only. Absent on the mock adapter, which has no feed to
+   * report on — the panel then says so rather than inventing a green light.
+   */
+  getJnpaApiHealth?(): Promise<JnpaApiHealth>;
+
+  /** The poller's run audit trail (`GET /api/integrations/jnpa/runs`). */
+  getJnpaApiRuns?(limit?: number): Promise<JnpaApiRun[]>;
+
+  /**
+   * Runtime deviations the client observed against API Reference v2.0
+   * (`GET /api/integrations/jnpa/defects`) — the register JNPA asked bidders to
+   * report. EMPTY IS A RESULT: it means no new deviation fired, not that the
+   * check is missing.
+   */
+  getJnpaApiDefects?(limit?: number): Promise<JnpaApiDefect[]>;
+
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';
+}
+
+/** One data group's poll state, as reported by the JNPA sync health endpoint. */
+export interface JnpaApiGroupHealth {
+  group: string;
+  /** `indexed` (records + files), `report` (JSON envelope) or `static` (not served). */
+  kind: string;
+  /** Newest `publishedAt` consumed. Null before the group's first successful poll. */
+  watermark_ts: string | null;
+  last_status: string;
+  updated_at: string | null;
+}
+
+/** One poll of one group, with the counters that make the volume claim checkable. */
+export interface JnpaApiRun {
+  id: number;
+  group_slug: string | null;
+  status: string;
+  trigger: string | null;
+  api_mode: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  records_listed: number | null;
+  records_new: number | null;
+  records_duplicate: number | null;
+  files_downloaded: number | null;
+  files_skipped_checksum: number | null;
+  bytes_downloaded: number | null;
+  request_count: number | null;
+  error: string | null;
+}
+
+export interface JnpaApiHealth {
+  /** False when no client key is configured — the sync is then OFF by design. */
+  configured: boolean;
+  /** `LIVE` | `SIM` | `DISABLED`. */
+  mode: string;
+  api_url: string;
+  groups: JnpaApiGroupHealth[];
+  last_run?: JnpaApiRun | null;
+}
+
+/**
+ * One observed deviation from API Reference v2.0.
+ *
+ * ⚠ `requestId` is deliberately absent: JNPA's own notice says to quote it in
+ * support requests, but the API returns it in no body or header (register item
+ * D3). `ingest_run_id` is what we quote instead — it identifies the exact poll.
+ */
+export interface JnpaApiDefect {
+  id: number;
+  defect_code: string;
+  endpoint: string | null;
+  severity: string;
+  description: string | null;
+  observed_at: string;
+  ingest_run_id: number | null;
 }

@@ -17,11 +17,7 @@ import {
   CalciteInput, CalciteLabel, CalciteLoader, CalciteList, CalciteListItem,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-// TODO(TEMP — ISO-6346 bypass): `isValidContainerNo` was removed from this import
-// ONLY because the New Cargo dialog's ISO-6346 gate is temporarily disabled for
-// UC2↔UC3 manual testing (see CreateCargoModal below). RESTORE this import and the
-// validation once end-to-end testing is complete. The shared validator in
-// @jnpa/schemas is unchanged and still used everywhere else (Movement search, mapper).
+import { computeCheckDigit, isValidContainerNo } from '@jnpa/schemas';
 //
 // ORIGIN_STREAMS was also dropped: the Stream filter now builds its options from
 // the loaded rows, because that enum is the simulator's taxonomy and does not
@@ -39,7 +35,28 @@ import { NldsTrackDialog } from './NldsTrackDialog.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
-import { nextGate, GATE_UI, EXPORT_STATES, type CargoGate } from './cargoGates.js';
+import {
+  nextGate, gateUi, customsLifecycleConflict, EXPORT_STATES,
+  type CargoGate, type VerifyKind,
+} from './cargoGates.js';
+import { scanSelectionFor } from './scanSelection.js';
+import { useRmsSelection } from '../state/useRmsSelection.js';
+
+/**
+ * Is this container's verify gate a SCAN, or just the pre-release check?
+ *
+ * Only a filed RMS selection or an operator's flag orders a scan; everything else
+ * passes VERIFIED as a custody gate with no examination behind it. Labelling the
+ * latter "Record scan" claimed an examination that never happened.
+ */
+const verifyKindFor = (customsStatus: string | null | undefined,
+  rmsSelected: ReadonlySet<string>, containerNo: string): VerifyKind => {
+  const result = customsStatus === 'CLEARED' ? 'CLEAR'
+    : customsStatus === 'HELD' ? 'HOLD'
+      : customsStatus === 'UNDER_INSPECTION' ? 'EXAM' : undefined;
+  return scanSelectionFor(result, rmsSelected.has(containerNo.trim().toUpperCase())).reason
+    ? 'SCAN' : 'RELEASE_CHECK';
+};
 import { CargoGateDialog } from './CargoGateDialog.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
@@ -229,6 +246,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 function DischargeReportModal({ move, onClose }: { move: ContainerMovementDTO; onClose: () => void }) {
   const rec = move.cargo;
   const gate = gateOf(move) ?? 'discharge';
+  const rms = useRmsSelection();
   const facts: Array<[string, string]> = [
     ['Container', move.container.containerNo],
     ['Vessel', rec?.vessel_name || '—'],
@@ -244,6 +262,7 @@ function DischargeReportModal({ move, onClose }: { move: ContainerMovementDTO; o
       lifecycle={lifecycleOf(move)}
       yardBlock={rec?.yard_block}
       customsStatus={rec?.customs_status}
+      verifyKind={verifyKindFor(rec?.customs_status, rms.selected, move.container.containerNo)}
       vesselName={rec?.vessel_name}
       facts={facts}
       note={gate === 'discharge' ? (
@@ -310,20 +329,42 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState(false);
   const set = (patch: Partial<CargoCreateInput>) => setForm((f) => ({ ...f, ...patch }));
   const cn = form.container_number.trim().toUpperCase().replace(/\s+/g, '');
-  // TODO(TEMP — ISO-6346 bypass): The Create button was gated on the ISO-6346
-  // check digit via `isValidContainerNo(cn)`, which blocked any number whose check
-  // digit did not match. For UC2↔UC3 manual testing the gate is temporarily reduced
-  // to "required field filled" (non-empty container number) so any container number
-  // can be created. RESTORE `const cnValid = isValidContainerNo(cn);` (and the
-  // import above) after end-to-end testing is complete. Backend POST /api/cargo and
-  // the request payload are unchanged — only this client-side gate is relaxed.
-  const cnValid = cn.length > 0; // was: isValidContainerNo(cn)
+  /**
+   * ISO-6346 check-digit gate (restored — it was bypassed for UC2↔UC3 manual
+   * testing, which let phantom numbers like ABCD1234567 into the shared store).
+   *
+   * The 11th digit is a checksum over the first ten characters, so a single
+   * mistyped character almost always fails it. Catching that HERE keeps bad
+   * identities out of a store three PoCs read from — a phantom container number
+   * is not a display bug, it is a row that can never be reconciled with any
+   * manifest, gate document or customs record.
+   */
+  const cnValid = isValidContainerNo(cn);
+  /**
+   * The digit the number SHOULD have ended with, when the structure is right and
+   * only the checksum is wrong. Telling the operator "check digit should be 8"
+   * turns a rejection into a correction; "invalid container number" does not.
+   * Null when the shape itself is wrong — there is no meaningful digit to suggest.
+   */
+  const expectedCheckDigit = (() => {
+    if (cnValid || !/^[A-Z]{3}[UJZ][0-9]{7}$/.test(cn)) return null;
+    try {
+      return computeCheckDigit(cn.slice(0, 10));
+    } catch {
+      return null;
+    }
+  })();
 
   const submit = async () => {
     if (!adapter.createCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
-    // TODO(TEMP — ISO-6346 bypass): message relaxed to match the temporary
-    // required-field-only gate. Restore the ISO-6346 message with the validation.
-    if (!cnValid) { setError('Enter a container number.'); return; }
+    if (!cnValid) {
+      setError(cn.length === 0
+        ? 'Enter a container number.'
+        : expectedCheckDigit != null
+          ? `${cn} fails the ISO-6346 check digit — it should end in ${expectedCheckDigit}.`
+          : `${cn} is not a valid ISO-6346 container number (4 letters, the 4th being U, J or Z, then 7 digits).`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -377,6 +418,15 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
                   status={form.container_number && !cnValid ? 'invalid' : 'idle'}
                   onCalciteInputInput={(e) => set({ container_number: (e.target as unknown as { value: string }).value })} />
               </CalciteLabel>
+              {/* Inline, as you type — naming the digit turns a rejection into a
+                  correction. Silent until something has actually been typed. */}
+              {form.container_number.trim() !== '' && !cnValid && (
+                <p style={{ fontSize: 11.5, color: tokens.severity.CRIT, margin: '-6px 0 6px' }}>
+                  {expectedCheckDigit != null
+                    ? <>ISO-6346 check digit fails — <code>{cn}</code> should end in <strong>{expectedCheckDigit}</strong>.</>
+                    : <>Not an ISO-6346 number: 3 letters, then U / J / Z, then 7 digits (e.g. <code>MAEU6123458</code>).</>}
+                </p>
+              )}
               <CalciteLabel>Vessel name
                 <CalciteInput value={form.vessel_name ?? ''} placeholder="MAERSK SEMBAWANG"
                   onCalciteInputInput={(e) => set({ vessel_name: (e.target as unknown as { value: string }).value })} />
@@ -497,6 +547,8 @@ function DeleteCargoDialog({ containerNo, onClose }: { containerNo: string; onCl
 }
 
 export function ContainerMovements() {
+  // Shared with the Scan tab: whether a scan was ever ordered for each container.
+  const rms = useRmsSelection();
   const { adapter, role, lang } = useApp();
   const [stream, setStream] = useState<OriginStream | 'ALL'>('ALL');
   // Container whose lifecycle timeline is open in the slide-over (null = closed).
@@ -881,14 +933,27 @@ export function ContainerMovements() {
                     const released = m.cargo?.is_released || lifecycleOf(m) === 'RELEASED';
                     const sessionFlagged = flaggedNos.has(m.container.containerNo);
 
-                    // Gone from the port — the customs outcome is history, not an action.
+                    // Gone from the port — the customs outcome is history, not an
+                    // action. UNLESS the two tracks contradict each other, in which
+                    // case greying it out would present an impossible record as a
+                    // settled one.
                     if (released) {
+                      const clash = customsLifecycleConflict(cs, lifecycleOf(m));
                       return (
-                        <CalciteChip scale="s" value={cs}
-                          title="Container has left the port — its customs disposition is final."
-                          style={{ ['--calcite-chip-text-color' as never]: tokens.color.textMuted }}>
-                          {cs}
-                        </CalciteChip>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <CalciteChip scale="s" value={cs}
+                            title={clash ? clash.message
+                              : 'Container has left the port — its customs disposition is final.'}
+                            style={{ ['--calcite-chip-text-color' as never]:
+                              clash ? tokens.severity.CRIT : tokens.color.textMuted }}>
+                            {cs}
+                          </CalciteChip>
+                          {clash && (
+                            <CalciteIcon icon="exclamation-mark-triangle" scale="s"
+                              title={clash.message}
+                              style={{ color: tokens.severity.CRIT }} />
+                          )}
+                        </span>
                       );
                     }
                     // Already carrying a disposition — show it rather than re-offering Flag.
@@ -933,7 +998,10 @@ export function ContainerMovements() {
                   {(() => {
                     const gate = gateOf(m);
                     if (gate && gate !== 'done') {
-                      const ui = GATE_UI[gate];
+                      // The button must say which check it is: on a facilitated box
+                      // the verify gate is a pre-release check, not a scan.
+                      const ui = gateUi(gate, verifyKindFor(
+                        m.cargo?.customs_status, rms.selected, m.container.containerNo));
                       return (
                         <CalciteButton
                           scale="s"

@@ -21,6 +21,41 @@ import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimDep } from '../sim/useSimStore.js';
 
+/** CSV projection for the PIN table — shared by the toolbar in every panel state. */
+const pinExportRows = (rows: PinTicket[]) => rows.map((p) => ({
+  'PIN No': p.pin_number,
+  'Ticket Type': p.ticket_type,
+  'Terminal': p.terminal,
+  'Container': p.container_number,
+  'Lane': p.gate,
+  'Vehicle No': p.truck_no,
+  'Trucking Company': p.company,
+  'Yard Position': p.yard_location,
+  'Group Code (CFS)': p.group_code,
+  'Move Type': p.move_type,
+  'Leg': p.leg_seq,
+  'Issued At': p.issued_at,
+}));
+
+/** CSV projection for the EIR table — shared by the toolbar in every panel state. */
+const eirExportRows = (rows: EirTransaction[]) => rows.map((e) => ({
+  'EIR No': e.eir_no,
+  'Terminal': e.terminal,
+  'Container': e.container_number,
+  'Gate In': e.truck_in_time,
+  'Gate Out': e.truck_out_time,
+  'TAT (min)': e.tat_minutes,
+  'Truck No': e.truck_no,
+  'Driver Name': e.driver_name,
+  'Driver Licence': e.driver_licence,
+  'Vessel': e.vessel,
+  'VIA': e.via_no,
+  'Seal Number': e.seal_number,
+  'Group Code (CFS)': e.group_code,
+  'Company': e.company,
+  'Scanner Stamp': e.scanner_stamp,
+}));
+
 const qColor = (n: number) => (n > 16 ? tokens.congestion.RED : n > 8 ? tokens.congestion.AMBER : tokens.congestion.GREEN);
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -164,6 +199,19 @@ function EirSection({ gate }: { gate: string }) {
 
       <SourceBadge source="Terminal EIR (Equipment Interchange Report)" live />
 
+      {/* Outside the ternary below on purpose. The empty branch replaces the
+          table AND everything with it, so leaving the toolbar inside meant a
+          terminal with no EIRs offered no way to import any — a dead end at
+          exactly the moment Import is the only useful control. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <ImportExportToolbar
+          data={eirExportRows(rows)}
+          filename={`eir-${terminal.toLowerCase()}.csv`}
+          importTarget={UPLOAD_TARGETS.eir}
+          onImported={() => state.data && window.location.reload()}
+        />
+      </div>
+
       {state.loading ? (
         <CalciteLoader scale="s" label="Loading gate transactions" />
       ) : state.error ? (
@@ -187,29 +235,6 @@ function EirSection({ gate }: { gate: string }) {
             <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: 0 }}>
               {rows.length} gate transaction{rows.length === 1 ? '' : 's'} at {terminal}
             </p>
-            <div style={{ marginLeft: 'auto' }}>
-              <ImportExportToolbar
-                data={rows.map((e) => ({
-                  'EIR No': e.eir_no,
-                  'Terminal': e.terminal,
-                  'Container': e.container_number,
-                  'Gate In': e.truck_in_time,
-                  'Gate Out': e.truck_out_time,
-                  'TAT (min)': e.tat_minutes,
-                  'Truck No': e.truck_no,
-                  'Driver Name': e.driver_name,
-                  'Driver Licence': e.driver_licence,
-                  'Vessel': e.vessel,
-                  'VIA': e.via_no,
-                  'Seal Number': e.seal_number,
-                  'Group Code (CFS)': e.group_code,
-                  'Company': e.company,
-                  'Scanner Stamp': e.scanner_stamp,
-                }))}
-                filename={`eir-${terminal.toLowerCase()}.csv`}
-                importTarget={UPLOAD_TARGETS.eir}
-              />
-            </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
@@ -296,6 +321,17 @@ function PinTicketSection({ gate }: { gate: string }) {
 
       <SourceBadge source="Terminal pick-up ticket (PIN)" live />
 
+      {/* Hoisted for the same reason as the EIR toolbar: core.pin_ticket holds
+          only 2 rows today, so most terminals render the empty branch — which is
+          exactly when the operator needs Import. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <ImportExportToolbar
+          data={pinExportRows(rows)}
+          filename={`pin-tickets-${terminal.toLowerCase()}.csv`}
+          importTarget={UPLOAD_TARGETS.pin}
+        />
+      </div>
+
       {state.loading ? (
         <CalciteLoader scale="s" label="Loading pick-up tickets" />
       ) : state.error ? (
@@ -320,26 +356,6 @@ function PinTicketSection({ gate }: { gate: string }) {
             <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: 0 }}>
               {rows.length} pick-up ticket{rows.length === 1 ? '' : 's'} at {terminal}
             </p>
-            <div style={{ marginLeft: 'auto' }}>
-              <ImportExportToolbar
-                data={rows.map((p) => ({
-                  'PIN No': p.pin_number,
-                  'Ticket Type': p.ticket_type,
-                  'Terminal': p.terminal,
-                  'Container': p.container_number,
-                  'Lane': p.gate,
-                  'Vehicle No': p.truck_no,
-                  'Trucking Company': p.company,
-                  'Yard Position': p.yard_location,
-                  'Group Code (CFS)': p.group_code,
-                  'Move Type': p.move_type,
-                  'Leg': p.leg_seq,
-                  'Issued At': p.issued_at,
-                }))}
-                filename={`pin-tickets-${terminal.toLowerCase()}.csv`}
-                importTarget={UPLOAD_TARGETS.pin}
-              />
-            </div>
           </div>
 
           <div style={{ overflowX: 'auto' }}>
@@ -643,19 +659,27 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
   const forecast = useAsync<GateQueueForecastDTO>(() => adapter.getGateQueueForecast(gate), [adapter, gate]);
 
   return (
-    <Panel heading={t('panel_gate', lang)} state={ops} isEmpty={(d) => d.length === 0}>
+    <Panel
+      heading={t('panel_gate', lang)}
+      state={ops}
+      isEmpty={(d) => d.length === 0}
+      // In the persistent slot, not inside children: Panel's empty branch
+      // replaces children wholesale, which used to take the toolbar with it.
+      toolbar={(
+        <ImportExportToolbar
+          data={(ops.data ?? []).map((g) => ({
+            'Gate': g.gateId,
+            'Terminal': g.terminalId,
+            'Queue Length': g.queueLength,
+            'Avg Txn Time (min)': g.avgTxnTimeMin,
+            'Transactions': g.transactions.length,
+          }))}
+          filename="gate-ops.csv"
+        />
+      )}
+    >
       {(rows) => (
         <>
-          <ImportExportToolbar
-            data={rows.map((g) => ({
-              'Gate': g.gateId,
-              'Terminal': g.terminalId,
-              'Queue Length': g.queueLength,
-              'Avg Txn Time (min)': g.avgTxnTimeMin,
-              'Transactions': g.transactions.length,
-            }))}
-            filename="gate-ops.csv"
-          />
           {/* GATE_IN/OUT events are sourced from TOS (see sim cargo.ts). */}
           <div><SourceBadge source="Terminal API (TOS)" /></div>
           <CalciteTable caption="gate ops">
@@ -708,7 +732,33 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
             </CalciteSelect>
             {forecast.data && (
               <div style={{ marginTop: 8 }}>
-                <strong style={{ fontSize: 13 }}>Predicted queue (30–120 min):</strong>
+                {/* WHICH engine produced this curve (UC2-015). The Python model,
+                    or the deterministic fallback — never ambiguous. Stop the
+                    ai-gate-queue container and this flips to HEURISTIC with the
+                    reason, which is how the wire proves it is real. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 13 }}>Predicted queue (30–120 min):</strong>
+                  {forecast.data.source === 'MODEL' ? (
+                    <CalciteChip scale="s" icon="lightning" value="MODEL"
+                      title={`Served by the gate-queue-forecaster model service${forecast.data.modelVersion ? ` v${forecast.data.modelVersion}` : ''}`}
+                      style={{ ['--calcite-chip-text-color' as never]: tokens.kpi.better }}>
+                      MODEL{forecast.data.modelVersion ? ` v${forecast.data.modelVersion}` : ''}
+                    </CalciteChip>
+                  ) : (
+                    <CalciteChip scale="s" icon="exclamation-mark-triangle" value="HEURISTIC"
+                      title={forecast.data.fallbackReason
+                        ?? 'The model service did not answer; this is the deterministic fallback curve.'}
+                      style={{ ['--calcite-chip-text-color' as never]: tokens.severity.WARN }}>
+                      HEURISTIC — model unavailable
+                    </CalciteChip>
+                  )}
+                </div>
+                {forecast.data.source !== 'MODEL' && forecast.data.fallbackReason && (
+                  <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 6px' }}>
+                    {forecast.data.fallbackReason} The curve below is a deterministic
+                    arrival/service model, not a trained forecast.
+                  </p>
+                )}
                 <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', height: 60, marginTop: 6 }}>
                   {forecast.data.curve.map((c) => (
                     <div

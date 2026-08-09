@@ -1,0 +1,196 @@
+{
+  "metrics": {
+    "held_out_rolling_origin": {
+      "n": 611,
+      "mae": 0.4795,
+      "rmse": 0.9087,
+      "mape_pct": null,
+      "r2": 0.9696,
+      "median_abs_error": 0.1516,
+      "p90_abs_error": 1.68
+    },
+    "n_folds": 5,
+    "per_fold": [
+      {
+        "fold": 0,
+        "n_train": 611,
+        "n_test": 122,
+        "test_starts": "(datetime.datetime(2026, 7, 14, 3, 0), 'ECY')",
+        "rmse": 1.4332,
+        "mae": 0.9146,
+        "r2": 0.9802,
+        "target_variance_in_test": true
+      },
+      {
+        "fold": 1,
+        "n_train": 733,
+        "n_test": 122,
+        "test_starts": "(datetime.datetime(2026, 7, 16, 16, 0), 'ECY')",
+        "rmse": 1.0725,
+        "mae": 0.6893,
+        "r2": 0.568,
+        "target_variance_in_test": true
+      },
+      {
+        "fold": 2,
+        "n_train": 855,
+        "n_test": 122,
+        "test_starts": "(datetime.datetime(2026, 7, 19, 5, 0), 'ECY')",
+        "rmse": 0.9206,
+        "mae": 0.5035,
+        "r2": 0.2311,
+        "target_variance_in_test": true
+      },
+      {
+        "fold": 3,
+        "n_train": 977,
+        "n_test": 122,
+        "test_starts": "(datetime.datetime(2026, 7, 21, 18, 0), 'ECY')",
+        "rmse": 0.2275,
+        "mae": 0.1707,
+        "r2": null,
+        "target_variance_in_test": false
+      },
+      {
+        "fold": 4,
+        "n_train": 1099,
+        "n_test": 123,
+        "test_starts": "(datetime.datetime(2026, 7, 24, 7, 0), 'ECY')",
+        "rmse": 0.1792,
+        "mae": 0.1221,
+        "r2": null,
+        "target_variance_in_test": false
+      }
+    ],
+    "degenerate_folds": [
+      3,
+      4
+    ],
+    "persistence_baseline_rmse": 1.0186,
+    "beats_persistence": true,
+    "acceptance_threshold_rmse": 3.5,
+    "meets_threshold": true,
+    "leakage_check": {
+      "status": "measured",
+      "chronological": {
+        "rmse": 0.9087,
+        "mae": 0.4795,
+        "r2": 0.9696,
+        "n_test": 611,
+        "policy": "rolling-origin, 5 expanding-window folds",
+        "verdict": "SERVED"
+      },
+      "chronological_tail_for_comparison_only": {
+        "rmse": 0.2349,
+        "mae": 0.177,
+        "r2": null,
+        "n_test": 244,
+        "policy": "single 80/20 chronological tail -- leak-free but window-dependent",
+        "test_slice_has_target_variance": false,
+        "verdict": "REJECTED: the test slice is flat (a quiet period), so the score measures the calendar, not the model"
+      },
+      "shuffled_for_comparison_only": {
+        "rmse": 1.1731,
+        "mae": 0.5846,
+        "r2": 0.9868,
+        "n_test": 245,
+        "policy": "random split -- invalid for an autoregressive series",
+        "verdict": "REJECTED on principle regardless of its score"
+      },
+      "shuffled_vs_served_ratio": 1.291,
+      "shuffled_understated_rmse_by": -0.2644,
+      "shuffling_flattered_the_score": false,
+      "served_metric": "chronological",
+      "per_fold": [
+        {
+          "fold": 0,
+          "n_train": 611,
+          "n_test": 122,
+          "test_starts": "(datetime.datetime(2026, 7, 14, 3, 0), 'ECY')",
+          "rmse": 1.4332,
+          "mae": 0.9146,
+          "r2": 0.9802,
+          "target_variance_in_test": true
+        },
+        {
+          "fold": 1,
+          "n_train": 733,
+          "n_test": 122,
+          "test_starts": "(datetime.datetime(2026, 7, 16, 16, 0), 'ECY')",
+          "rmse": 1.0725,
+          "mae": 0.6893,
+          "r2": 0.568,
+          "target_variance_in_test": true
+        },
+        {
+          "fold": 2,
+          "n_train": 855,
+          "n_test": 122,
+          "test_starts": "(datetime.datetime(2026, 7, 19, 5, 0), 'ECY')",
+          "rmse": 0.9206,
+          "mae": 0.5035,
+          "r2": 0.2311,
+          "target_variance_in_test": true
+        },
+        {
+          "fold": 3,
+          "n_train": 977,
+          "n_test": 122,
+          "test_starts": "(datetime.datetime(2026, 7, 21, 18, 0), 'ECY')",
+          "rmse": 0.2275,
+          "mae": 0.1707,
+          "r2": null,
+          "target_variance_in_test": false
+        },
+        {
+          "fold": 4,
+          "n_train": 1099,
+          "n_test": 123,
+          "test_starts": "(datetime.datetime(2026, 7, 24, 7, 0), 'ECY')",
+          "rmse": 0.1792,
+          "mae": 0.1221,
+          "r2": null,
+          "target_variance_in_test": false
+        }
+      ],
+      "degenerate_folds": [
+        3,
+        4
+      ],
+      "explanation": "A shuffled split puts hour t-1 and hour t+1 in training while hour t is in test, so with lag features the model has effectively already seen the answer. That makes it invalid here whatever it scores -- and on this series it does not even flatter the result, which is worth stating plainly rather than repeating the assumption. The single chronological tail is leak-free but lands on a flat, quiet fortnight and reports a meaninglessly low error. Rolling-origin is what the model card, /metrics and every response carry."
+    },
+    "bands": {
+      "p10_offset": -0.6927,
+      "p90_offset": 0.7461,
+      "n_residuals": 611,
+      "method": "empirical held-out residual quantiles (not Gaussian)"
+    }
+  },
+  "series": {
+    "source": "CORPUS",
+    "degraded": false,
+    "synthetic": false,
+    "gates": [
+      "CFS",
+      "ECY"
+    ],
+    "n_steps": 1222,
+    "n_hours_per_gate": 611,
+    "span_utc": [
+      "2026-07-01T10:00:00",
+      "2026-07-26T20:00:00"
+    ],
+    "arrivals_total": 1929,
+    "stats": {
+      "arrivals_per_hour_mean": 1.579,
+      "arrivals_per_hour_max": 10.0,
+      "queue_mean": 3.52,
+      "queue_median": 0.0,
+      "queue_p90": 9.0,
+      "queue_max": 63.0,
+      "hours_above_deferral_threshold": 125.0,
+      "service_capacity_per_hour": 3.0
+    },
+    "queue_derivation": "queue[t] = max(0, queue[t-1] + arrivals[t] - 3). The corpus records gate arrivals but no queue length anywhere, so the target is a documented transform of real movements, not an observation."
+  }
+}

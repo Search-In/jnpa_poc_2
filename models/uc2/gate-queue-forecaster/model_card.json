@@ -1,0 +1,135 @@
+{
+  "module_id": "UC2-M3",
+  "module_name": "Gate Queue Forecast",
+  "model_version": "m3-gate-queue-v2.0.0",
+  "trained_at": "2026-08-02T07:12:04Z",
+  "use_case_solved": "Gate queue forecast -- next-interval queue length per gate and a deferral recommendation, supporting lane planning.",
+  "training_data_features": [
+    "queue_lag1",
+    "queue_lag2",
+    "hour_sin",
+    "hour_cos",
+    "uc3_truck_inflow"
+  ],
+  "training_data_source": "1222 hourly steps derived from 1929 real CODECO gate movements across 611 hours",
+  "objective_function": "Minimise RMSE of next-step queue length; post-process recommends deferral when queue > 8 and converts queue to an estimated wait in minutes.",
+  "model_used": "hist_gradient_boosting autoregressor",
+  "rationale": "The cross-twin uc3_truck_inflow feature demonstrates UC-II <-> UC-III interdependency. The split is chronological, which is the correction to the previously disclosed leakage defect.",
+  "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\gate-queue-forecaster\\model.joblib",
+  "validation_data": "Pooled across 5 rolling-origin folds, n=611 held-out steps",
+  "accuracy": {
+    "rmse": 0.9087,
+    "mae": 0.4795,
+    "r2": 0.9696,
+    "acceptance_threshold_rmse": 3.5,
+    "meets_threshold": true,
+    "persistence_baseline_rmse": 1.0186,
+    "beats_persistence": true,
+    "split_policy": "rolling-origin (expanding window)",
+    "degenerate_folds": [
+      3,
+      4
+    ]
+  },
+  "disclosure": "PREVIOUSLY DISCLOSED DEFECT, NOW FIXED. The earlier version shuffled a time series and published RMSE 0.323, which was leakage. This version splits chronologically and publishes the higher, honest number. Both figures are in metrics.leakage_check so the size of the correction is visible. Separately: the corpus records gate arrivals but no queue length, so the target is derived through a named service capacity.",
+  "series": {
+    "source": "CORPUS",
+    "degraded": false,
+    "synthetic": false,
+    "gates": [
+      "CFS",
+      "ECY"
+    ],
+    "n_steps": 1222,
+    "n_hours_per_gate": 611,
+    "span_utc": [
+      "2026-07-01T10:00:00",
+      "2026-07-26T20:00:00"
+    ],
+    "arrivals_total": 1929,
+    "stats": {
+      "arrivals_per_hour_mean": 1.579,
+      "arrivals_per_hour_max": 10.0,
+      "queue_mean": 3.52,
+      "queue_median": 0.0,
+      "queue_p90": 9.0,
+      "queue_max": 63.0,
+      "hours_above_deferral_threshold": 125.0,
+      "service_capacity_per_hour": 3.0
+    },
+    "queue_derivation": "queue[t] = max(0, queue[t-1] + arrivals[t] - 3). The corpus records gate arrivals but no queue length anywhere, so the target is a documented transform of real movements, not an observation."
+  },
+  "split": {
+    "policy": "rolling-origin (expanding window)",
+    "ordering_field": "hour_bucket",
+    "boundary": "(datetime.datetime(2026, 7, 21, 19, 0), 'CFS')",
+    "n_train": 978,
+    "n_test": 244,
+    "test_fraction": 0.1997,
+    "shuffled": false,
+    "note": "Metrics come from the rolling-origin folds, each trained only on its own past. The served model is then refit on everything, because at inference time every recorded hour really is in the past. A single tail split is reported too but is degenerate on this series -- see degenerate_folds.",
+    "n_folds": 5,
+    "serving_model_trained_on": "the full series"
+  },
+  "feature_importance": [
+    {
+      "feature": "queue_lag1",
+      "mae_increase": 5.9275,
+      "baseline_mae": 0.3955
+    },
+    {
+      "feature": "queue_lag2",
+      "mae_increase": 0.1766,
+      "baseline_mae": 0.3955
+    },
+    {
+      "feature": "hour_cos",
+      "mae_increase": 0.1382,
+      "baseline_mae": 0.3955
+    },
+    {
+      "feature": "hour_sin",
+      "mae_increase": 0.0479,
+      "baseline_mae": 0.3955
+    },
+    {
+      "feature": "uc3_truck_inflow",
+      "mae_increase": 0.0102,
+      "baseline_mae": 0.3955
+    }
+  ],
+  "feature_notes": {
+    "queue_lag1": "Derived queue one hour ago; see SERVICE_CAPACITY_PER_HOUR.",
+    "queue_lag2": "Derived queue two hours ago.",
+    "hour_sin": "sin(2*pi*hour/24) -- time of day as a smooth cycle.",
+    "hour_cos": "cos(2*pi*hour/24).",
+    "uc3_truck_inflow": "Supplied by the caller from UC-III camera counts. This service has no data client and will not invent one. In training it is stood in for by the previous hour's arrivals at the other facility -- a real, independently measured road-side signal, never the target's own history."
+  },
+  "engine_report": {
+    "engine": "hist_gradient_boosting",
+    "engine_chain": [
+      "hist_gradient_boosting",
+      "gradient_boosting",
+      "random_forest",
+      "ridge"
+    ],
+    "engine_trace": [
+      {
+        "engine": "hist_gradient_boosting",
+        "status": "used"
+      }
+    ],
+    "n_train": 1222,
+    "n_test": 0,
+    "seed": 202,
+    "features": [
+      "queue_lag1",
+      "queue_lag2",
+      "hour_sin",
+      "hour_cos",
+      "uc3_truck_inflow"
+    ]
+  },
+  "seed": 202,
+  "reproduce": "python uc2_m3_gate_queue.py --seed 202 --json"
+}

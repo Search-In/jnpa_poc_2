@@ -10,7 +10,9 @@
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DataAdapter, ReferenceCargoOverride } from '@jnpa/data';
-import { LiveAdapter, MockAdapter, Poc3CargoAdapter, ReferenceCargoAdapter } from '@jnpa/data';
+import {
+  AiForecastAdapter, LiveAdapter, MockAdapter, Poc3CargoAdapter, ReferenceCargoAdapter,
+} from '@jnpa/data';
 import type { Role } from '@jnpa/schemas';
 import type { BaselinesConfig } from '@jnpa/kpi';
 import terminalsConfig from '../../../../config/terminals.json';
@@ -48,6 +50,13 @@ export const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | 
 //   'reference' — layer a cargo-only decorator that serves container movements
 //                 from the JNPA reference dataset, fetched at runtime (below).
 const CARGO_SOURCE = (import.meta.env?.VITE_CARGO_SOURCE as string | undefined) ?? 'poc3';
+/**
+ * The gate-queue model service. Relative by default so the Vite dev proxy (and a
+ * same-origin reverse proxy in a deployed build) can reach a container that is
+ * NOT publicly exposed — the browser never needs the model's own port.
+ */
+export const AI_GATE_QUEUE_BASE =
+  (import.meta.env?.VITE_AI_GATE_QUEUE_BASE as string | undefined) || '/ai/gate-queue';
 const CARGO_FROM_POC3 = CARGO_SOURCE === 'poc3';
 const CARGO_FROM_REFERENCE = CARGO_SOURCE === 'reference';
 /** Runtime path of the generated reference dataset (served from public/, not bundled). */
@@ -146,8 +155,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             getOverride: () => referenceRef.current,
           })
         : base;
+    /**
+     * Route the gate-queue forecast through the real Python model (UC2-015).
+     *
+     * Layered here, INSIDE SimAdapter, so the simulator's overrides still apply
+     * to the result — a What-If that raises the gate queue must still move a
+     * model-sourced curve, or the two would tell different stories.
+     *
+     * The decorator falls back to the wrapped adapter's heuristic when the
+     * service is unreachable, and labels which answered. That labelling is the
+     * ticket's acceptance: stop the container and the Gate panel must visibly
+     * say HEURISTIC.
+     */
+    const withForecast = new AiForecastAdapter(withCargo, { gateQueueBaseUrl: AI_GATE_QUEUE_BASE });
+
     // Wrap so the live-data Simulator's overrides flow into every tab + the map.
-    return new SimAdapter(withCargo);
+    return new SimAdapter(withForecast);
   }, []);
 
   // Reference mode only: fetch the generated reference dataset at runtime (it is
