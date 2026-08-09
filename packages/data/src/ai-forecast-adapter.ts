@@ -58,6 +58,46 @@ export class AiForecastAdapter implements DataAdapter {
     };
     this.getUc3TruckInflow = deps.getUc3TruckInflow ?? (() => undefined);
     this.now = deps.now ?? (() => new Date());
+    this.adoptOptional(base);
+  }
+
+  /**
+   * Forward every method the wrapped adapter has that this one does not.
+   *
+   * ⚠ WHY THIS IS NOT A HAND-WRITTEN LIST. `DataAdapter` declares ~49 OPTIONAL
+   * methods — the whole customs/gate/export surface (`getIgmManifests`,
+   * `getOocRecords`, `getShippingBills`, …) — which only `Poc3CargoAdapter`
+   * implements. `SimAdapter`, the outermost decorator, tests each with
+   * `this.base.getX ? … : unavailable()`. So any decorator between the two that
+   * fails to re-expose a method does not raise a type error — the method is
+   * optional, so dropping it is legal — it just makes `SimAdapter` report the
+   * data as unavailable and the panel render empty.
+   *
+   * That is exactly what happened when this decorator was added with a
+   * hand-written pass-through list of the 14 REQUIRED methods: the IGM, RMS,
+   * OOC, E-DO, LEO, Shipping Bill, SMTP, EIR, PIN, advance-list, COPRAR/COARRI
+   * and CFS/ECY panels all went blank in every data mode, with the backend
+   * serving them correctly the whole time.
+   *
+   * Adopting dynamically means a method added to `Poc3CargoAdapter` tomorrow
+   * survives this decorator without anyone remembering to come here. Keys
+   * already defined on `this` are left alone, so the overridden
+   * `getGateQueueForecast` and the typed pass-throughs below both win.
+   */
+  private adoptOptional(base: DataAdapter): void {
+    const self = this as unknown as Record<string, unknown>;
+    for (let o: object | null = base; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+      for (const key of Object.getOwnPropertyNames(o)) {
+        // `key in this` covers this class's own fields AND its prototype, so the
+        // override and the explicit delegations are never clobbered.
+        if (key in self) continue;
+        const desc = Object.getOwnPropertyDescriptor(o, key);
+        // Value-functions only: a getter would be invoked by reading it here.
+        if (!desc || typeof desc.value !== 'function') continue;
+        const fn = desc.value as (...a: unknown[]) => unknown;
+        self[key] = (...a: unknown[]) => fn.apply(base, a);
+      }
+    }
   }
 
   get mode() {
