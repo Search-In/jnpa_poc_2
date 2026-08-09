@@ -54,6 +54,9 @@ import type {
   IgmContainer,
   IgmContainerFilter,
   IgmManifest,
+  JnpaApiDefect,
+  JnpaApiHealth,
+  JnpaApiRun,
   LiveVesselDTO,
   OocDetail,
   ContainerCustomsView,
@@ -640,7 +643,9 @@ export class Poc3CargoAdapter implements DataAdapter {
   private static uploadForm(target: UploadTarget, file: File): FormData {
     const fd = new FormData();
     fd.append('file', file);
-    fd.append(target.param, target.value);
+    // Only when the module HAS a discriminator. Customs routes on the filename,
+    // so appending an unread field would look like a contract that isn't one.
+    if (target.param && target.value != null) fd.append(target.param, target.value);
     return fd;
   }
 
@@ -969,6 +974,39 @@ export class Poc3CargoAdapter implements DataAdapter {
    */
   async getLiveVessels(): Promise<LiveVesselDTO[]> {
     return this.getList<LiveVesselDTO>('/api/marine/vessels/live');
+  }
+
+  // 16) JNPA Simulated Port-Data API — the live source behind the LIVE badge ----
+  /**
+   * These three read the POLLER, not the port.
+   *
+   * UC-II's "LIVE" claim rests entirely on one external feed: JNPA's own
+   * Simulated Port-Data API at `dt.jnpa.in/poc-api-data-access`, polled by the
+   * shared backend and routed into the same `core.*` tables the corpus dump
+   * fills. That makes "is it LIVE?" a question about the poller's state — is a
+   * client key configured, when did each group last advance, did the last poll
+   * fail — which is exactly what these expose.
+   *
+   * Deliberately unauthenticated-tolerant and never fatal to a page: the panel
+   * that renders them treats an error as "cannot determine", because a broken
+   * health check must not be able to paint a feed green.
+   */
+  async getJnpaApiHealth(): Promise<JnpaApiHealth> {
+    const body = await this.getJson<JnpaApiHealth>('/api/integrations/jnpa/health');
+    return { ...body, groups: Array.isArray(body?.groups) ? body.groups : [] };
+  }
+
+  /** Run audit trail, newest first. The source of the volume figures. */
+  async getJnpaApiRuns(limit = 50): Promise<JnpaApiRun[]> {
+    return this.getList<JnpaApiRun>('/api/integrations/jnpa/runs', { limit: String(limit) });
+  }
+
+  /** Observed deviations from API Reference v2.0. An empty list is a real answer. */
+  async getJnpaApiDefects(limit = 100): Promise<JnpaApiDefect[]> {
+    return this.getList<JnpaApiDefect>('/api/integrations/jnpa/defects', {
+      format: 'json',
+      limit: String(limit),
+    });
   }
 
   // -- everything else passes straight through to the base adapter -----------

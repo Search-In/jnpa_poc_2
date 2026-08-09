@@ -21,6 +21,10 @@ import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { tokens } from '../theme/tokens.js';
 import { simStore } from './simStore.js';
+import {
+  REPLAY_DAYS, REPLAY_LABEL, REPLAY_RATIONALE, REPLAY_SPEEDS,
+  formatIst, msForProgress, windowProgress,
+} from './demoWindow.js';
 import { useSimStore } from './useSimStore.js';
 import { navigate } from './useHashRoute.js';
 
@@ -28,7 +32,7 @@ const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
   to: new Date(Date.UTC(2026, 5, 17, 0, 0, 0)).toISOString(),
 };
-const SPEEDS = [0.5, 1, 2, 4, 8];
+const SPEEDS = REPLAY_SPEEDS;
 const SIDINGS = ['T1', 'T2'] as const;
 
 const fmtSigned = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -67,7 +71,7 @@ export function SimulatorPage() {
     0,
   );
 
-  const clock = new Date(sim.clockMs);
+  const clock = formatIst(sim.clockMs);
 
   return (
     <CalciteShell style={{ height: '100vh', background: tokens.color.bg }}>
@@ -81,8 +85,14 @@ export function SimulatorPage() {
           <CalciteChip kind={sim.running ? 'brand' : 'neutral'} icon={sim.running ? 'play-f' : 'pause-f'} value="status">
             {sim.running ? 'RUNNING' : 'PAUSED'}
           </CalciteChip>
+          {/* The DATE, not just the time. A replay of 20-Jul showing only
+              "14:32" is indistinguishable from now — which is the whole thing
+              this window exists to prevent. */}
           <CalciteChip kind="neutral" value="clock" icon="clock">
-            {clock.toLocaleTimeString()}
+            {clock}
+          </CalciteChip>
+          <CalciteChip kind="neutral" value="replay" icon="rewind" title={REPLAY_RATIONALE}>
+            REPLAY · {REPLAY_LABEL}
           </CalciteChip>
           <CalciteButton appearance="outline" iconStart="map" onClick={() => navigate('/')}>
             Open dashboard
@@ -126,6 +136,38 @@ export function SimulatorPage() {
                   ))}
                 </CalciteSegmentedControl>
               </CalciteLabel>
+            </div>
+
+            {/* ---- Seek ---- */}
+            <div style={{ marginTop: 14 }}>
+              <CalciteLabel>
+                Seek — {clock}
+                <input
+                  type="range"
+                  min={0}
+                  max={1000}
+                  value={Math.round(windowProgress(sim.clockMs) * 1000)}
+                  onChange={(e) => simStore.setClock(msForProgress(Number(e.target.value) / 1000))}
+                  style={{ width: '100%' }}
+                  aria-label="Seek the replay clock within the corpus week"
+                />
+              </CalciteLabel>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                {REPLAY_DAYS.map((d) => (
+                  <CalciteButton
+                    key={d.ms}
+                    scale="s"
+                    appearance={Math.abs(sim.clockMs - d.ms) < 24 * 3600 * 1000 ? 'solid' : 'outline'}
+                    kind="neutral"
+                    onClick={() => simStore.setClock(d.ms)}
+                  >
+                    {d.label}
+                  </CalciteButton>
+                ))}
+              </div>
+              <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '8px 0 0' }}>
+                {REPLAY_RATIONALE}
+              </p>
             </div>
           </CalciteBlock>
 

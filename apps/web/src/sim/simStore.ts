@@ -107,6 +107,8 @@ export interface SimState {
   tour: TourState;
 }
 
+import { REPLAY_START_MS, clampToWindow } from './demoWindow.js';
+
 const STORAGE_KEY = 'jnpa.sim.state.v1';
 const CHANNEL = 'jnpa-sim';
 const TICK_MS = 1000;
@@ -140,7 +142,10 @@ function baseState(): SimState {
   return {
     running: false,
     speed: 1,
-    clockMs: Date.UTC(2026, 5, 16, 9, 0, 0),
+    // Anchored on the corpus week (UC2-013), not an arbitrary June date: this is
+    // the only window where rail, gate, yard and pendency can all be populated
+    // from real records. See demoWindow.ts for why 20–26 Jul.
+    clockMs: REPLAY_START_MS,
     tick: 0,
     gates: {},
     pendency: {},
@@ -173,7 +178,14 @@ class SimStore {
     // Hydrate from localStorage so a newly-opened tab sees current sim state.
     try {
       const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-      if (raw) this.state = { ...baseState(), ...(JSON.parse(raw) as Partial<SimState>) };
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<SimState>;
+        this.state = { ...baseState(), ...saved };
+        // A session persisted before UC2-013 carries a clock outside the corpus
+        // week (the old default was 16-Jun). Restoring it verbatim would put an
+        // already-open browser back on a date with no data, with no way to tell.
+        this.state.clockMs = clampToWindow(this.state.clockMs);
+      }
     } catch {
       /* ignore corrupt storage */
     }
@@ -215,6 +227,13 @@ class SimStore {
 
   setRunning = (running: boolean) => this.set((s) => ({ ...s, running }));
   setSpeed = (speed: number) => this.set((s) => ({ ...s, speed }));
+
+  /**
+   * Seek the replay clock. Clamped to the corpus week — seeking outside it would
+   * render a confident, empty day that an operator cannot distinguish from
+   * "nothing happened".
+   */
+  setClock = (ms: number) => this.set((s) => ({ ...s, clockMs: clampToWindow(ms) }));
 
   setGate = (gateId: string, patch: GateOverride) =>
     this.set((s) => ({ ...s, gates: { ...s.gates, [gateId]: { ...s.gates[gateId], ...patch } } }));
@@ -421,7 +440,9 @@ class SimStore {
       return {
         ...s,
         tick: s.tick + 1,
-        clockMs: s.clockMs + dtMin * 60000,
+        // Wraps at the end of the week rather than running past it. A clock that
+        // sits frozen on Sunday night reads as a hang; a wrap reads as a loop.
+        clockMs: clampToWindow(s.clockMs + dtMin * 60000),
         gates,
         pendency,
         scanQueue,

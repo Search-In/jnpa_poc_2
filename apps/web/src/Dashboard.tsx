@@ -34,6 +34,7 @@ import { GateOps } from './panels/GateOps.js';
 import { EmptyPool } from './panels/EmptyPool.js';
 import { CfsEcy } from './panels/CfsEcy.js';
 import { HealthCards } from './panels/HealthCards.js';
+import { JnpaApiFeed, JNPA_FEED_ENABLED } from './panels/JnpaApiFeed.js';
 import { Notifications } from './panels/Notifications.js';
 import { Scenarios } from './panels/Scenarios.js';
 import { MethodologyPanel } from './panels/MethodologyPanel.js';
@@ -504,7 +505,12 @@ export function Dashboard() {
               {canSeeTab('scenarios') && <CalciteTab tab="scenarios" selected={activeTab === 'scenarios'}><div data-tour-tab="scenarios"><Scenarios onResult={(r) => setMapOverlay(r.mapOverlay)} /></div></CalciteTab>}
               {canSeeTab('workflows') && <CalciteTab tab="workflows" selected={activeTab === 'workflows'}><div data-tour-tab="workflows"><WorkflowRuns /></div></CalciteTab>}
               {canSeeTab('models') && <CalciteTab tab="models" selected={activeTab === 'models'}><div data-tour-tab="models"><ModelCards /></div></CalciteTab>}
-              {canSeeTab('health') && <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health"><HealthCards /></div></CalciteTab>}
+              {/* The real external feed sits ABOVE the simulated adapters, so the
+                  tab never implies that everything on it is equally live. Gated
+                  HERE rather than inside the panel so a hidden card issues no
+                  requests at all — its three health calls would otherwise fire on
+                  every visit to this tab. Off unless VITE_SHOW_JNPA_FEED says otherwise. */}
+              {canSeeTab('health') && <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health">{JNPA_FEED_ENABLED && <JnpaApiFeed />}<HealthCards /></div></CalciteTab>}
               {canSeeTab('notifications') && <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>}
               {canSeeTab('methodology') && <CalciteTab tab="methodology" selected={activeTab === 'methodology'}><div data-tour-tab="methodology"><MethodologyPanel /></div></CalciteTab>}
             </CalciteTabs>

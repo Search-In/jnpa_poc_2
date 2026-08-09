@@ -24,6 +24,7 @@ import type { UploadResult, UploadTarget } from '@jnpa/data';
 import { useApp, CARGO_API_BASE } from '../state/AppContext.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { tokens } from '../theme/tokens.js';
+import { CUSTOMS_FILENAME_RULES, describeCustomsFile } from './customsFormat.js';
 
 /** Outcome → tone. SKIPPED_DUPLICATE is a WARNING, never a failure: the data is
  *  already in, which is the idempotency guarantee working as designed. */
@@ -121,7 +122,24 @@ export function DataUploadDialog({ target, onClose, onImported }: {
 
   // `GET /api/{module}/templates/{value}` — the same discriminator that keys the
   // upload also keys its template, so one path serves all three modules.
-  const templateUrl = `${CARGO_API_BASE.replace(/\/$/, '')}/api/${target.module}/templates/${encodeURIComponent(target.value)}`;
+  const templateUrl = `${CARGO_API_BASE.replace(/\/$/, '')}/api/${target.module}/templates/${encodeURIComponent(target.value ?? '')}`;
+  /**
+   * Some modules have no dry run and no template. Customs is both: it detects the
+   * document from the filename and has no parse-without-persist path.
+   *
+   * The dialog then drops the two-step shape rather than pretending — a Validate
+   * button that 404s, or a Template link to an endpoint that does not exist, is
+   * worse than a single honest Import.
+   */
+  const canDryRun = target.dryRun !== false;
+  /**
+   * Customs is the only module that identifies a document by its NAME, so it is
+   * the only one where the operator can pick a valid-looking file and have it
+   * refused for a reason nothing on screen explained. Predict the verdict here.
+   */
+  const namesTheFormat = target.module === 'customs';
+  const guess = namesTheFormat && file ? describeCustomsFile(file.name) : null;
+  const hasTemplate = target.template !== false;
 
   const onPicked = (f: File | null) => {
     // A new file invalidates any previous validation — Import must not stay
@@ -151,9 +169,12 @@ export function DataUploadDialog({ target, onClose, onImported }: {
 
   // Import is gated on a validation that did not come back REJECTED/FAILED, so a
   // known-bad file cannot be pushed through.
-  const okToImport = Boolean(
-    validated && !['REJECTED', 'FAILED'].includes(String(validated.status ?? '').toUpperCase()),
-  );
+  const okToImport = canDryRun
+    ? Boolean(validated && !['REJECTED', 'FAILED'].includes(String(validated.status ?? '').toUpperCase()))
+    // No dry run to gate on, so a chosen file is the only precondition. Safe
+    // because the import is idempotent by content hash — a mistaken repeat is
+    // recognised, not duplicated.
+    : Boolean(file);
 
   return (
     <>
@@ -217,19 +238,73 @@ export function DataUploadDialog({ target, onClose, onImported }: {
                     own rejection message tells the user to fetch it ("… column not
                     found. Please download the latest template."). Offering it here
                     closes that loop instead of leaving them to find it. */}
-                <CalciteButton
-                  scale="s"
-                  appearance="transparent"
-                  iconStart="download"
-                  onClick={() => { window.open(templateUrl, '_blank', 'noopener'); }}
-                  title="Download the column template this parser expects"
-                >
-                  Template
-                </CalciteButton>
+                {hasTemplate && (
+                  <CalciteButton
+                    scale="s"
+                    appearance="transparent"
+                    iconStart="download"
+                    onClick={() => { window.open(templateUrl, '_blank', 'noopener'); }}
+                    title="Download the column template this parser expects"
+                  >
+                    Template
+                  </CalciteButton>
+                )}
                 <span style={{ fontSize: 12, color: file ? tokens.color.text : tokens.color.textMuted }}>
                   {file ? `${file.name} · ${(file.size / 1024).toFixed(0)} KB` : 'No file selected'}
                 </span>
               </div>
+
+              {/* The naming contract, stated before the upload rather than
+                  discovered by a rejection. */}
+              {namesTheFormat && (
+                <div style={{
+                  fontSize: 11.5, color: tokens.color.textMuted, marginTop: 8,
+                  background: tokens.color.bgElevated, border: `1px solid ${tokens.color.border}`,
+                  borderRadius: 6, padding: '8px 10px',
+                }}>
+                  <strong style={{ color: tokens.color.text }}>How the file is recognised</strong>
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {CUSTOMS_FILENAME_RULES.map((r) => (
+                      <li key={r.pattern}><code>{r.pattern}</code> → {r.module}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* The live verdict on the chosen file. Green names where it will
+                  land; amber says it will be refused, BEFORE the upload. */}
+              {guess && (
+                <CalciteNotice
+                  open
+                  kind={guess.module ? 'success' : 'warning'}
+                  icon={guess.module ? 'check-circle' : 'exclamation-mark-triangle'}
+                  scale="s"
+                  style={{ marginTop: 8 }}
+                >
+                  <div slot="title">
+                    {guess.module
+                      ? `Will be imported as ${guess.module}${guess.needsContent ? ' (decided on open)' : ''}`
+                      : 'This file will be refused'}
+                  </div>
+                  <div slot="message">{guess.detail}</div>
+                </CalciteNotice>
+              )}
+
+              {/* Say why the preview is missing rather than let its absence read
+                  as a broken dialog. The idempotency is the reassurance that
+                  makes going straight to import reasonable, so it is stated. */}
+              {!canDryRun && (
+                <CalciteNotice open kind="warning" icon="information" scale="s" style={{ marginTop: 8 }}>
+                  <div slot="title">No dry run for this module</div>
+                  <div slot="message">
+                    Customs detects the document type from the filename and has no
+                    parse-without-persist endpoint, so there is no preview step —
+                    Import writes straight away. It is idempotent by content hash:
+                    re-uploading the same file is recognised and imported once, so a
+                    repeat is harmless.
+                  </div>
+                </CalciteNotice>
+              )}
 
               {busy && <CalciteLoader scale="s" label={busy === 'validate' ? 'Validating' : 'Importing'} />}
               {validated && <ResultSummary result={validated} />}
@@ -252,22 +327,26 @@ export function DataUploadDialog({ target, onClose, onImported }: {
               <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose} disabled={busy !== null}>
                 Cancel
               </CalciteButton>
-              <CalciteButton
-                scale="s"
-                appearance="outline"
-                iconStart="check-circle"
-                disabled={!file || busy !== null}
-                loading={busy === 'validate'}
-                onClick={() => run('validate')}
-              >
-                Validate
-              </CalciteButton>
+              {canDryRun && (
+                <CalciteButton
+                  scale="s"
+                  appearance="outline"
+                  iconStart="check-circle"
+                  disabled={!file || busy !== null}
+                  loading={busy === 'validate'}
+                  onClick={() => run('validate')}
+                >
+                  Validate
+                </CalciteButton>
+              )}
               <CalciteButton
                 scale="s"
                 iconStart="upload"
                 disabled={!okToImport || busy !== null}
                 loading={busy === 'import'}
-                title={okToImport ? 'Persist the valid rows' : 'Validate the file first'}
+                title={okToImport
+                  ? (canDryRun ? 'Persist the valid rows' : 'Import — idempotent, a repeat upload is recognised')
+                  : (canDryRun ? 'Validate the file first' : 'Choose a file first')}
                 onClick={() => run('import')}
               >
                 Import

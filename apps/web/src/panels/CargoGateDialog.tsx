@@ -24,11 +24,12 @@ import { useApp } from '../state/AppContext.js';
 import { SuccessNotice } from '../components/SuccessNotice.js';
 import { cargoRefreshStore } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
-import { GATE_UI, uiGate, type CargoGate } from './cargoGates.js';
+import { gateUi, customsLifecycleConflict, type CargoGate, type VerifyKind } from './cargoGates.js';
 import { tokens } from '../theme/tokens.js';
 
 export function CargoGateDialog({
-  gate, containerNo, lifecycle, yardBlock, customsStatus, vesselName, facts, note, onClose, onDone,
+  gate, containerNo, lifecycle, yardBlock, customsStatus, vesselName, facts, note,
+  verifyKind, onClose, onDone,
 }: {
   gate: CargoGate;
   containerNo: string;
@@ -42,6 +43,15 @@ export function CargoGateDialog({
   facts?: Array<[string, string]>;
   /** Gate-specific caveat, e.g. that COARRI is unavailable for JNPA calls. */
   note?: React.ReactNode;
+  /**
+   * Which check the `verify` gate is, when the caller knows.
+   *
+   * VERIFIED is mandatory before RELEASED for every import container, but a scan
+   * is only ordered for some. `SCAN` names a real examination; `RELEASE_CHECK` is
+   * the custody check on a facilitated box and must not imply one happened.
+   * Omitted ⇒ generic wording rather than a guess.
+   */
+  verifyKind?: VerifyKind;
   onClose: () => void;
   /** Fired after a successful transition, with the resulting lifecycle status. */
   onDone?: (status: string) => void;
@@ -61,7 +71,7 @@ export function CargoGateDialog({
    * it rather than send whatever happens to be on the record.
    */
   const [block, setBlock] = useState(yardBlock ?? '');
-  const ui = GATE_UI[uiGate(gate)];
+  const ui = gateUi(gate, verifyKind);
   const needsBlock = gate === 'yard' && !block.trim();
 
   const run = async (pass = true) => {
@@ -164,17 +174,25 @@ export function CargoGateDialog({
                   release is gated on VERIFIED and does NOT consult customs_status,
                   so the server will permit this. Warn rather than block — refusing
                   something the API allows would be its own kind of misdirection,
-                  but letting it pass silently would hide a live customs hold. */}
-              {gate === 'release' && customsStatus === 'HELD' && (
-                <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
-                  <div slot="title">Customs has this container on HOLD</div>
-                  <div slot="message">
-                    The lifecycle is VERIFIED, so the server will accept a release — the
-                    release gate checks the lifecycle only and does not read the customs
-                    disposition. Confirm the hold has been lifted before proceeding.
-                  </div>
-                </CalciteNotice>
-              )}
+                  but letting it pass silently would hide a live customs hold.
+
+                  ⚠ This used to test `customsStatus === 'HELD'` only, which let a
+                  container UNDER EXAMINATION be released in silence — and released
+                  goods that customs is still examining is not a state any real
+                  container can be in. Both dispositions now warn. */}
+              {gate === 'release' && (() => {
+                const clash = customsLifecycleConflict(customsStatus, 'VERIFIED');
+                if (!clash) return null;
+                return (
+                  <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
+                    <div slot="title">
+                      Customs {customsStatus === 'HELD' ? 'has this container on HOLD'
+                        : 'still has this container under examination'}
+                    </div>
+                    <div slot="message">{clash.message}</div>
+                  </CalciteNotice>
+                );
+              })()}
 
               <CalciteNotice open kind="info" icon="information" scale="s" style={{ marginTop: 8 }}>
                 <div slot="title">{ui.title}</div>
@@ -220,7 +238,7 @@ export function CargoGateDialog({
               {gate === 'verify' && (
                 <CalciteButton scale="s" appearance="outline" kind="danger" iconStart="x-octagon"
                   loading={busy} disabled={busy} onClick={() => run(false)}>
-                  Fail — hold for exam
+                  {ui.fail}
                 </CalciteButton>
               )}
               <CalciteButton scale="s" kind="brand" iconStart={ui.icon} loading={busy}

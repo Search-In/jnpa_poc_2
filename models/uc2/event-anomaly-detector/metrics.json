@@ -1,0 +1,29 @@
+{
+  "model": "event-anomaly-detector",
+  "artefact": "rule-set (no learned weights \u2014 see rules.json)",
+  "algorithm": "deterministic rule engine (3 rules over the event trail)",
+  "algorithm_as_published_by_service": "rule engine + IsolationForest hybrid",
+  "metric": "precision",
+  "value": 1.0,
+  "threshold": 0.85,
+  "passed": true,
+  "n_test": 400,
+  "trained_at": "2026-06-17T13:36:18.731302+00:00",
+  "feature_list": [
+    "trail_json"
+  ],
+  "version": "0.1.0",
+  "coverage": {
+    "rules_total": 3,
+    "rules_evaluated": 1,
+    "evaluated": [
+      "ANOMALY_MISSING_GATE_OUT"
+    ],
+    "unevaluated": [
+      "ANOMALY_LEO_NO_MOVE",
+      "ANOMALY_SCAN_FLAG_NO_SCAN"
+    ],
+    "note": "The n=400 labelled set contains only GATE_IN/GATE_OUT trails, so precision is measured for rule 1 alone and the negative case cannot produce a false positive by construction. Reported in full rather than as a headline for all three rules."
+  },
+  "honest_claim": "Rule 1 precision 1.0 on a labelled synthetic set (n=400). Rules 2 and 3 are unevaluated."
+}

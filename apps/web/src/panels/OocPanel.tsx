@@ -22,6 +22,7 @@ import type { OocDetail, OocRecord } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { tokens } from '../theme/tokens.js';
 
@@ -236,6 +237,7 @@ export function OocPanel() {
             </CalciteLabel>
             <div style={{ marginLeft: 'auto' }}>
               <ImportExportToolbar
+                importTarget={UPLOAD_TARGETS.customs}
                 data={rows.map((r) => ({
                   'BE No': r.bill_of_entry_no,
                   'BE Date': r.bill_of_entry_date,

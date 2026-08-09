@@ -68,6 +68,14 @@ function exportCsv(data: unknown, filename: string): void {
  * showed an Import button that opened a file picker and silently discarded the
  * file; a button that isn't there is honest, one that lies is not.
  */
+/** Nothing worth exporting: no rows, or an object with no keys. */
+function isEmptyData(data: unknown): boolean {
+  if (Array.isArray(data)) return data.length === 0;
+  if (data == null) return true;
+  if (typeof data === 'object') return Object.keys(data as object).length === 0;
+  return false;
+}
+
 export function ImportExportToolbar({ data, filename, importTarget, onImported }: {
   data: unknown;
   filename: string;
@@ -90,9 +98,15 @@ export function ImportExportToolbar({ data, filename, importTarget, onImported }
           Import
         </CalciteButton>
       )}
-      <CalciteButton scale="s" appearance="outline" iconStart="download" onClick={() => exportCsv(data, filename)}>
-        Export
-      </CalciteButton>
+      {/* Export is hidden when there is nothing to export — a Download button
+          that yields a header-only CSV is a dead control. Import is NOT hidden:
+          an empty table is precisely when someone needs to put data in, and
+          hiding the way in is how a panel becomes a dead end. */}
+      {!isEmptyData(data) && (
+        <CalciteButton scale="s" appearance="outline" iconStart="download" onClick={() => exportCsv(data, filename)}>
+          Export
+        </CalciteButton>
+      )}
       {open && importTarget && (
         <DataUploadDialog
           target={importTarget}

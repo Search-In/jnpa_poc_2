@@ -24,6 +24,7 @@ import type {
   AdvanceListContainer, AdvanceListFilter, SourceGateDocument,
   Form11Entry, CoprarItem, CoarriMove, VesselDeparture, VesselCutoff, SyntheticChain,
   ContainerCustomsView, ContainerGateDocs, UploadTarget, UploadResult, CargoRecord,
+  JnpaApiDefect, JnpaApiHealth, JnpaApiRun,
 } from '@jnpa/data';
 import type {
   Facility, Terminal, Role, SidingId, ITRHOMovement, ScanEvent,
@@ -36,7 +37,27 @@ import {
 } from './applySim.js';
 
 export class SimAdapter implements DataAdapter {
-  constructor(private readonly base: DataAdapter) {}
+  /**
+   * JNPA Port-Data API feed state — delegated PRESENCE-PRESERVINGLY.
+   *
+   * Every other method here is declared unconditionally and rejects when the
+   * base cannot serve it. That is wrong for these three: the Integration tab
+   * decides whether to render the feed card by asking whether the chain can
+   * answer AT ALL, and a method that always exists (but always rejects) makes
+   * a mock-only build indistinguishable from a live backend that is failing.
+   * So they are assigned only when the wrapped adapter actually has them.
+   */
+  getJnpaApiHealth?: () => Promise<JnpaApiHealth>;
+  getJnpaApiRuns?: (limit?: number) => Promise<JnpaApiRun[]>;
+  getJnpaApiDefects?: (limit?: number) => Promise<JnpaApiDefect[]>;
+
+  constructor(private readonly base: DataAdapter) {
+    // Bind against the constructor parameter, not `this.base`: class-field
+    // initialisation order is not something this delegation should depend on.
+    if (base.getJnpaApiHealth) this.getJnpaApiHealth = () => base.getJnpaApiHealth!();
+    if (base.getJnpaApiRuns) this.getJnpaApiRuns = (n) => base.getJnpaApiRuns!(n);
+    if (base.getJnpaApiDefects) this.getJnpaApiDefects = (n) => base.getJnpaApiDefects!(n);
+  }
 
   get mode() {
     return this.base.mode;

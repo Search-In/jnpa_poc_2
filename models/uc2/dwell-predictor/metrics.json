@@ -1,0 +1,97 @@
+{
+  "metrics": {
+    "held_out_synthetic": {
+      "n": 800,
+      "mae": 3.6908,
+      "rmse": 4.6333,
+      "mape_pct": 8.47,
+      "r2": 0.9791,
+      "median_abs_error": 3.1967,
+      "p90_abs_error": 7.6033
+    },
+    "median_baseline_mae": 27.5151,
+    "beats_baseline": true,
+    "acceptance_threshold_mae_h": 8.0,
+    "meets_threshold": true,
+    "bands": {
+      "p10_offset": -5.7243,
+      "p90_offset": 6.1873,
+      "n_residuals": 800,
+      "method": "empirical held-out residual quantiles (not Gaussian)"
+    },
+    "generator_unexplained_sd_h": 4.3,
+    "generator_assumption_note": "The headline MAE is set almost entirely by generator_unexplained_sd_h. At the submitted 4.3 h it meets the threshold; at the real measured 29.7 h it does not. Re-run with --unexplained-sd 29.7 to see the second number."
+  },
+  "corpus_validation": {
+    "status": "measured",
+    "degraded": false,
+    "dataset": "CFS-CODECO paired gate events (real)",
+    "n": 254,
+    "n_excluded_left_censored": 229,
+    "burn_in_cutoff": "2026-07-11T08:06:00",
+    "burn_in_days": 4.0,
+    "metrics": {
+      "n": 254,
+      "mae": 21.3555,
+      "rmse": 25.9946,
+      "mape_pct": 65.61,
+      "r2": -0.8877,
+      "median_abs_error": 18.6632,
+      "p90_abs_error": 43.0835
+    },
+    "median_baseline_mae": 15.7418,
+    "beats_baseline": false,
+    "verdict": "model does NOT beat the median baseline",
+    "features_marginalised_on_real_data": [
+      "stream_idx",
+      "customs_flag",
+      "reefer"
+    ],
+    "marginalisation_prior": {
+      "stream_idx": {
+        "0": 0.14285714285714285,
+        "1": 0.14285714285714285,
+        "2": 0.14285714285714285,
+        "3": 0.14285714285714285,
+        "4": 0.14285714285714285,
+        "5": 0.14285714285714285,
+        "6": 0.14285714285714285
+      },
+      "customs_flag": {
+        "0": 0.82,
+        "1": 0.18
+      },
+      "reefer": {
+        "0": 0.91,
+        "1": 0.09
+      }
+    },
+    "interpretation": "The corpus sources do not share container numbers, so trade stream, customs hold and reefer status cannot be joined to any real label. The model is scored here with those three inputs marginalised out under a stated prior rather than pinned to one corner. This number is published in full and is NOT the headline accuracy."
+  },
+  "calibration": {
+    "source": "CORPUS",
+    "degraded": false,
+    "n_observed_stays": 254,
+    "n_excluded_left_censored": 229,
+    "burn_in_cutoff": "2026-07-11T08:06:00",
+    "burn_in_cutoff_per_facility": {
+      "CFS": "2026-07-11T08:06:00",
+      "ECY": "2026-07-05T10:00:00"
+    },
+    "stats_hours": {
+      "mean_h": 50.404,
+      "median_h": 49.183,
+      "sd_h": 18.92,
+      "p10_h": 24.4,
+      "p25_h": 28.2,
+      "p75_h": 71.417,
+      "p90_h": 74.367,
+      "min_h": 21.7,
+      "max_h": 77.317,
+      "fast_mode_h": 28.2,
+      "slow_mode_h": 71.417,
+      "fast_share": 0.5
+    },
+    "note": "Generator anchored to the measured CFS-CODECO dwell distribution. Stays that gated in before the first observed gate-out are excluded as left-censored by the observation window, not as outliers."
+  }
+}

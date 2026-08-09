@@ -84,14 +84,16 @@ export const GATE_UI: Record<Exclude<CargoGate, 'done'>, {
       + 'written directly still reads as CREATED to the state machine; confirming '
       + 'catches the record up so it can then be scanned and released.',
   },
+  // The generic entry. Callers that know whether a scan was actually ordered
+  // should use `gateUi(gate, kind)` instead — see VERIFY_UI.
   verify: {
-    label: 'Record scan',
-    title: 'Record scan result',
+    label: 'Verify for release',
+    title: 'Release verification',
     icon: 'check-circle',
-    cta: 'Pass — mark verified',
-    explain: 'Records the customs/scan verification and advances the container to '
-      + 'VERIFIED. This is the gate Release waits on: a container cannot be released '
-      + 'until its scan has been concluded.',
+    cta: 'Confirm — mark verified',
+    explain: 'Records the pre-release verification and advances the container to '
+      + 'VERIFIED. This is the gate Release waits on: the state machine will not '
+      + 'release a container that has not passed it.',
   },
   release: {
     label: 'Release',
@@ -103,6 +105,101 @@ export const GATE_UI: Record<Exclude<CargoGate, 'done'>, {
   },
 };
 
+/**
+ * TWO DIFFERENT CHECKS wear the `verify` gate, and calling both of them a scan
+ * was wrong.
+ *
+ * The state machine makes VERIFIED mandatory before RELEASED for EVERY import
+ * container. But scanning is a branch — `02_Import_Container_Lifecycle.md` step 5
+ * reads "[RMS scan if selected]" — so most boxes pass this gate without any scan
+ * ever being ordered. Labelling their button "Record scan" invented a customs
+ * examination that never happened, on containers customs had already granted
+ * out-of-charge.
+ *
+ *   SCAN           a scan WAS ordered: the box is on a filed RMS scan list, or an
+ *                  operator flagged it EXAM/HOLD. Recording the result is the act.
+ *   RELEASE_CHECK  no scan was ordered. This is the custody check before release,
+ *                  and the copy must not imply a scan took place.
+ */
+export type VerifyKind = 'SCAN' | 'RELEASE_CHECK';
+
+export const VERIFY_UI: Record<VerifyKind, (typeof GATE_UI)['verify'] & { fail: string }> = {
+  SCAN: {
+    label: 'Record scan',
+    title: 'Record scan result',
+    icon: 'check-circle',
+    cta: 'Pass — mark verified',
+    fail: 'Fail — hold for exam',
+    explain: 'This container was selected for scanning — by a filed RMS scan list, or '
+      + 'by an operator flagging it. Recording the result advances it to VERIFIED, '
+      + 'which is the gate Release waits on.',
+  },
+  RELEASE_CHECK: {
+    label: 'Verify for release',
+    title: 'Release verification',
+    icon: 'check-circle',
+    cta: 'Confirm — mark verified',
+    fail: 'Fail — withhold release',
+    explain: 'No scan was ordered for this container: RMS did not select it and nobody '
+      + 'has flagged it. VERIFIED is still a mandatory gate before RELEASED, so this '
+      + 'records the pre-release check — it does NOT claim a scan took place.',
+  },
+};
+
+/**
+ * The copy for a gate. Pass `verify` when the caller knows whether a scan was
+ * ordered; without it the wording stays generic rather than guessing.
+ */
+export function gateUi(gate: CargoGate, verify?: VerifyKind) {
+  const key = uiGate(gate);
+  if (key === 'verify' && verify) return VERIFY_UI[verify];
+  return { ...GATE_UI[key], fail: 'Fail — hold for exam' };
+}
+
 /** The gate whose copy applies; a released row borrows the release entry. */
 export const uiGate = (g: CargoGate): Exclude<CargoGate, 'done'> =>
   (g === 'done' ? 'release' : g);
+
+/**
+ * A combination of the two tracks that cannot be true of a real container.
+ *
+ * The tracks are INDEPENDENT — one is the port's custody of the box, the other
+ * is customs' disposition of the goods — but independent is not the same as
+ * "any pairing is legitimate". Out-of-charge is the permission to remove goods
+ * from customs control, so a box customs is still examining, or holding, cannot
+ * lawfully have been gate-out released.
+ *
+ * The server permits it: `release_cargo` gates on the lifecycle alone (it
+ * requires VERIFIED and never reads `customs_status`). That is a real gap, and
+ * until it is closed the UI's job is to make the contradiction visible rather
+ * than render it as two unremarkable chips side by side.
+ */
+export function customsLifecycleConflict(
+  customsStatus: string | null | undefined,
+  lifecycle: string | null | undefined,
+): { severity: 'error' | 'warning'; message: string } | null {
+  const cs = (customsStatus ?? '').toUpperCase();
+  const lc = (lifecycle ?? '').toUpperCase();
+  if (cs !== 'HELD' && cs !== 'UNDER_INSPECTION') return null;
+
+  const what = cs === 'HELD' ? 'is held by customs' : 'is under customs examination';
+
+  if (lc === 'RELEASED') {
+    return {
+      severity: 'error',
+      message: `This container ${what}, yet it has been released from the port. `
+        + 'Those cannot both be true: out-of-charge is what permits goods to leave '
+        + 'customs control. Either the customs status is stale or the release was '
+        + 'recorded in error.',
+    };
+  }
+  if (lc === 'VERIFIED') {
+    return {
+      severity: 'warning',
+      message: `The scan gate has passed but this container ${what}. Releasing it now `
+        + 'would put the record in a state no real container can be in — the release '
+        + 'gate checks the lifecycle only and will not stop you.',
+    };
+  }
+  return null;
+}

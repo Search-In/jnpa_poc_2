@@ -1,0 +1,357 @@
+{
+  "metrics": {
+    "held_out_synthetic": {
+      "n": 500,
+      "mae": 0.85,
+      "rmse": 1.0576,
+      "mape_pct": 17.73,
+      "r2": 0.0897,
+      "median_abs_error": 0.7003,
+      "p90_abs_error": 1.7792
+    },
+    "metric_meaning": "FIDELITY to the deterministic handling model, not accuracy against an observed rake TAT. The corpus contains no observed rake TAT.",
+    "median_baseline_mae": 0.899,
+    "beats_baseline": true,
+    "acceptance_threshold_mae_h": 2.0,
+    "meets_threshold": true,
+    "generator_unexplained_sd_h": 0.98,
+    "bands": {
+      "p10_offset": -1.4591,
+      "p90_offset": 1.4146,
+      "n_residuals": 500,
+      "method": "empirical held-out residual quantiles (not Gaussian)"
+    }
+  },
+  "corpus_validation": {
+    "status": "exercised_not_scored",
+    "degraded": false,
+    "reason_not_scored": "The corpus records no rake placement, removal or departure time, so no residual against an observed TAT can be computed. This section shows the model running on real composition instead of claiming an accuracy.",
+    "n_cto_manifests": 8,
+    "n_fois_intimations": 59,
+    "manifest_provenance": {
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261076 HTPL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261546 GRFL.TXT",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261591 CRRS.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261610 ADNI.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261628 JKTI.TXT",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261630  DLIL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261648 PMLL.txt",
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/ICD_Rail_Form11_CTO/CTO/R261673 CONR.TXT"
+      ],
+      "missing": [],
+      "record_count": 8,
+      "note": ""
+    },
+    "intimation_provenance": {
+      "source": "CORPUS",
+      "degraded": false,
+      "synthetic": false,
+      "files": [
+        "data/corpus/UC-II_Cargo_Handling/M2_Rake_TAT_Forecast/NLDS_FOIS_TrainIntimation_TOS/JNPA Train Intimation 09052026_083002.csv"
+      ],
+      "missing": [],
+      "record_count": 59,
+      "note": ""
+    },
+    "tat_distribution_h": {
+      "n": 67,
+      "min": 2.04,
+      "median": 4.79,
+      "mean": 4.8,
+      "max": 6.06
+    },
+    "per_rake": [
+      {
+        "rakeRef": "R261076",
+        "cto": "HTPL",
+        "wagons": 45,
+        "containers": 57,
+        "teu": 89.0,
+        "terminals": [
+          "NSIGT",
+          "NSFT",
+          "NSICT",
+          "BMCT",
+          "GTIL"
+        ],
+        "tatHours": 6.06,
+        "etaPlacementH": 1.52,
+        "etaRemovalH": 4.85,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261546",
+        "cto": "GRFL",
+        "wagons": 45,
+        "containers": 48,
+        "teu": 85.0,
+        "terminals": [
+          "GTIL",
+          "NSFT"
+        ],
+        "tatHours": 5.2,
+        "etaPlacementH": 1.3,
+        "etaRemovalH": 4.16,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261591",
+        "cto": "CRRS",
+        "wagons": 39,
+        "containers": 44,
+        "teu": 78.0,
+        "terminals": [
+          "NSICT",
+          "GTIL",
+          "NSFT",
+          "NSIGT",
+          "BMCT"
+        ],
+        "tatHours": 5.25,
+        "etaPlacementH": 1.31,
+        "etaRemovalH": 4.2,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261610",
+        "cto": "ADNI",
+        "wagons": 45,
+        "containers": 55,
+        "teu": 89.0,
+        "terminals": [
+          "GTIL",
+          "NSFT",
+          "NSIGT"
+        ],
+        "tatHours": 5.4,
+        "etaPlacementH": 1.35,
+        "etaRemovalH": 4.32,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261628",
+        "cto": "JKTI",
+        "wagons": 45,
+        "containers": 0,
+        "teu": 0.0,
+        "terminals": [
+          "JNPT"
+        ],
+        "tatHours": 2.04,
+        "etaPlacementH": 0.51,
+        "etaRemovalH": 1.63,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261630",
+        "cto": "DLIL",
+        "wagons": 45,
+        "containers": 50,
+        "teu": 88.0,
+        "terminals": [
+          "BMCT",
+          "NSICT",
+          "GTIL",
+          "NSFT",
+          "NSIGT"
+        ],
+        "tatHours": 5.76,
+        "etaPlacementH": 1.44,
+        "etaRemovalH": 4.61,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261648",
+        "cto": "PMLL",
+        "wagons": 45,
+        "containers": 53,
+        "teu": 68.0,
+        "terminals": [
+          "GTIL",
+          "NSFT"
+        ],
+        "tatHours": 5.28,
+        "etaPlacementH": 1.32,
+        "etaRemovalH": 4.23,
+        "source": "CTO manifest"
+      },
+      {
+        "rakeRef": "R261673",
+        "cto": "CONR",
+        "wagons": 39,
+        "containers": 42,
+        "teu": 81.0,
+        "terminals": [
+          "GTIL",
+          "NSIGT",
+          "NSFT"
+        ],
+        "tatHours": 4.52,
+        "etaPlacementH": 1.13,
+        "etaRemovalH": 3.62,
+        "source": "CTO manifest"
+      }
+    ],
+    "per_intimation": [
+      {
+        "rakeId": "ARIK210126101259",
+        "rakeName": "PRIS-2-",
+        "eta": "2026-05-08T06:26:00",
+        "wagonUnits": 41,
+        "loaded": true,
+        "stationFrom": "MKPP",
+        "tatHours": 4.4,
+        "etaPlacementH": 1.1,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "PALB170426183433",
+        "rakeName": "RK-45",
+        "eta": "2026-05-08T08:26:00",
+        "wagonUnits": 46,
+        "loaded": true,
+        "stationFrom": "MMR",
+        "tatHours": 5.04,
+        "etaPlacementH": 1.26,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "DLIB151225142002",
+        "rakeName": "DLI-02",
+        "eta": "2026-05-08T15:26:00",
+        "wagonUnits": 41,
+        "loaded": true,
+        "stationFrom": "DLIB",
+        "tatHours": 4.4,
+        "etaPlacementH": 1.1,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "SMYD080225085309",
+        "rakeName": "AD---77-",
+        "eta": "2026-05-08T16:10:00",
+        "wagonUnits": 46,
+        "loaded": true,
+        "stationFrom": "AFAS",
+        "tatHours": 4.79,
+        "etaPlacementH": 1.2,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "TICD101125103517",
+        "rakeName": "J-16H.-",
+        "eta": "2026-05-08T16:26:00",
+        "wagonUnits": 45,
+        "loaded": true,
+        "stationFrom": "HIMB",
+        "tatHours": 4.71,
+        "etaPlacementH": 1.18,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "NPRY181125172549",
+        "rakeName": "CWC/NMP-02-",
+        "eta": "2026-05-08T18:24:00",
+        "wagonUnits": 49,
+        "loaded": true,
+        "stationFrom": "PNCS",
+        "tatHours": 5.02,
+        "etaPlacementH": 1.26,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "KBGB260823170939",
+        "rakeName": "TXDP-24-",
+        "eta": "2026-05-08T21:06:00",
+        "wagonUnits": 44,
+        "loaded": true,
+        "stationFrom": "DPMT",
+        "tatHours": 4.63,
+        "etaPlacementH": 1.16,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "ICDD220126104403",
+        "rakeName": "R112H-",
+        "eta": "2026-05-09T00:28:00",
+        "wagonUnits": 46,
+        "loaded": true,
+        "stationFrom": "CGMV",
+        "tatHours": 5.14,
+        "etaPlacementH": 1.29,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "SREW221223160226",
+        "rakeName": "KRIL-23--",
+        "eta": "2026-05-09T02:49:00",
+        "wagonUnits": 45,
+        "loaded": true,
+        "stationFrom": "DPMT",
+        "tatHours": 5.06,
+        "etaPlacementH": 1.27,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "CSTN141125073154",
+        "rakeName": "SNF-R-119..",
+        "eta": "2026-05-09T04:54:00",
+        "wagonUnits": 45,
+        "loaded": true,
+        "stationFrom": "PCPK",
+        "tatHours": 5.06,
+        "etaPlacementH": 1.27,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "ICDD190126135149",
+        "rakeName": "GS-08-MDCC-",
+        "eta": "2026-05-09T05:03:00",
+        "wagonUnits": 46,
+        "loaded": true,
+        "stationFrom": "BSR",
+        "tatHours": 5.14,
+        "etaPlacementH": 1.29,
+        "source": "FOIS intimation"
+      },
+      {
+        "rakeId": "UMB 130426225614",
+        "rakeName": "RK-31----",
+        "eta": "2026-05-09T05:23:00",
+        "wagonUnits": 46,
+        "loaded": true,
+        "stationFrom": "MKPP",
+        "tatHours": 5.14,
+        "etaPlacementH": 1.29,
+        "source": "FOIS intimation"
+      }
+    ],
+    "per_intimation_truncated_to": 12
+  },
+  "composition": {
+    "source": "CORPUS",
+    "degraded": false,
+    "n_cto_manifests": 7,
+    "n_fois_intimations": 59,
+    "stats": {
+      "wagon_count_mean": 43.286,
+      "wagon_count_min": 39.0,
+      "wagon_count_max": 45.0,
+      "containers_mean": 49.857,
+      "containers_min": 42.0,
+      "containers_max": 57.0,
+      "teu_mean": 82.571,
+      "terminals_mean": 3.571,
+      "containers_per_wagon": 1.152,
+      "fois_units_mean": 44.254,
+      "fois_units_min": 38.0,
+      "fois_units_max": 49.0,
+      "fois_loaded_share": 0.983
+    },
+    "note": "Composition is real. The TAT label is not: nothing in the corpus records rake placement, removal or departure times."
+  }
+}

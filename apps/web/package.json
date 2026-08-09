@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DTCCC Cargo dashboard — React 18 + ArcGIS Maps SDK 5.x + Calcite (prompt §10, Addendum A). Runs in mock mode with zero credentials.",
+  "description": "DTCCC Cargo dashboard \u2014 React 18 + ArcGIS Maps SDK 5.x + Calcite (prompt \u00a710, Addendum A). Runs in mock mode with zero credentials.",
   "scripts": {
     "dev": "vite",
+    "dev:clean": "rm -rf node_modules/.vite && vite --force",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",

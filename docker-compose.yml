@@ -105,23 +105,38 @@ services:
     environment: { DATA_MODE: mock, CONNECTOR: shipline, KAFKA_BROKERS: redpanda:29092 }
 
   # --- AI services ------------------------------------------------------------
+  # UC-2 model services (UC2-015).
+  #
+  # These were declared with NO `ports:`, so nothing outside the compose network
+  # could reach them — which is why the dashboard fell back to a TypeScript
+  # heuristic and "proven end-to-end" was untrue. Each now publishes its 8200 on
+  # a distinct host port so the dev proxy (and an evaluator with curl) can hit
+  # /health and /predict directly.
   ai-dwell: &ai
     build:
       context: .
       dockerfile: services/ai/Dockerfile
     environment:
       AI_MODEL: dwell-predictor
+    ports:
+      - "${AI_DWELL_PORT:-8201}:8200"
     depends_on:
       - gateway
   ai-gate-queue:
     <<: *ai
     environment: { AI_MODEL: gate-queue-forecaster }
+    ports:
+      - "${AI_GATE_QUEUE_PORT:-8202}:8200"
   ai-rake-tat:
     <<: *ai
     environment: { AI_MODEL: rake-tat-forecaster }
+    ports:
+      - "${AI_RAKE_TAT_PORT:-8203}:8200"
   ai-anomaly:
     <<: *ai
     environment: { AI_MODEL: event-anomaly-detector }
+    ports:
+      - "${AI_ANOMALY_PORT:-8204}:8200"
 
 volumes:
   pgdata:

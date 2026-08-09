@@ -553,3 +553,63 @@ describe('Poc3CargoAdapter — auth: bearer on every request + 401 self-heal', (
     expect(current).toBe('FRESH'); // stored for subsequent calls
   });
 });
+
+describe('Poc3CargoAdapter — JNPA Port-Data API feed state (UC2-006)', () => {
+  const HEALTH = {
+    configured: false,
+    mode: 'DISABLED',
+    api_url: 'https://dt.jnpa.in/poc-api-data-access',
+    groups: [
+      { group: 'customs', kind: 'indexed', watermark_ts: '2026-08-07T06:44:45Z', last_status: 'ERROR', updated_at: '2026-08-07T09:36:09Z' },
+      { group: 'bathymetry', kind: 'static', watermark_ts: null, last_status: 'SKIPPED_STATIC', updated_at: '2026-08-07T09:36:09Z' },
+    ],
+    last_run: { id: 4541, group_slug: 'daily-reports', status: 'ERROR', error: 'Malformed reply' },
+  };
+
+  it('reads health and never lets an absent groups array reach the panel', async () => {
+    const fetchImpl = vi.fn(async () => ok({ ...HEALTH, groups: undefined }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const health = await a.getJnpaApiHealth();
+
+    expect(fetchImpl.mock.calls[0][0]).toContain('/poc3/api/integrations/jnpa/health');
+    // A missing array must become [], not undefined: the panel maps over it and a
+    // crashed Integration tab is a worse failure than an empty one.
+    expect(health.groups).toEqual([]);
+    expect(health.configured).toBe(false);
+  });
+
+  it('surfaces the DISABLED mode verbatim rather than inferring health', async () => {
+    const fetchImpl = vi.fn(async () => ok(HEALTH));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const health = await a.getJnpaApiHealth();
+
+    expect(health.mode).toBe('DISABLED');
+    expect(health.groups).toHaveLength(2);
+    expect(health.last_run?.error).toBe('Malformed reply');
+  });
+
+  it('requests the run trail with an explicit limit and unwraps the items envelope', async () => {
+    const fetchImpl = vi.fn(async () => ok({ items: [{ id: 4541, status: 'ERROR' }], count: 1 }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const runs = await a.getJnpaApiRuns(50);
+
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('limit=50');
+    expect(runs).toHaveLength(1);
+    expect(runs[0].id).toBe(4541);
+  });
+
+  it('asks the defect register for JSON, and reports an empty register as empty', async () => {
+    // The endpoint also serves Markdown; asking for the wrong format would give
+    // the panel a string it would silently render as zero defects.
+    const fetchImpl = vi.fn(async () => ok({ items: [], count: 0 }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const defects = await a.getJnpaApiDefects();
+
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('format=json');
+    expect(defects).toEqual([]);
+  });
+});
