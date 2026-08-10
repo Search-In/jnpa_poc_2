@@ -17,6 +17,12 @@ const HOURLY_PROFILE = [
   0.3, 0.2, 0.2, 0.2, 0.3, 0.5, 0.8, 1.1, 1.4, 1.5, 1.4, 1.2, 1.0, 1.0, 1.1, 1.2, 1.3, 1.4, 1.2, 0.9, 0.7, 0.6, 0.5, 0.4,
 ];
 
+/**
+ * The deterministic stand-in. NOT a model — an arrival/service curve over a fixed
+ * hourly profile, kept as an explicit fallback for when the Python forecaster is
+ * unreachable (UC2-015). Everything it returns is stamped `source: 'HEURISTIC'`
+ * so it can never be mistaken for the real thing on screen.
+ */
 export function simpleGateQueueForecast(
   gateId: string,
   txns: GateTransaction[],
@@ -49,5 +55,8 @@ export function simpleGateQueueForecast(
     }
   }
 
-  return { gateId, generatedTs: asOf, curve, recommendedDeferralWindows: deferrals };
+  // Stamped at the source so no caller can forget to. A forecast that does not
+  // say which engine made it is the defect UC2-015 exists to remove.
+  return { gateId, generatedTs: asOf, curve, recommendedDeferralWindows: deferrals,
+    source: 'HEURISTIC' };
 }

@@ -1,0 +1,129 @@
+{
+  "module_id": "UC2-M1",
+  "module_name": "Container Dwell Prediction",
+  "model_version": "m1-dwell-v1.0.0",
+  "trained_at": "2026-08-02T07:12:01Z",
+  "use_case_solved": "Container dwell prediction -- hours a box will sit before it leaves, driving pendency optimisation and evacuation planning.",
+  "training_data_features": [
+    "stream_idx",
+    "line_idx",
+    "arrival_cadence_h",
+    "customs_flag",
+    "reefer",
+    "facility_load"
+  ],
+  "training_data_source": "Seeded synthetic generator (n=4000, seed=101) anchored to the measured CFS-CODECO dwell distribution.",
+  "objective_function": "Minimise MAE of dwell hours; post-process adds a +/-4 h departure window and empirical P10/P90.",
+  "model_used": "hist_gradient_boosting (fallback chain ['hist_gradient_boosting', 'gradient_boosting', 'random_forest', 'ridge'])",
+  "rationale": "Gradient boosting handles the mixed categorical/numeric feature set and is explainable through permutation importance; the serving path is proven end-to-end through FastAPI /predict.",
+  "link_to_model_weights": "D:\\Search In\\JNPA ML Models\\trained_models\\uc2\\dwell-predictor\\model.joblib",
+  "validation_data": {
+    "headline": "Held-out synthetic slice, n=800",
+    "real_world": "CFS-CODECO paired gate events (real)"
+  },
+  "accuracy": {
+    "headline_synthetic_mae_h": 3.6908,
+    "acceptance_threshold_mae_h": 8.0,
+    "meets_threshold": true,
+    "real_corpus_mae_h": 21.3555,
+    "real_corpus_median_baseline_mae_h": 15.7418,
+    "real_corpus_beats_baseline": false
+  },
+  "disclosure": "The headline accuracy is measured on synthetic data and is labelled as such everywhere it appears. The real-corpus figure is measured on 254 genuine container stays and is published alongside it, including the case where the model loses to a median baseline.",
+  "calibration": {
+    "source": "CORPUS",
+    "degraded": false,
+    "n_observed_stays": 254,
+    "n_excluded_left_censored": 229,
+    "burn_in_cutoff": "2026-07-11T08:06:00",
+    "burn_in_cutoff_per_facility": {
+      "CFS": "2026-07-11T08:06:00",
+      "ECY": "2026-07-05T10:00:00"
+    },
+    "stats_hours": {
+      "mean_h": 50.404,
+      "median_h": 49.183,
+      "sd_h": 18.92,
+      "p10_h": 24.4,
+      "p25_h": 28.2,
+      "p75_h": 71.417,
+      "p90_h": 74.367,
+      "min_h": 21.7,
+      "max_h": 77.317,
+      "fast_mode_h": 28.2,
+      "slow_mode_h": 71.417,
+      "fast_share": 0.5
+    },
+    "note": "Generator anchored to the measured CFS-CODECO dwell distribution. Stays that gated in before the first observed gate-out are excluded as left-censored by the observation window, not as outliers."
+  },
+  "split": {
+    "policy": "chronological",
+    "ordering_field": "synthetic_arrival_ts",
+    "boundary": "2027-01-24 16:20:15",
+    "n_train": 3200,
+    "n_test": 800,
+    "test_fraction": 0.2,
+    "shuffled": false,
+    "note": "Cut at a time percentile, never shuffled. Asserted post-condition: every training row is ordered at or before every test row."
+  },
+  "feature_importance": [
+    {
+      "feature": "stream_idx",
+      "mae_increase": 28.0617,
+      "baseline_mae": 3.6908
+    },
+    {
+      "feature": "customs_flag",
+      "mae_increase": 6.8324,
+      "baseline_mae": 3.6908
+    },
+    {
+      "feature": "facility_load",
+      "mae_increase": 2.2456,
+      "baseline_mae": 3.6908
+    },
+    {
+      "feature": "arrival_cadence_h",
+      "mae_increase": 1.7305,
+      "baseline_mae": 3.6908
+    },
+    {
+      "feature": "reefer",
+      "mae_increase": 0.6791,
+      "baseline_mae": 3.6908
+    },
+    {
+      "feature": "line_idx",
+      "mae_increase": 0.5615,
+      "baseline_mae": 3.6908
+    }
+  ],
+  "engine_report": {
+    "engine": "hist_gradient_boosting",
+    "engine_chain": [
+      "hist_gradient_boosting",
+      "gradient_boosting",
+      "random_forest",
+      "ridge"
+    ],
+    "engine_trace": [
+      {
+        "engine": "hist_gradient_boosting",
+        "status": "used"
+      }
+    ],
+    "n_train": 3200,
+    "n_test": 800,
+    "seed": 101,
+    "features": [
+      "stream_idx",
+      "line_idx",
+      "arrival_cadence_h",
+      "customs_flag",
+      "reefer",
+      "facility_load"
+    ]
+  },
+  "seed": 101,
+  "reproduce": "python uc2_m1_container_dwell.py --seed 101 --n 4000 --json"
+}

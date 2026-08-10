@@ -34,8 +34,11 @@ export function DataSourceToggle() {
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
       title={
         mode === 'LIVE'
-          ? 'Data source: LIVE — cargo rows from the JNPA integration APIs. Switch to DEMO for the reliable pre-loaded data.'
-          : 'Data source: DEMO — the reliable pre-loaded cargo data. Switch to LIVE for JNPA-API-sourced rows.'
+          ? 'Data source: LIVE — ONLY rows that arrived through the JNPA Port-Data API. '
+            + 'A register with no API-sourced rows shows as empty; that is the filter working, '
+            + 'not a fault. Switch to DEMO for the pre-loaded corpus.'
+          : 'Data source: DEMO — the reliable pre-loaded corpus rows. Switch to LIVE to see only '
+            + 'what the JNPA Port-Data API delivered.'
       }
     >
       <CalciteSegmentedControl

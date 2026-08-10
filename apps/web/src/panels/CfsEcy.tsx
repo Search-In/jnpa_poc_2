@@ -32,6 +32,7 @@ import type {
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { tokens } from '../theme/tokens.js';
 
@@ -488,6 +489,10 @@ export function CfsEcy() {
                   'Out events': r.out_events,
                   'Dwell hours': r.dwell_hours,
                 }))}
+                // The feed is ingested per facility, so Import appears only when
+                // one is selected — 'ALL' has no single upload target.
+                importTarget={facility === 'CFS' ? UPLOAD_TARGETS.cfs
+                  : facility === 'ECY' ? UPLOAD_TARGETS.ecy : undefined}
                 filename="cfs-ecy-dwell.csv"
               />
             </div>

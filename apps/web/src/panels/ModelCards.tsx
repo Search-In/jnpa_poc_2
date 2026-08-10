@@ -21,6 +21,7 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { CalciteButton, CalciteCard, CalciteChip, CalciteNotice, CalciteIcon } from '@esri/calcite-components-react';
 import { Panel } from '../components/Panel.js';
+import { MODEL_METRICS } from './modelMetrics.js';
 import { tokens } from '../theme/tokens.js';
 
 interface FeatureSample {
@@ -30,15 +31,11 @@ interface FeatureSample {
 }
 
 interface ModelCard {
-  key: string;
+  /** Key into MODEL_METRICS — the card's numbers come from there, not from here. */
+  key: keyof typeof MODEL_METRICS;
   title: string;
   purpose: string;
   algorithm: string;
-  metric: string;
-  value: number;
-  threshold: number;
-  betterIsLower: boolean;
-  nTest: number;
   features: FeatureSample[];
   /** Illustrative output for the live demo: predicted value + interval + unit. */
   output: { label: string; predicted: string; interval: string; unit: string };
@@ -53,7 +50,6 @@ const MODELS: ModelCard[] = [
     title: 'Rake TAT forecaster',
     purpose: 'Predict rake turnaround (placement/removal offsets) 24 h ahead per siding/terminal — feeds the rail forecast panel.',
     algorithm: 'HistGradientBoosting regressor (GBM; prod = sequence model / LSTM)',
-    metric: 'MAE', value: 0.857, threshold: 2.0, betterIsLower: true, nTest: 500,
     features: [
       { name: 'siding', value: 'T2 (BMCT)' },
       { name: 'cto_idx', value: 'CTO-2' },
@@ -70,7 +66,6 @@ const MODELS: ModelCard[] = [
     title: 'Gate-queue forecaster',
     purpose: 'Short-horizon gate queue-length forecast; anomalies raise workflow triggers.',
     algorithm: 'GBM autoregressor (prod = LSTM/TFT)',
-    metric: 'RMSE', value: 0.323, threshold: 3.5, betterIsLower: true, nTest: 400,
     features: [
       { name: 'queue_lag1', value: '18 trucks' },
       { name: 'queue_lag2', value: '15 trucks' },
@@ -87,7 +82,6 @@ const MODELS: ModelCard[] = [
     title: 'Container dwell predictor',
     purpose: 'Predict yard/CFS dwell time per container to drive pendency early-warning.',
     algorithm: 'HistGradientBoosting regressor (GBM; prod = LightGBM)',
-    metric: 'MAE (h)', value: 3.47, threshold: 8.0, betterIsLower: true, nTest: 800,
     features: [
       { name: 'stream_idx', value: 'IMPORT' },
       { name: 'line_idx', value: 'Line-3' },
@@ -104,13 +98,14 @@ const MODELS: ModelCard[] = [
     key: 'anomaly',
     title: 'Event anomaly detector',
     purpose: 'Flag anomalous gate/queue/event patterns for the workflow engine.',
-    algorithm: 'Rule engine + IsolationForest hybrid',
-    metric: 'precision', value: 1.0, threshold: 0.85, betterIsLower: false, nTest: 400,
+    // Was "Rule engine + IsolationForest hybrid". The forest is trained at import
+    // and never consulted — no output depends on it — so the card said the system
+    // did something it does not do.
+    algorithm: 'Deterministic rule engine (3 rules over the container event trail)',
+    // Was queue_zscore / txn_time_delta / flag_rate / time_of_day. None of those
+    // exist anywhere in the code; the engine consumes the ordered trail alone.
     features: [
-      { name: 'queue_zscore', value: '3.8σ' },
-      { name: 'txn_time_delta', value: '+1.9 min' },
-      { name: 'flag_rate', value: '0.14' },
-      { name: 'time_of_day', value: '02:10' },
+      { name: 'trail_json', value: 'GATE_IN 04-Jun 09:12 → (no GATE_OUT)' },
     ],
     output: { label: 'Verdict', predicted: 'ANOMALY', interval: 'score 0.91', unit: '' },
     limitations: 'Precision measured on synthetic labelled anomalies; production needs live-labelled feedback to hold precision.',
@@ -118,8 +113,12 @@ const MODELS: ModelCard[] = [
   },
 ];
 
+/** The measured numbers for a card, transcribed from models/uc2/<bundle>/metrics.json. */
+const metricsOf = (m: ModelCard) => MODEL_METRICS[m.key]!;
+
 function metricPasses(m: ModelCard): boolean {
-  return m.betterIsLower ? m.value <= m.threshold : m.value >= m.threshold;
+  const q = metricsOf(m);
+  return q.betterIsLower ? q.value <= q.threshold : q.value >= q.threshold;
 }
 
 function MetricChip({ m, lit }: { m: ModelCard; lit?: boolean }) {
@@ -128,13 +127,13 @@ function MetricChip({ m, lit }: { m: ModelCard; lit?: boolean }) {
   return (
     <CalciteChip
       scale="s"
-      value={m.metric}
+      value={metricsOf(m).metric}
       style={{
         ['--calcite-chip-text-color' as never]: color,
         ...(lit ? { outline: `2px solid ${color}`, borderRadius: 6 } : {}),
       }}
     >
-      {m.metric}: {m.value} (target {m.betterIsLower ? '≤' : '≥'} {m.threshold}) · {pass ? 'PASS' : 'CHECK'}
+      {metricsOf(m).metric}: {metricsOf(m).value} (target {metricsOf(m).betterIsLower ? '≤' : '≥'} {metricsOf(m).threshold}) · {pass ? 'PASS' : 'CHECK'}
     </CalciteChip>
   );
 }
@@ -272,7 +271,22 @@ export function ModelCards() {
 
                   <dl style={{ margin: 0, fontSize: 12, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 10px' }}>
                     <dt style={dtStyle}>Algorithm</dt><dd style={ddStyle}>{m.algorithm}</dd>
-                    <dt style={dtStyle}>Training</dt><dd style={ddStyle}>Synthetic, JNPA-scale · n_test = {m.nTest}</dd>
+                    <dt style={dtStyle}>Measured on</dt>
+                    <dd style={ddStyle}>{metricsOf(m).basis} · n_test = {metricsOf(m).nTest}</dd>
+                    {/* The second measurement travels with the headline. Publishing
+                        only the number that passes is how a model card stops being
+                        evidence — the dwell predictor's real-corpus score LOSES to
+                        the median baseline, and says so here. */}
+                    {metricsOf(m).alsoMeasured && (
+                      <>
+                        <dt style={dtStyle}>{metricsOf(m).alsoMeasured!.label}</dt>
+                        <dd style={{ ...ddStyle, color: tokens.severity.WARN }}>
+                          {metricsOf(m).alsoMeasured!.text}
+                        </dd>
+                      </>
+                    )}
+                    <dt style={dtStyle}>Artefact</dt>
+                    <dd style={ddStyle}><code>models/uc2/{metricsOf(m).bundle}/</code></dd>
                     <dt style={dtStyle}>Limitations</dt><dd style={ddStyle}>{m.limitations}</dd>
                     <dt style={dtStyle}>Surfaced in</dt><dd style={ddStyle}>{m.surfaced}</dd>
                   </dl>

@@ -44,6 +44,15 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/poc3/, ''),
         },
+        // UC-2 model services (UC2-015). The four AI containers listen on 8200
+        // inside the compose network; compose now publishes them so the browser
+        // can reach one through this proxy without the model being internet-
+        // facing. Killing the container is what flips the Gate panel's badge.
+        '/ai/gate-queue': {
+          target: env.AI_GATE_QUEUE_URL ?? 'http://localhost:8202',
+          changeOrigin: true,
+          rewrite: (p) => p.replace(/^\/ai\/gate-queue/, ''),
+        },
         // NLDS Logistics Data Bank — Manage → Track. Browser calls /ldb/…;
         // Vite rewrites to the public LDB origin (avoids CORS). LDB rejects
         // requests whose Origin is localhost ("Invalid CORS request" → 403), so

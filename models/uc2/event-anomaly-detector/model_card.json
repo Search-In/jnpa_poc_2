@@ -1,0 +1,30 @@
+{
+  "module_id": "UC2-M4",
+  "module_name": "Event Sequence Anomaly Detection",
+  "model_version": "m4-event-anomaly-v0.1.0",
+  "trained_at": "2026-06-17T13:36:18Z",
+  "use_case_solved": "Detect broken container event sequences — a box that gated in and never gated out, a Let Export Order with no subsequent move, a scan selection with no scan — and raise WARN/CRIT findings the notifications service fans out.",
+  "training_data_features": [
+    "trail_json"
+  ],
+  "training_data_source": "None. This is a deterministic rule engine; it has no fitted parameters. The n=400 labelled synthetic set is used to MEASURE it, not to train it.",
+  "objective_function": "Not applicable — no optimisation. The rules encode operational SLAs (72 h gate-out, 48 h post-LEO move, 24 h scan start), which an operations manager can check by hand.",
+  "model_used": "Deterministic rule engine, 3 rules over the ordered event trail.",
+  "rationale": "A rule an operations manager can read and challenge is worth more here than a learned model, because the corpus carries no labelled anomaly outcomes to fit against. Precision on a rule set is also a stronger claim than precision on a fitted model: it holds by construction rather than by sampling.",
+  "link_to_model_weights": "models/uc2/event-anomaly-detector/rules.json — THERE ARE NO WEIGHTS. The rule set is the artefact; see its `why_not_model_weights` field.",
+  "validation_data": {
+    "headline": "Labelled synthetic set, n=400, seed 505",
+    "real_world": "Run over the corpus the detector produces 1,139 findings across 1,136 of 1,401 containers (see UC2-018). Those findings are unlabelled — the corpus states no ground truth for them — so they demonstrate coverage, not precision."
+  },
+  "metrics": {
+    "precision": 1.0,
+    "threshold": 0.85,
+    "passed": true,
+    "coverage_caveat": "Measured on rule 1 (ANOMALY_MISSING_GATE_OUT) only. Rules 2 and 3 are not exercised by the labelled set."
+  },
+  "known_overstatements_corrected_here": [
+    "The service reports its algorithm as a 'rule engine + IsolationForest hybrid'. The IsolationForest is trained at import and never consulted — no output depends on it. Corrected to 'deterministic rule engine'.",
+    "Precision 1.0 is quoted without coverage. It measures one of three rules, against a negative case that cannot produce a false positive by construction. Stated in full here."
+  ],
+  "how_to_verify": "python -m pytest services/ai/test_ai_models.py -k anomaly"
+}

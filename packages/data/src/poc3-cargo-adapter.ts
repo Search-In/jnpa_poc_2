@@ -23,7 +23,6 @@ import type {
   Facility, IntegrationHealth, ITRHOMovement, KpiResult, Notification, Role,
   ScanEvent, SidingId, Terminal,
 } from '@jnpa/schemas';
-import { isValidContainerNo } from '@jnpa/schemas';
 import type {
   CargoCreateInput,
   CargoLifecycleEvent,
@@ -55,8 +54,15 @@ import type {
   IgmContainer,
   IgmContainerFilter,
   IgmManifest,
+  JnpaApiDefect,
+  JnpaApiHealth,
+  JnpaApiRun,
   LiveVesselDTO,
   OocDetail,
+  ContainerCustomsView,
+  ContainerGateDocs,
+  UploadTarget,
+  UploadResult,
   OocRecord,
   PendencyDTO,
   PinTicket,
@@ -274,31 +280,73 @@ export class Poc3CargoAdapter implements DataAdapter {
   }
 
   // -- reads (GET /api/cargo, GET /api/cargo/{id}) ----------------------------
+  /**
+   * The movement list. Every filter — Container Search included — is applied
+   * SERVER-SIDE by {@link getContainerMovementsPage}.
+   *
+   * Search used to take a separate route here: an exact lookup against
+   * `/api/cargo/{id}`, gated on the ISO-6346 check digit. That gate has been
+   * dropped along with the branch. The New Cargo dialog deliberately accepts
+   * numbers whose check digit fails, so validating on the way in made a container
+   * you had just created impossible to find — and the failure was silent, because
+   * an invalid number returned an empty array indistinguishable from "no match".
+   */
   async getContainerMovements(filter: ContainerMovementFilter): Promise<ContainerMovementDTO[]> {
-    // Container Search: an exact ISO-6346 lookup goes to the single-record
-    // endpoint (never a local array scan). A 404 is an empty result, not an
-    // error, so the panel shows its graceful empty state.
-    if (filter.containerNo) {
-      const norm = filter.containerNo.trim().toUpperCase().replace(/\s+/g, '');
-      if (!isValidContainerNo(norm)) return [];
-      try {
-        const one = await this.getJson<CargoRecord>(`/api/cargo/${encodeURIComponent(norm)}`);
-        return [mapCargoToMovement(one)];
-      } catch (err) {
-        if (err instanceof CargoApiError && err.status === 404) return [];
-        throw err;
-      }
-    }
+    const { items } = await this.getContainerMovementsPage(filter);
+    return items;
+  }
 
-    const rows = await this.getJson<CargoRecord[]>('/api/cargo', {
+  /**
+   * The movement list PLUS the filtered row count from the `X-Total-Count` header.
+   *
+   * `/api/cargo` answers with a bare array, so the count is not in the body — a
+   * panel that renders `rows.length` therefore reports its PAGE SIZE (100 by
+   * default) as the population, on every filter, forever. Read the header instead.
+   *
+   * ⚠ `origin_stream` is passed through here. It previously was not, which meant
+   * the Movements stream filter changed the UI state and nothing else — the same
+   * rows came back every time.
+   */
+  async getContainerMovementsPage(
+    filter: ContainerMovementFilter,
+  ): Promise<{ items: ContainerMovementDTO[]; total: number | null }> {
+    const query = {
+      // Container Search. `/api/cargo` takes `container_number` as an EXACT match,
+      // so the search runs server-side over the whole register and the row count in
+      // X-Total-Count stays truthful.
+      //
+      // ⚠ Do not drop this again. The single-record branch in getContainerMovements
+      // used to carry the search; when the paged read replaced it, this parameter
+      // went with it and Search silently returned page 1 of everything — which
+      // reads on screen as "no result".
+      //
+      // No ISO-6346 pre-check either: the New Cargo dialog deliberately allows
+      // numbers that fail the check digit, so validating here would make a container
+      // you just created unfindable. Let the server answer.
+      container_number: filter.containerNo?.trim().toUpperCase().replace(/\s+/g, '') || undefined,
       customs_status: filter.customsStatus,
       yard_block: filter.yardBlock,
       is_released: filter.isReleased == null ? undefined : String(filter.isReleased),
       vehicle_number: filter.vehicleNumber,
+      origin_stream: filter.originStream,
       limit: String(filter.limit ?? 100),
       offset: String(filter.offset ?? 0),
+    };
+    const path = '/api/cargo';
+    // Routed through dedupeGet like every other GET: two panels mounting at once
+    // must still collapse to ONE network call. A distinct key prefix keeps this
+    // from colliding with getJson's cache of the same URL, whose cached value is
+    // the bare body and carries no header.
+    return this.dedupeGet(`PAGE ${this.buildUrl(path, query)}`, async () => {
+      const res = await this.request('GET', path, { query });
+      if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+      const rows = Poc3CargoAdapter.asList<CargoRecord>(await res.json());
+      const header = res.headers?.get?.('x-total-count');
+      const total = header != null && header !== '' && !Number.isNaN(Number(header))
+        ? Number(header)
+        : null;
+      return { items: rows.map(mapCargoToMovement), total };
     });
-    return rows.map(mapCargoToMovement);
   }
 
   // -- create (POST /api/cargo → 201) -----------------------------------------
@@ -358,6 +406,34 @@ export class Poc3CargoAdapter implements DataAdapter {
       const res = await this.request('GET', path, { query });
       if (!res.ok) return Poc3CargoAdapter.fail(res, path);
       return Poc3CargoAdapter.asList<T>(await res.json());
+    });
+  }
+
+  /**
+   * Same read as `getList`, but KEEPS the `total` from the `Page` envelope.
+   *
+   * `getList` deliberately flattens to a bare array, which is right for the small
+   * registers, but it discards the row count for the paged ones — and a panel that
+   * renders `rows.length` against a 5,743-row register then reports its page size
+   * as the population. Use this wherever the count is shown on screen.
+   *
+   * `total` is null when the endpoint answered with a bare array (no envelope), so
+   * a caller can tell "not paginated" apart from "0 rows".
+   */
+  private async getPage<T>(
+    path: string,
+    query?: Record<string, string | undefined>,
+  ): Promise<{ items: T[]; total: number | null }> {
+    return this.dedupeGet(`PAGE ${this.buildUrl(path, query)}`, async () => {
+      const res = await this.request('GET', path, { query });
+      if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+      const body: unknown = await res.json();
+      const items = Poc3CargoAdapter.asList<T>(body);
+      const total = body && typeof body === 'object' && !Array.isArray(body)
+        && typeof (body as Record<string, unknown>).total === 'number'
+        ? ((body as Record<string, unknown>).total as number)
+        : null;
+      return { items, total };
     });
   }
 
@@ -531,12 +607,131 @@ export class Poc3CargoAdapter implements DataAdapter {
     }
   }
 
+  // -- data upload (multipart) ----------------------------------------------
+  /**
+   * POST a multipart upload, reusing the same auth + 401-self-heal as every other
+   * call. Note it does NOT go through `request()`: that helper sets a JSON
+   * content-type and stringifies the body, and a `FormData` body must be left
+   * alone so the browser can set its own multipart boundary.
+   */
+  private async postForm<T>(path: string, form: FormData): Promise<T> {
+    const url = this.buildUrl(path);
+    const dataMode = this.getDataMode();
+    const send = (token: string | undefined) =>
+      this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(dataMode ? { 'x-data-mode': dataMode } : {}),
+        },
+        body: form,
+      });
+
+    let res = await send(this.getToken());
+    if (res.status === 401 && this.refreshToken) {
+      const fresh = await this.refreshToken();
+      if (fresh) {
+        this.setToken(fresh);
+        res = await send(fresh);
+      }
+    }
+    if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+    return (await res.json()) as T;
+  }
+
+  /** Multipart body: the file plus the module's document-kind discriminator. */
+  private static uploadForm(target: UploadTarget, file: File): FormData {
+    const fd = new FormData();
+    fd.append('file', file);
+    // Only when the module HAS a discriminator. Customs routes on the filename,
+    // so appending an unread field would look like a contract that isn't one.
+    if (target.param && target.value != null) fd.append(target.param, target.value);
+    return fd;
+  }
+
+  /** Dry run — parses and previews, writes nothing. */
+  async validateUpload(target: UploadTarget, file: File): Promise<UploadResult> {
+    return this.postForm<UploadResult>(
+      `/api/${target.module}/validate`, Poc3CargoAdapter.uploadForm(target, file));
+  }
+
+  /** Persist — idempotent by row hash, so a re-import cannot duplicate rows. */
+  async importUpload(target: UploadTarget, file: File): Promise<UploadResult> {
+    return this.postForm<UploadResult>(
+      `/api/${target.module}/upload`, Poc3CargoAdapter.uploadForm(target, file));
+  }
+
+  // -- discharge (POST /api/cargo/{id}/discharge → 200) ----------------------
+  /**
+   * The first mandatory lifecycle gate: `CREATED -> VESSEL_DISCHARGED`.
+   *
+   * A dedicated endpoint rather than `updateCargo`, because the transition is
+   * validated by the server's state machine and emits `cargo.vessel_discharged`
+   * on the shared bus — the signal UC-III's job assignment depends on. Patching
+   * the row directly would move the status without raising the event.
+   */
+  async dischargeCargo(
+    containerNo: string,
+    input: { vessel_name?: string; discharge_time?: string } = {},
+  ): Promise<{ container_number: string; lifecycle_status: string; status: string }> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.writeJson<{ container_number: string; lifecycle_status: string; status: string }>(
+      'POST', `/api/cargo/${encodeURIComponent(norm)}/discharge`, input);
+  }
+
+  // 10b) Per-container import chain reads -----------------------------------
+  //
+  // The two container-keyed lookups the import lifecycle needs. Both are by-value
+  // joins on the container number, so an empty array means "no document of this
+  // kind names this box" — a fact worth showing, never an error to swallow.
+
+  /**
+   * The customs layer's whole view of one container: manifest line, out-of-charge,
+   * transhipment permit and RMS selection.
+   *
+   * The API 404s when the box appears in NO customs document at all. That is a
+   * legitimate answer for this corpus (the document families are disjoint), so it
+   * resolves to null and the caller says so rather than raising.
+   */
+  async getContainerCustoms(containerNo: string): Promise<ContainerCustomsView | null> {
+    const key = encodeURIComponent(containerNo.trim().toUpperCase().replace(/\s+/g, ''));
+    try {
+      return await this.getJson<ContainerCustomsView>(`/api/customs/containers/${key}`);
+    } catch (err) {
+      if (err instanceof CargoApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Every gate document naming one container — PIN ticket, EIR and Form 13. */
+  async getContainerGateDocs(containerNo: string): Promise<ContainerGateDocs | null> {
+    const key = encodeURIComponent(containerNo.trim().toUpperCase().replace(/\s+/g, ''));
+    try {
+      return await this.getJson<ContainerGateDocs>(`/api/gate-docs/container/${key}`);
+    } catch (err) {
+      if (err instanceof CargoApiError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
   // 11) Shipping-lines API — E-DO (Electronic Delivery Order) -----------------
   /** The delivery orders that authorise release of a container to its consignee. */
   async getEdoRecords(filter: IgmContainerFilter = {}): Promise<EdoRecord[]> {
     return this.getList<EdoRecord>('/api/shipping-lines/edo', {
       limit: String(filter.limit ?? 200),
       offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /**
+   * The delivery orders naming one container. Filtered SERVER-SIDE — the E-DO
+   * register is paged, so scanning `getEdoRecords()` client-side would miss a DO
+   * past the first page.
+   */
+  async getEdoForContainer(containerNo: string): Promise<EdoRecord[]> {
+    return this.getList<EdoRecord>('/api/shipping-lines/edo', {
+      container_no: containerNo.trim().toUpperCase().replace(/\s+/g, ''),
+      limit: '50',
     });
   }
 
@@ -608,7 +803,20 @@ export class Poc3CargoAdapter implements DataAdapter {
    * hits the whole list rather than the loaded page.
    */
   async getAdvanceList(filter: AdvanceListFilter = {}): Promise<AdvanceListContainer[]> {
-    return this.getList<AdvanceListContainer>('/api/shipping-lines', {
+    return (await this.getAdvanceListPage(filter)).items;
+  }
+
+  /**
+   * The advance list WITH the register's row count.
+   *
+   * A panel that shows a count must use this rather than `getAdvanceList().length`:
+   * the EAL register is 5,743 rows and any sane page size is a small fraction of
+   * it, so the page length is not the population. See ExportList's load-list view.
+   */
+  async getAdvanceListPage(
+    filter: AdvanceListFilter = {},
+  ): Promise<{ items: AdvanceListContainer[]; total: number | null }> {
+    return this.getPage<AdvanceListContainer>('/api/shipping-lines', {
       list_type: filter.list_type,
       terminal: filter.terminal,
       category: filter.category,
@@ -768,6 +976,39 @@ export class Poc3CargoAdapter implements DataAdapter {
     return this.getList<LiveVesselDTO>('/api/marine/vessels/live');
   }
 
+  // 16) JNPA Simulated Port-Data API — the live source behind the LIVE badge ----
+  /**
+   * These three read the POLLER, not the port.
+   *
+   * UC-II's "LIVE" claim rests entirely on one external feed: JNPA's own
+   * Simulated Port-Data API at `dt.jnpa.in/poc-api-data-access`, polled by the
+   * shared backend and routed into the same `core.*` tables the corpus dump
+   * fills. That makes "is it LIVE?" a question about the poller's state — is a
+   * client key configured, when did each group last advance, did the last poll
+   * fail — which is exactly what these expose.
+   *
+   * Deliberately unauthenticated-tolerant and never fatal to a page: the panel
+   * that renders them treats an error as "cannot determine", because a broken
+   * health check must not be able to paint a feed green.
+   */
+  async getJnpaApiHealth(): Promise<JnpaApiHealth> {
+    const body = await this.getJson<JnpaApiHealth>('/api/integrations/jnpa/health');
+    return { ...body, groups: Array.isArray(body?.groups) ? body.groups : [] };
+  }
+
+  /** Run audit trail, newest first. The source of the volume figures. */
+  async getJnpaApiRuns(limit = 50): Promise<JnpaApiRun[]> {
+    return this.getList<JnpaApiRun>('/api/integrations/jnpa/runs', { limit: String(limit) });
+  }
+
+  /** Observed deviations from API Reference v2.0. An empty list is a real answer. */
+  async getJnpaApiDefects(limit = 100): Promise<JnpaApiDefect[]> {
+    return this.getList<JnpaApiDefect>('/api/integrations/jnpa/defects', {
+      format: 'json',
+      limit: String(limit),
+    });
+  }
+
   // -- everything else passes straight through to the base adapter -----------
   getFacilities(role?: Role): Promise<Facility[]> {
     return this.base.getFacilities(role);
@@ -800,12 +1041,78 @@ export class Poc3CargoAdapter implements DataAdapter {
    * targets an existing record instead of a simulated one that 404s.
    */
   async getScanQueue(): Promise<ScanEvent[]> {
-    const rows = await this.getJson<CargoRecord[]>('/api/cargo', {
-      is_released: 'false',
-      limit: '100',
-      offset: '0',
-    });
-    return rows.map(mapCargoToScanEvent);
+    // Authoritative membership from the DOCUMENTED endpoint. This previously read
+    // `/api/cargo?is_released=false&limit=100` and let the panel filter on
+    // `yard_block` client-side, which only matched the real queue by luck: the
+    // server's rule is "not released AND (yard-blocked OR lifecycle >=
+    // YARD_ASSIGNED) AND NOT already VERIFIED/RELEASED", and a 100-row page of
+    // ~11,900 non-released containers cannot be relied on to contain the queue.
+    const queue = await this.getList<{ container_number: string }>(
+      '/api/cargo/scan-queue', { limit: '200', offset: '0' });
+
+    // Enrich each member with its full cargo record so the panel keeps its
+    // columns — the queue endpoint returns only container / yard block / status.
+    // A scan queue is a work list and is small by nature; the cap stops a
+    // pathological queue from fanning out unbounded.
+    const members = queue.slice(0, 100);
+    const records = await Promise.all(members.map(async (q) => {
+      try {
+        return await this.getJson<CargoRecord>(
+          `/api/cargo/${encodeURIComponent(q.container_number)}`);
+      } catch {
+        return null; // a member that vanished between the two calls is simply dropped
+      }
+    }));
+    return records.filter((r): r is CargoRecord => r !== null).map(mapCargoToScanEvent);
+  }
+
+  // -- lifecycle gates the Scan tab drives ----------------------------------
+  //
+  // These are the three transitions between yard and gate-out. Each is its own
+  // endpoint because each is a distinct, audited state change that emits its own
+  // event — patching columns with PUT would move the row without raising them.
+
+  /**
+   * Yard assignment — `PUT /api/cargo/{cn}/yard-assignment`, the second mandatory
+   * gate. Lenient by design: it accepts `CREATED`, `VESSEL_DISCHARGED` and
+   * `PENDENCY`, which is what lets a legacy row whose `yard_block` was set
+   * directly (without the transition) be caught up.
+   */
+  async assignYard(containerNo: string, yardBlock: string): Promise<CargoRecord> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.writeJson<CargoRecord>(
+      'PUT', `/api/cargo/${encodeURIComponent(norm)}/yard-assignment`, { yard_block: yardBlock });
+  }
+
+  /**
+   * Scan verification — `POST /api/cargo/{cn}/verify`. THE scan outcome.
+   * `verified: true` advances to `VERIFIED` (requires yard-assignment, else 409);
+   * `false` records the failed check WITHOUT advancing, which is how a held or
+   * re-scan-required box is captured.
+   */
+  async verifyCargo(
+    containerNo: string,
+    input: { verified?: boolean; remarks?: string } = {},
+  ): Promise<{ container_number: string; verified: boolean; lifecycle_status: string }> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.writeJson<{ container_number: string; verified: boolean; lifecycle_status: string }>(
+      'POST', `/api/cargo/${encodeURIComponent(norm)}/verify`,
+      { verified: input.verified ?? true, ...(input.remarks ? { remarks: input.remarks } : {}) });
+  }
+
+  /**
+   * Release — `POST /api/cargo/{cn}/release`, the final gate and the UC-III
+   * handover. It requires `VERIFIED`, and emits `cargo.released` carrying the yard
+   * location and vehicle details.
+   *
+   * ⚠ NOT `PUT {is_released: true}`. That path faces the same VERIFY gate, so it
+   * 409s identically — but it reads like a field patch, which is exactly why the
+   * Scan tab's Release looked broken rather than blocked.
+   */
+  async releaseCargo(containerNo: string, note?: string): Promise<CargoRecord> {
+    const norm = containerNo.trim().toUpperCase().replace(/\s+/g, '');
+    return this.writeJson<CargoRecord>(
+      'POST', `/api/cargo/${encodeURIComponent(norm)}/release`, note ? { note } : {});
   }
   getEmptyPool(): Promise<EmptyPoolDTO> {
     return this.base.getEmptyPool();

@@ -10,7 +10,7 @@
  *   GET /api/shipping-lines?list_type=EAL   -> the load list (this table)
  *   GET /api/shipping-lines/gate-movements  -> CODECO gate-in for a container
  *
- * ⚠ TWO THINGS THIS PANEL MUST NOT IMPLY.
+ * ⚠ THREE THINGS THIS PANEL MUST NOT IMPLY.
  * 1. There is no Shipping Bill / LEO column, and there must not be one until
  *    customs supply an SB extract carrying a container number. The filed SBs
  *    have no container column at all, so such a column would render empty on
@@ -18,8 +18,12 @@
  * 2. The BMCT list carries no vessel column — `vessel_visit` is null on all 588
  *    of its rows because that is how the file was supplied. Those rows show
  *    "not stated", never a guessed visit.
+ * 3. The table shows ONE PAGE of the register, so it must never present its row
+ *    count as the population — it reads "Showing 500 of 5,743". Search therefore
+ *    goes to the server (`q`), because filtering the loaded page made every
+ *    container past page 1 look absent.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CalciteTable, CalciteTableRow, CalciteTableHeader, CalciteTableCell,
   CalciteChip, CalciteButton, CalciteIcon, CalciteNotice, CalciteInput,
@@ -34,6 +38,9 @@ import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
+import { LifecycleSteps, EXPORT_STEPS, EXPORT_VIEWS, SHARED_SURFACES } from './LifecycleSteps.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
+import { ShippingBills, Leo } from './CustomsRegisters.js';
 import { tokens } from '../theme/tokens.js';
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -184,12 +191,35 @@ function ExportChainDialog({ row, onClose }: { row: AdvanceListContainer; onClos
             <CalciteNotice open kind="info" icon="information" scale="s">
               <div slot="title">No CODECO gate message for this container</div>
               <div slot="message">
-                The corpus holds 5 CODECO gate messages against 5,743 load-list lines, so
-                most containers on this list have no matching gate event. This is the
-                supplied data, not a failed lookup.
+                Measured, not assumed: the 5 CODECO gate messages in this corpus share
+                <strong> zero</strong> containers with the 5,743 load-list lines
+                (04_Export_Build_Plan.md §2.5). So no container on this list resolves a
+                gate-in — the document families are disjoint as supplied. This is the
+                data, not a failed lookup.
               </div>
             </CalciteNotice>
           )}
+
+          {/* E5: the row names a vessel visit, so say what that visit does and does
+              not reach. Stating the empty join is the point — omitting it would let
+              the dialog read as if the chain simply ended here. */}
+          {section('Vessel')}
+          <CalciteNotice open kind="info" icon="information" scale="s">
+            <div slot="title">
+              {row.vessel_visit
+                ? `Visit ${row.vessel_visit} is not in the berthing reports or vessel calls`
+                : 'This terminal’s list carries no vessel column'}
+            </div>
+            <div slot="message">
+              {row.vessel_visit
+                ? 'The export lists’ vessel visits appear in neither core.berthing_report_vessel '
+                  + 'nor core.vessel_call, so this container cannot be tied to a cut-off or a '
+                  + 'recorded sailing. The Cut-offs and Departures views show the vessel side on '
+                  + 'its own terms.'
+                : 'The BMCT list was supplied with no vessel column, so this line names no visit. '
+                  + 'Nothing is guessed in its place.'}
+            </div>
+          </CalciteNotice>
 
           {/* Stated, not silently omitted — the customs step is the known gap. */}
           {section('Customs')}
@@ -211,34 +241,49 @@ function ExportChainDialog({ row, onClose }: { row: AdvanceListContainer; onClos
   );
 }
 
+/** One page of the load list. 5,743 rows do not belong in one fetch. */
+const PAGE_SIZE = 500;
+
 function ExportLoadList() {
   const { adapter } = useApp();
   const [terminal, setTerminal] = useState('ALL');
+  // `search` is the field; `query` is what the fetch uses. Applied on Enter /
+  // the Search button so the list does not refetch per keystroke.
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  // Bumped after a successful import so the list refetches with the new rows.
+  const [rev, setRev] = useState(0);
   const [target, setTarget] = useState<AdvanceListContainer | null>(null);
 
-  const state = useAsync<AdvanceListContainer[]>(
-    () => (adapter.getAdvanceList
-      ? adapter.getAdvanceList({
+  /**
+   * ⚠ Search runs SERVER-SIDE (`q`), not over the loaded page.
+   *
+   * The register is 5,743 rows (verified against the deployed RDS) and this fetch
+   * is one 500-row page. Filtering the page client-side made any container past
+   * the first page report "Nothing to show" — indistinguishable from a data fault.
+   *
+   * ⚠ The backend's `q` matches container_no, bill_of_lading and
+   * shipping_line_code ONLY. The field label says exactly that; widening it needs
+   * the backend clause widened first.
+   */
+  const state = useAsync<{ items: AdvanceListContainer[]; total: number | null }>(
+    () => (adapter.getAdvanceListPage
+      ? adapter.getAdvanceListPage({
           list_type: 'EAL',
           terminal: terminal === 'ALL' ? undefined : terminal,
-          limit: 500,
+          q: query || undefined,
+          limit: PAGE_SIZE,
         })
       : Promise.reject(new Error('The shipping-lines API is unavailable in this data mode.'))),
-    [adapter, terminal],
+    [adapter, terminal, query, rev],
   );
 
-  const rows = useMemo(() => {
-    const all = state.data ?? [];
-    const q = search.trim().toUpperCase();
-    if (!q) return all;
-    return all.filter((r) =>
-      r.container_no?.toUpperCase().includes(q)
-      || (r.pod ?? '').toUpperCase().includes(q)
-      || (r.shipping_line_code ?? '').toUpperCase().includes(q)
-      || (r.bill_of_lading ?? '').toUpperCase().includes(q)
-      || (r.vessel_visit ?? '').toUpperCase().includes(q));
-  }, [state.data, search]);
+  const rows = state.data?.items ?? [];
+  const total = state.data?.total ?? null;
+  // True when the register holds more than this page shows — the count line and
+  // the notice below both depend on saying so rather than implying completeness.
+  const truncated = total !== null && total > rows.length;
+  const applySearch = () => setQuery(search.trim());
 
   // Terminal codes present on the EAL data, for the filter.
   const TERMINALS = ['ALL', 'GTI', 'NSIGT', 'NSFT', 'NSICT', 'BMCT'];
@@ -270,13 +315,32 @@ function ExportLoadList() {
                 ))}
               </CalciteSelect>
             </CalciteLabel>
-            <CalciteLabel scale="s" style={{ minWidth: 260 }}>Search (container / POD / line / BL / visit)
-              <CalciteInput
-                scale="s"
-                value={search}
-                placeholder="TEMU0412003"
-                onCalciteInputInput={(e) => setSearch((e.target as unknown as { value: string }).value)}
-              />
+            {/* Fields named here are exactly the ones `q` matches server-side
+                (container_no / bill_of_lading / shipping_line_code). POD and
+                vessel visit are NOT searchable — do not add them to this label
+                without adding them to the backend's q clause first. */}
+            <CalciteLabel scale="s" style={{ minWidth: 320 }}>Search (container / BL / shipping line)
+              <div style={{ display: 'flex', gap: 6 }}>
+                <CalciteInput
+                  scale="s"
+                  value={search}
+                  placeholder="TEMU0412003"
+                  onCalciteInputInput={(e) => setSearch((e.target as unknown as { value: string }).value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') applySearch(); }}
+                />
+                <CalciteButton scale="s" iconStart="search" onClick={applySearch}>Search</CalciteButton>
+                {query && (
+                  <CalciteButton
+                    scale="s"
+                    appearance="outline"
+                    kind="neutral"
+                    iconStart="x"
+                    onClick={() => { setSearch(''); setQuery(''); }}
+                  >
+                    Clear
+                  </CalciteButton>
+                )}
+              </div>
             </CalciteLabel>
             <div style={{ marginLeft: 'auto' }}>
               <ImportExportToolbar
@@ -297,19 +361,48 @@ function ExportLoadList() {
                   'Nominated CFS': r.nominated_cfs,
                 }))}
                 filename="export-advance-list.csv"
+                importTarget={UPLOAD_TARGETS.eal}
+                onImported={() => setRev((n) => n + 1)}
               />
             </div>
           </div>
 
+          {/* The register size, not the page size. `total` comes from the API's
+              Page envelope; showing rows.length alone reported 500 for a 5,743-row
+              list. When the envelope is absent (bare array) fall back to the count
+              we actually have rather than inventing one. */}
           <p style={{ fontSize: 12, color: tokens.color.textMuted, margin: '0 0 6px' }}>
-            {rows.length} container{rows.length === 1 ? '' : 's'} declared for load
+            {truncated
+              ? <>Showing <strong>{rows.length}</strong> of <strong>{total!.toLocaleString()}</strong> lines declared for load</>
+              : <>{(total ?? rows.length).toLocaleString()} line{(total ?? rows.length) === 1 ? '' : 's'} declared for load</>}
             {terminal !== 'ALL' ? ` at ${terminal}` : ''}
+            {query ? ` matching “${query}”` : ''}
           </p>
+
+          {/* ⚠ 03a §3.5: EAL_NSFT files 979 rows for 978 distinct containers and
+              EAL_BMCT 588 for 587 — the source carries duplicate container rows.
+              So this is a count of LINES, and the wording above says so. */}
+          {truncated && (
+            <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '0 0 8px' }}>
+              <div slot="title">One page of a larger register</div>
+              <div slot="message">
+                This shows the first {PAGE_SIZE} of {total!.toLocaleString()} lines. Search runs
+                against the whole register on the server, not just this page — so a container
+                further down the list is still findable by number, bill of lading or shipping
+                line. Counts here are advance-list <em>lines</em>; two terminals file a duplicate
+                container row, so lines slightly exceed distinct containers.
+              </div>
+            </CalciteNotice>
+          )}
 
           {rows.length === 0 ? (
             <CalciteNotice open kind="info" icon="information" scale="s">
               <div slot="title">Nothing to show</div>
-              <div slot="message">No export advance-list line matches the current filter.</div>
+              <div slot="message">
+                {query
+                  ? `No export advance-list line matches “${query}”${terminal !== 'ALL' ? ` at ${terminal}` : ''}. This search covered the whole register, not just one page.`
+                  : 'No export advance-list line matches the current filter.'}
+              </div>
             </CalciteNotice>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -549,17 +642,47 @@ function ExportDocuments() {
 }
 
 
-type ExportView = 'list' | 'docs' | 'messages' | 'cutoffs' | 'departures' | 'synthetic';
+type ExportView = (typeof EXPORT_VIEWS)[number];
 
 /**
- * The export surface: the load list at population scale, and the gate documents
- * behind it. Split by a switch rather than two tabs — they are two views of one
- * step in the chain, not two places to go.
+ * The export surface.
+ *
+ * The step strip on top is the spine: it states the canonical 10-step order and
+ * which steps this corpus can actually evidence, and each step selects the view
+ * that shows it. Without it the switch below reads as six unrelated document
+ * families, and steps 1/4/5/6 look like omissions rather than documented gaps.
+ *
+ * ⚠ The views are ordered to follow the chain — pre-advice (2) → gate documents,
+ * Form 11 (2, rail) → EAL (7) → COPRAR/COARRI (8–9) → departures (10). COPRAR and
+ * COARRI are kept together because they are the two halves of one vessel's load;
+ * Form 11 was split out of that group because it is step 2, not step 8.
  */
-export function ExportList() {
-  const [view, setView] = useState<ExportView>('list');
+export function ExportList({ onOpenTab, jumpToView }: {
+  onOpenTab?: (tab: string) => void;
+  /** A guided-tour step asking for a specific sub-view. See Dashboard.goToTab. */
+  jumpToView?: { view: string; nonce: number } | null;
+} = {}) {
+  const [view, setView] = useState<ExportView>('overview');
+
+  // Keyed on the nonce so a repeat request for the same view still applies, and
+  // so the user is not snapped back after navigating away mid-tour.
+  useEffect(() => {
+    if (jumpToView) setView(jumpToView.view as ExportView);
+  }, [jumpToView?.nonce]);
+
   return (
     <>
+      <LifecycleSteps
+        steps={EXPORT_STEPS}
+        title="Export container lifecycle — booking to vessel"
+        activeView={view}
+        onSelectView={(v) => setView(v as ExportView)}
+        onOpenTab={onOpenTab}
+        related={[SHARED_SURFACES.gate!, SHARED_SURFACES.cfsecy!, SHARED_SURFACES.rail!]}
+      />
+      {/* Only the views that are NOT a numbered step. Everything else is reached
+          from the strip above, which is what keeps this tab in lifecycle order
+          instead of listing document families. */}
       <div style={{ marginBottom: 10 }}>
         <CalciteSegmentedControl
           scale="s"
@@ -567,32 +690,49 @@ export function ExportList() {
             setView((e.target as unknown as { selectedItem?: { value?: string } })
               .selectedItem?.value as ExportView)}
         >
-          <CalciteSegmentedControlItem value="list" checked={view === 'list'}>
-            Load list (EAL)
+          <CalciteSegmentedControlItem value="overview" checked={view === 'overview'}>
+            Overview
           </CalciteSegmentedControlItem>
-          <CalciteSegmentedControlItem value="docs" checked={view === 'docs'}>
-            Gate documents
-          </CalciteSegmentedControlItem>
-          <CalciteSegmentedControlItem value="messages" checked={view === 'messages'}>
-            Form 11 · COPRAR · COARRI
+          <CalciteSegmentedControlItem value="form11" checked={view === 'form11'}>
+            Form 11 (rail)
           </CalciteSegmentedControlItem>
           <CalciteSegmentedControlItem value="cutoffs" checked={view === 'cutoffs'}>
             Cut-offs
-          </CalciteSegmentedControlItem>
-          <CalciteSegmentedControlItem value="departures" checked={view === 'departures'}>
-            Departures
           </CalciteSegmentedControlItem>
           <CalciteSegmentedControlItem value="synthetic" checked={view === 'synthetic'}>
             ⚠ Synthetic chains
           </CalciteSegmentedControlItem>
         </CalciteSegmentedControl>
       </div>
+      {view === 'overview' && <ExportOverview />}
       {view === 'list' && <ExportLoadList />}
       {view === 'docs' && <ExportDocuments />}
-      {view === 'messages' && <ExportMessages />}
+      {view === 'form11' && <ExportForm11 />}
+      {view === 'sb' && <ShippingBills />}
+      {view === 'leo' && <Leo />}
+      {view === 'loadmsgs' && <ExportLoadMessages />}
       {view === 'cutoffs' && <ExportCutoffs />}
       {view === 'departures' && <ExportDepartures />}
       {view === 'synthetic' && <ExportSyntheticChains />}
+    </>
+  );
+}
+
+/** Landing view — what the export leg can and cannot evidence, in one place. */
+function ExportOverview() {
+  return (
+    <>
+      <SourceBadge source="Shipping lines · terminal gate documents · ICEGATE · EDI" live />
+      <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '8px 0 10px' }}>
+        <div slot="title">Pick a step above to see the documents behind it</div>
+        <div slot="message">
+          Nine of the ten canonical steps are backed by filed documents. The customs step is
+          the one that cannot be closed: the Shipping Bills carry no container number and the
+          LEOs share no SB number with them, so neither can be attached to a box. No real
+          container in this corpus traverses the full chain — the ⚠ Synthetic chains view is
+          the only place a complete ten-step sequence exists, and it is generated, not JNPA data.
+        </div>
+      </CalciteNotice>
     </>
   );
 }
@@ -656,26 +796,32 @@ function ExportDepartures() {
   );
 }
 
-/** Form 11 (rail pre-advice) + COPRAR + COARRI — the remaining real steps. */
-function ExportMessages() {
+/** Shared section wrapper for the message views. */
+const messageBlock = (title: string, note: React.ReactNode, body: React.ReactNode) => (
+  <div style={{ marginBottom: 18 }}>
+    <strong style={{ fontSize: 13, color: tokens.color.text }}>{title}</strong>
+    <div style={{ margin: '6px 0 8px' }}>{note}</div>
+    {body}
+  </div>
+);
+
+/**
+ * Step 2 (rail) — Form 11, the pre-advice a rail-origin export is declared on.
+ *
+ * Split out of the old combined "Form 11 · COPRAR · COARRI" view: Form 11 is the
+ * pre-advice at the START of the chain, while COPRAR/COARRI are the load list and
+ * load confirmation at the end. Showing them together implied they belong to the
+ * same point in the order.
+ */
+function ExportForm11() {
   const { adapter } = useApp();
   const f11 = useAsync<Form11Entry[]>(
     () => (adapter.getForm11 ? adapter.getForm11() : Promise.resolve([])), [adapter]);
-  const coprar = useAsync<CoprarItem[]>(
-    () => (adapter.getCoprarItems ? adapter.getCoprarItems() : Promise.resolve([])), [adapter]);
-  const coarri = useAsync<CoarriMove[]>(
-    () => (adapter.getCoarriMoves ? adapter.getCoarriMoves() : Promise.resolve([])), [adapter]);
-
-  const block = (title: string, note: React.ReactNode, body: React.ReactNode) => (
-    <div style={{ marginBottom: 18 }}>
-      <strong style={{ fontSize: 13, color: tokens.color.text }}>{title}</strong>
-      <div style={{ margin: '6px 0 8px' }}>{note}</div>
-      {body}
-    </div>
-  );
+  const block = messageBlock;
 
   return (
     <>
+      <SourceBadge source="Terminal Form 11 · rail export pre-advice" live />
       {block('Form 11 — rail pre-advice',
         <CalciteNotice open kind="info" icon="information" scale="s">
           <div slot="message">
@@ -709,8 +855,41 @@ function ExportMessages() {
             </CalciteTable>
           </div>
         ))}
+    </>
+  );
+}
 
-      {block('COPRAR — advance load list',
+/**
+ * Steps 8–9 — COPRAR (the load list ordered to the terminal) and COARRI (the
+ * confirmation of what was actually loaded). Kept together because they are the
+ * two halves of one vessel's load; separated from Form 11 because that is step 2.
+ *
+ * ⚠ Both samples are foreign calls. The notices say so on every render — these
+ * demonstrate the message schema and carry no JNPA volume.
+ */
+function ExportLoadMessages() {
+  const { adapter } = useApp();
+  const coprar = useAsync<CoprarItem[]>(
+    () => (adapter.getCoprarItems ? adapter.getCoprarItems() : Promise.resolve([])), [adapter]);
+  const coarri = useAsync<CoarriMove[]>(
+    () => (adapter.getCoarriMoves ? adapter.getCoarriMoves() : Promise.resolve([])), [adapter]);
+  const block = messageBlock;
+
+  return (
+    <>
+      <SourceBadge source="EDI · COPRAR (load list) + COARRI (load confirmation)" live />
+
+      <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s" style={{ margin: '4px 0 10px' }}>
+        <div slot="title">Neither sample is a JNPA call</div>
+        <div slot="message">
+          These are the last two steps of the export chain, and the corpus holds no COPRAR or
+          COARRI for any JNPA vessel. What is shown proves the message schema parses; it says
+          nothing about JNPA traffic and must not be quoted as a volume. A JNPA COPRAR + COARRI
+          for one call is an open ask.
+        </div>
+      </CalciteNotice>
+
+      {block('COPRAR — advance load list (step 8)',
         <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
           <div slot="title">Not a JNPA call</div>
           <div slot="message">
@@ -723,7 +902,7 @@ function ExportMessages() {
           {(coprar.data ?? []).length > 0 && ` — e.g. ${coprar.data![0]!.container_no} → ${val(coprar.data![0]!.pod)}`}
         </p>)}
 
-      {block('COARRI — load / discharge confirmation',
+      {block('COARRI — load / discharge confirmation (step 9)',
         <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
           <div slot="title">Not a JNPA call, and incomplete</div>
           <div slot="message">

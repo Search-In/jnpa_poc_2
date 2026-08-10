@@ -74,25 +74,33 @@ describe('Poc3CargoAdapter — re-sources cargo from GET /api/cargo', () => {
     expect(String(fetchImpl.mock.calls[0]![0])).toContain('limit=100');
   });
 
-  it('search routes an exact container number to the single-record endpoint', async () => {
-    const fetchImpl = vi.fn(async () => ok(RECORD));
+  it('search sends container_number so it filters SERVER-SIDE, normalised', async () => {
+    // Regression guard. Search used to take a separate route (an exact lookup on
+    // /api/cargo/{id}); when the paged read replaced that branch, the parameter went
+    // with it and Search silently returned page 1 of everything — which reads on
+    // screen as "no result". The query MUST carry the container number.
+    const fetchImpl = vi.fn(async () => ok([RECORD]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
     const moves = await a.getContainerMovements({ containerNo: 'maeu 6123458' });
     expect(moves).toHaveLength(1);
-    expect(String(fetchImpl.mock.calls[0]![0])).toContain('/api/cargo/MAEU6123458');
+    const url = String(fetchImpl.mock.calls[0]![0]);
+    expect(url).toContain('container_number=MAEU6123458'); // upper-cased, spaces stripped
   });
 
-  it('treats a 404 on search as an empty result, not an error', async () => {
-    const fetchImpl = vi.fn(async () => notFound());
+  it('a search that matches nothing is an empty result, not an error', async () => {
+    const fetchImpl = vi.fn(async () => ok([]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
     await expect(a.getContainerMovements({ containerNo: 'MAEU6123458' })).resolves.toEqual([]);
   });
 
-  it('short-circuits an invalid ISO-6346 search without a network call', async () => {
-    const fetchImpl = vi.fn(async () => ok(RECORD));
+  it('does NOT pre-screen the search on the ISO-6346 check digit', async () => {
+    // The New Cargo dialog deliberately accepts numbers whose check digit fails, so
+    // screening here would make a container you just created unfindable — and the
+    // failure was silent, because it returned [] with no request and no message.
+    const fetchImpl = vi.fn(async () => ok([]));
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
-    await expect(a.getContainerMovements({ containerNo: 'NOTVALID' })).resolves.toEqual([]);
-    expect(fetchImpl).not.toHaveBeenCalled();
+    await a.getContainerMovements({ containerNo: 'NOTVALID' });
+    expect(fetchImpl).toHaveBeenCalled(); // the server decides, not the client
   });
 
   it('delegates a non-cargo method to the base adapter', async () => {
@@ -179,16 +187,43 @@ describe('Scan queue re-sourced from POC-3 cargo (no simulated release targets)'
     expect(mapCargoToScanEvent({ ...RECORD, customs_status: 'PENDING' }).result).toBeUndefined();
   });
 
-  it('getScanQueue fetches only not-yet-released cargo and maps every row', async () => {
+  it('getScanQueue reads the /scan-queue endpoint and enriches each member', async () => {
+    // The queue's membership rule is the SERVER's ("not released AND yard-assigned
+    // AND not yet verified"), so it must come from /api/cargo/scan-queue. It used
+    // to read /api/cargo?is_released=false and let the panel filter on yard_block
+    // client-side, which only matched the real queue by coincidence.
     const inPort: CargoRecord = { ...RECORD, is_released: false, customs_status: 'PENDING' };
-    const fetchImpl = vi.fn(async () => ok([inPort]));
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).includes('/scan-queue')
+        ? ok([{ container_number: 'MAEU6123458', yard_block: 'A-12', status: 'SCAN_PENDING' }])
+        : ok(inPort)); // the per-container enrich returns ONE record, not a list
     const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
     const scans = await a.getScanQueue();
     expect(scans).toHaveLength(1);
     expect(scans[0]!.containerNo).toBe('MAEU6123458'); // a real POC-3 container, not a sim one
-    const url = String(fetchImpl.mock.calls[0]![0]);
-    expect(url).toContain('/api/cargo');
-    expect(url).toContain('is_released=false');
+
+    const urls = fetchImpl.mock.calls.map((c) => String(c[0]));
+    expect(urls[0]).toContain('/api/cargo/scan-queue');
+    // Enriched from the full record, so the panel's columns keep their values.
+    expect(urls.some((u) => u.includes('/api/cargo/MAEU6123458'))).toBe(true);
+  });
+
+  it('release / verify / yard-assignment use their own endpoints, not a column patch', async () => {
+    // Each is a distinct audited transition that emits its own event. PUT
+    // {is_released:true} faces the same VERIFY gate but reads as a field patch,
+    // which is what made a blocked release look like a failure.
+    const fetchImpl = vi.fn(async () => ok(RECORD));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await a.assignYard('MAEU6123458', 'A-12');
+    await a.verifyCargo('MAEU6123458', { verified: true });
+    await a.releaseCargo('MAEU6123458');
+
+    const calls = fetchImpl.mock.calls.map((c) => [String(c[0]), (c[1] as RequestInit).method]);
+    expect(calls[0]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/yard-assignment'), 'PUT']);
+    expect(calls[1]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/verify'), 'POST']);
+    expect(calls[2]).toEqual([expect.stringContaining('/api/cargo/MAEU6123458/release'), 'POST']);
   });
 });
 
@@ -516,5 +551,65 @@ describe('Poc3CargoAdapter — auth: bearer on every request + 401 self-heal', (
     expect(refreshToken).toHaveBeenCalledTimes(1);
     expect((fetchImpl.mock.calls[1]![1] as RequestInit).headers as Record<string, string>).toMatchObject({ authorization: 'Bearer FRESH' });
     expect(current).toBe('FRESH'); // stored for subsequent calls
+  });
+});
+
+describe('Poc3CargoAdapter — JNPA Port-Data API feed state (UC2-006)', () => {
+  const HEALTH = {
+    configured: false,
+    mode: 'DISABLED',
+    api_url: 'https://dt.jnpa.in/poc-api-data-access',
+    groups: [
+      { group: 'customs', kind: 'indexed', watermark_ts: '2026-08-07T06:44:45Z', last_status: 'ERROR', updated_at: '2026-08-07T09:36:09Z' },
+      { group: 'bathymetry', kind: 'static', watermark_ts: null, last_status: 'SKIPPED_STATIC', updated_at: '2026-08-07T09:36:09Z' },
+    ],
+    last_run: { id: 4541, group_slug: 'daily-reports', status: 'ERROR', error: 'Malformed reply' },
+  };
+
+  it('reads health and never lets an absent groups array reach the panel', async () => {
+    const fetchImpl = vi.fn(async () => ok({ ...HEALTH, groups: undefined }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const health = await a.getJnpaApiHealth();
+
+    expect(fetchImpl.mock.calls[0][0]).toContain('/poc3/api/integrations/jnpa/health');
+    // A missing array must become [], not undefined: the panel maps over it and a
+    // crashed Integration tab is a worse failure than an empty one.
+    expect(health.groups).toEqual([]);
+    expect(health.configured).toBe(false);
+  });
+
+  it('surfaces the DISABLED mode verbatim rather than inferring health', async () => {
+    const fetchImpl = vi.fn(async () => ok(HEALTH));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const health = await a.getJnpaApiHealth();
+
+    expect(health.mode).toBe('DISABLED');
+    expect(health.groups).toHaveLength(2);
+    expect(health.last_run?.error).toBe('Malformed reply');
+  });
+
+  it('requests the run trail with an explicit limit and unwraps the items envelope', async () => {
+    const fetchImpl = vi.fn(async () => ok({ items: [{ id: 4541, status: 'ERROR' }], count: 1 }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const runs = await a.getJnpaApiRuns(50);
+
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('limit=50');
+    expect(runs).toHaveLength(1);
+    expect(runs[0].id).toBe(4541);
+  });
+
+  it('asks the defect register for JSON, and reports an empty register as empty', async () => {
+    // The endpoint also serves Markdown; asking for the wrong format would give
+    // the panel a string it would silently render as zero defects.
+    const fetchImpl = vi.fn(async () => ok({ items: [], count: 0 }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const defects = await a.getJnpaApiDefects();
+
+    expect(String(fetchImpl.mock.calls[0][0])).toContain('format=json');
+    expect(defects).toEqual([]);
   });
 });

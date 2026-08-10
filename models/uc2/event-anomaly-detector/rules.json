@@ -1,0 +1,65 @@
+{
+  "artefact": "rule-set",
+  "module_id": "UC2-M4",
+  "module_name": "Event Sequence Anomaly Detection",
+  "version": "0.1.0",
+  "exported_at": "2026-08-09",
+  "source_of_truth": "services/ai/event-anomaly-detector/model.py",
+  "why_not_model_weights": "This detector is a deterministic rule engine over a container's ordered event trail. It has no learned parameters, so there is no model.joblib to ship. The rule set below IS the model: it is the complete, auditable statement of what the detector does, and it is what an evaluator should be handed when they ask to see the model.",
+  "input": {
+    "trail": "ordered [{eventType, ts}] for one container",
+    "now": "ISO-8601 evaluation time"
+  },
+  "output": "findings[] of {type, severity, reason}",
+  "sla_thresholds_hours": {
+    "GATE_OUT_SLA_H": 72,
+    "LEO_MOVE_SLA_H": 48,
+    "SCAN_START_SLA_H": 24
+  },
+  "rules": [
+    {
+      "id": "ANOMALY_MISSING_GATE_OUT",
+      "severity": "CRIT",
+      "trigger_event": "GATE_IN",
+      "requires_within_hours": 72,
+      "satisfied_by": ["GATE_OUT"],
+      "statement": "A container that gated in and has not gated out within 72 hours.",
+      "operational_meaning": "The box is still inside the facility long past the expected turn. This is the rule behind the long-dweller alerts."
+    },
+    {
+      "id": "ANOMALY_LEO_NO_MOVE",
+      "severity": "WARN",
+      "trigger_event": "LEO",
+      "requires_within_hours": 48,
+      "satisfied_by": ["GATE_OUT", "RAIL_OUT", "YARD_MOVE"],
+      "statement": "A Let Export Order was granted but the container has not moved within 48 hours.",
+      "operational_meaning": "Customs has cleared the box to leave and nothing has happened — an evacuation lag, not a customs problem."
+    },
+    {
+      "id": "ANOMALY_SCAN_FLAG_NO_SCAN",
+      "severity": "WARN",
+      "trigger_event": "CUSTOMS_FLAG",
+      "requires_within_hours": 24,
+      "satisfied_by": ["SCAN_START"],
+      "statement": "A container was selected for scanning but no scan started within 24 hours.",
+      "operational_meaning": "The scanner queue is not keeping up with RMS selection."
+    }
+  ],
+  "disclosures": [
+    {
+      "id": "D1",
+      "severity": "material",
+      "finding": "The service's metrics.json describes the algorithm as a 'rule engine + IsolationForest hybrid'. The IsolationForest is trained at import (`_iso = _train_isoforest()`) but is never referenced again — `detect_anomalies()` and `/predict` use the rules alone. No output of this service is influenced by it.",
+      "consequence": "The word 'hybrid', and the module docstring's claim that it 'flags statistically anomalous dwell durations via an IsolationForest', both overstate what runs. Corrected here; the service string should be corrected too.",
+      "corrected_algorithm_string": "deterministic rule engine (3 rules over the event trail)"
+    },
+    {
+      "id": "D2",
+      "severity": "material",
+      "finding": "The published precision of 1.0 (n=400) exercises ONE of the three rules. `_evaluate_precision()` builds trails containing only GATE_IN and an optional GATE_OUT, so ANOMALY_LEO_NO_MOVE and ANOMALY_SCAN_FLAG_NO_SCAN are never evaluated. The negative case always carries a GATE_OUT four hours after the GATE_IN, so rule 1 cannot fire falsely by construction.",
+      "consequence": "Precision 1.0 is true and reproducible, but it measures one rule against a trivially separable set. It is not evidence that the other two rules are precise.",
+      "honest_claim": "Rule 1 precision 1.0 on a labelled synthetic set (n=400). Rules 2 and 3 are unevaluated."
+    }
+  ],
+  "reproduce": "python -c \"import importlib.util,os; s=importlib.util.spec_from_file_location('m','services/ai/event-anomaly-detector/model.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(m._report)\""
+}

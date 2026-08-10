@@ -10,19 +10,18 @@
  * POC-3 does not model (e.g. originStream) render as "N/A" rather than redesign
  * the table.
  */
-import { Fragment, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   CalciteTable, CalciteTableHeader, CalciteTableRow, CalciteTableCell,
   CalciteSelect, CalciteOption, CalciteChip, CalciteButton, CalciteIcon, CalciteNotice,
   CalciteInput, CalciteLabel, CalciteLoader, CalciteList, CalciteListItem,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-// TODO(TEMP — ISO-6346 bypass): `isValidContainerNo` was removed from this import
-// ONLY because the New Cargo dialog's ISO-6346 gate is temporarily disabled for
-// UC2↔UC3 manual testing (see CreateCargoModal below). RESTORE this import and the
-// validation once end-to-end testing is complete. The shared validator in
-// @jnpa/schemas is unchanged and still used everywhere else (Movement search, mapper).
-import { ORIGIN_STREAMS, CONTAINER_STATUSES, EVENT_STATUS_TRANSITIONS } from '@jnpa/schemas';
+import { computeCheckDigit, isValidContainerNo } from '@jnpa/schemas';
+//
+// ORIGIN_STREAMS was also dropped: the Stream filter now builds its options from
+// the loaded rows, because that enum is the simulator's taxonomy and does not
+// match the values core.cargo actually stores. See the note on the select.
 import type { CargoCreateInput, CargoCustomsStatus, CargoLifecycleEvent, ContainerMovementDTO } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
@@ -36,6 +35,29 @@ import { NldsTrackDialog } from './NldsTrackDialog.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
+import {
+  nextGate, gateUi, customsLifecycleConflict, EXPORT_STATES,
+  type CargoGate, type VerifyKind,
+} from './cargoGates.js';
+import { scanSelectionFor } from './scanSelection.js';
+import { useRmsSelection } from '../state/useRmsSelection.js';
+
+/**
+ * Is this container's verify gate a SCAN, or just the pre-release check?
+ *
+ * Only a filed RMS selection or an operator's flag orders a scan; everything else
+ * passes VERIFIED as a custody gate with no examination behind it. Labelling the
+ * latter "Record scan" claimed an examination that never happened.
+ */
+const verifyKindFor = (customsStatus: string | null | undefined,
+  rmsSelected: ReadonlySet<string>, containerNo: string): VerifyKind => {
+  const result = customsStatus === 'CLEARED' ? 'CLEAR'
+    : customsStatus === 'HELD' ? 'HOLD'
+      : customsStatus === 'UNDER_INSPECTION' ? 'EXAM' : undefined;
+  return scanSelectionFor(result, rmsSelected.has(containerNo.trim().toUpperCase())).reason
+    ? 'SCAN' : 'RELEASE_CHECK';
+};
+import { CargoGateDialog } from './CargoGateDialog.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
 
@@ -73,40 +95,32 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
   );
   const trail = move.trail; // already ordered by ts in the adapter
   const lastIdx = trail.length - 1;
-  // Remaining workflow = the canonical CONTAINER_STATUSES order (schemas) beyond
-  // the FURTHEST stage the recorded trail has actually reached. Anchoring on the
-  // trail — not the folded container.status, which can run ahead of the visible
-  // events and collapse the rest of the workflow to nothing — means the pending
-  // steps are ALWAYS shown, reusing the existing order and never fabricating events.
-  const stageIdx = (t: string) =>
-    CONTAINER_STATUSES.indexOf(
-      ((EVENT_STATUS_TRANSITIONS as Record<string, string | undefined>)[t] ?? '') as (typeof CONTAINER_STATUSES)[number],
-    );
-  const curStageIdx = Math.max(-1, ...trail.map((e) => stageIdx(e.eventType)));
-  const pending = CONTAINER_STATUSES.filter((_s, idx) => idx > curStageIdx);
-  // One combined, ordered row list: recorded events first (Done / Current, or a
-  // preserved flag/hold/fail status), then the still-pending lifecycle stages.
-  const rows: Array<{
-    key: string; label: string; status: { label: string; color: string };
-    ts: string; facilityId: string; sourceSystem: string; pending: boolean;
-  }> = [
-    ...trail.map((e, i) => ({
-      key: `${e.eventType}-${e.ts}-${i}`,
-      label: prettyEvent(e.eventType),
-      status:
-        FLAG_STATUS[e.eventType] ??
-        (i === lastIdx
-          ? { label: 'Current', color: tokens.color.brand }
-          : { label: 'Done', color: tokens.congestion.GREEN }),
-      ts: e.ts, facilityId: e.facilityId, sourceSystem: e.sourceSystem, pending: false,
-    })),
-    ...pending.map((s) => ({
-      key: `pending-${s}`,
-      label: prettyEvent(s),
-      status: { label: 'Pending', color: tokens.color.textMuted },
-      ts: '', facilityId: '', sourceSystem: '', pending: true,
-    })),
-  ];
+  /**
+   * RECORDED EVENTS ONLY — no "pending" steps.
+   *
+   * This previously appended every `CONTAINER_STATUSES` value after the trail's
+   * furthest stage and labelled them "Pending". That enum is a flat union of every
+   * path a box can take (`… RAIL_IN, RAIL_OUT, UNDER_SCAN, HELD_CUSTOMS, STUFFING,
+   * DESTUFFING, ITRHO_IN_TRANSIT …`), not a sequence any single container follows,
+   * so a road import box was shown as still-to-come RAIL_IN / STUFFING /
+   * ITRHO_IN_TRANSIT — moves it will never make — and HELD_CUSTOMS, an exception
+   * state rendered as a scheduled step.
+   *
+   * That is a forecast, and this drawer's contract (see the docstring above) is
+   * that it fabricates nothing. The canonical per-leg step order now lives in
+   * panels/LifecycleSteps.tsx, where each step carries its real provenance or its
+   * documented reason for being absent.
+   */
+  const rows = trail.map((e, i) => ({
+    key: `${e.eventType}-${e.ts}-${i}`,
+    label: prettyEvent(e.eventType),
+    status:
+      FLAG_STATUS[e.eventType] ??
+      (i === lastIdx
+        ? { label: 'Current', color: tokens.color.brand }
+        : { label: 'Done', color: tokens.congestion.GREEN }),
+    ts: e.ts, facilityId: e.facilityId, sourceSystem: e.sourceSystem,
+  }));
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
@@ -150,8 +164,7 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
                     <span
                       style={{
                         width: 12, height: 12, borderRadius: '50%', flexShrink: 0, marginTop: 3,
-                        // Filled for reached stages, hollow for pending ones.
-                        background: row.pending ? tokens.color.bgPanel : row.status.color,
+                        background: row.status.color,
                         border: `2px solid ${row.status.color}`,
                       }}
                       aria-hidden
@@ -161,18 +174,16 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
                   {/* Content: event name, status, timestamp, facility, source. */}
                   <div style={{ paddingBottom: 16, flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <strong style={{ fontSize: 13, color: row.pending ? tokens.color.textMuted : tokens.color.text }}>{row.label}</strong>
+                      <strong style={{ fontSize: 13, color: tokens.color.text }}>{row.label}</strong>
                       <CalciteChip scale="s" value={row.status.label} style={{ ['--calcite-chip-text-color' as never]: row.status.color }}>
                         {row.status.label}
                       </CalciteChip>
                     </div>
-                    {!row.pending && (
-                      <div style={{ fontSize: 11.5, color: tokens.color.textMuted, marginTop: 2 }}>
-                        {new Date(row.ts).toLocaleString()}
-                        {row.facilityId ? ` · ${row.facilityId}` : ''}
-                        {row.sourceSystem ? ` · ${row.sourceSystem}` : ''}
-                      </div>
-                    )}
+                    <div style={{ fontSize: 11.5, color: tokens.color.textMuted, marginTop: 2 }}>
+                      {new Date(row.ts).toLocaleString()}
+                      {row.facilityId ? ` · ${row.facilityId}` : ''}
+                      {row.sourceSystem ? ` · ${row.sourceSystem}` : ''}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -223,112 +234,85 @@ function TimelineDrawer({ move, onClose }: { move: ContainerMovementDTO; onClose
 }
 
 /**
- * Discharge Report — the per-container view of lifecycle step 2/3 (vessel arrival →
- * discharge), opened from the Discharge button on that container's row.
+ * The gate confirmation for one movement row, wrapping the shared
+ * {@link CargoGateDialog}.
  *
- * Per markdowns/02_Import_Container_Lifecycle.md, the COARRI discharge confirmation
- * is NOT available for JNPA calls — the only COARRI sample in the corpus is a
- * Visakhapatnam call (INVTZ1VCT1, IMO 9385611), usable for schema only. So this
- * dialog reports the arrival/vessel facts that DO exist on the cargo record and
- * states plainly that the COARRI confirmation is outstanding.
- *
- * The Confirm action is a UI-level placeholder: it records nothing on the backend
- * (there is no discharge write in the POC-3 Cargo API), it just acknowledges the
- * milestone locally.
+ * It keeps the discharge report's context — vessel, ETA, yard, release state —
+ * which is genuinely useful at the discharge gate, and passes it as `facts`. The
+ * COARRI caveat rides along as the gate note: the source discharge document is
+ * unavailable for JNPA calls, but the lifecycle transition itself is real, and
+ * conflating those two is what made this dialog read as a no-op.
  */
 function DischargeReportModal({ move, onClose }: { move: ContainerMovementDTO; onClose: () => void }) {
-  const [done, setDone] = useState(false);
   const rec = move.cargo;
-  const containerNo = move.container.containerNo;
-
-  const rows: Array<[string, string]> = [
-    ['Container', containerNo],
+  const gate = gateOf(move) ?? 'discharge';
+  const rms = useRmsSelection();
+  const facts: Array<[string, string]> = [
+    ['Container', move.container.containerNo],
     ['Vessel', rec?.vessel_name || '—'],
     ['ETA', rec?.eta ? new Date(rec.eta).toLocaleString() : '—'],
     ['Customs status', rec?.customs_status ?? '—'],
     ['Yard block', rec?.yard_block || 'Not yet assigned'],
     ['Release state', rec?.is_released ? 'Released' : 'In port'],
-    ['Last event', `${move.lastEventType}${move.lastEventTs ? ` · ${new Date(move.lastEventTs).toLocaleString()}` : ''}`],
   ];
-
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(12,20,33,0.35)', zIndex: 1100 }} aria-hidden />
-      <div
-        role="dialog"
-        aria-label={`Discharge report for ${containerNo}`}
-        style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          width: 'min(520px, 96vw)', maxHeight: '90vh', background: tokens.color.bgPanel,
-          border: `1px solid ${tokens.color.border}`, borderRadius: 12,
-          boxShadow: '0 12px 40px rgba(12,20,33,0.28)', zIndex: 1101, display: 'flex', flexDirection: 'column',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', background: tokens.color.brand, color: '#fff', borderRadius: '12px 12px 0 0' }}>
-          <CalciteIcon icon="export" scale="s" />
-          <strong style={{ fontSize: 14 }}>Discharge Report</strong>
-          <span style={{ fontSize: 12, opacity: 0.85 }}>{containerNo}</span>
-          <button onClick={onClose} aria-label="Close" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex' }}>
-            <CalciteIcon icon="x" scale="s" />
-          </button>
-        </div>
-
-        <div style={{ padding: '12px 14px', overflowY: 'auto' }}>
-          {done ? (
-            <SuccessNotice
-              title="Discharge acknowledged."
-              details={[
-                { label: 'Container', value: containerNo },
-                { label: 'Vessel', value: rec?.vessel_name || '—' },
-              ]}
-            />
-          ) : (
-            <>
-              <div
-                style={{
-                  display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px',
-                  fontSize: 12.5, background: tokens.color.bgElevated,
-                  border: `1px solid ${tokens.color.border}`, borderRadius: 6, padding: '10px 12px',
-                }}
-              >
-                {rows.map(([label, value]) => (
-                  <Fragment key={label}>
-                    <span style={{ color: tokens.color.textMuted }}>{label}</span>
-                    <strong style={{ color: tokens.color.text }}>{value}</strong>
-                  </Fragment>
-                ))}
-              </div>
-
-              {/* Honest about the missing upstream document (markdown §Hero A step 3). */}
-              <CalciteNotice open kind="warning" icon="information" scale="s" style={{ marginTop: 10 }}>
-                <div slot="title">COARRI discharge confirmation not available</div>
-                <div slot="message">
-                  No COARRI discharge report exists for JNPA calls in this dataset, so the
-                  discharge timestamp and crane/bay detail cannot be shown. Confirming here
-                  records the milestone in this session only — nothing is written to the
-                  backend.
-                </div>
-              </CalciteNotice>
-            </>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
-          {done ? (
-            <CalciteButton scale="s" onClick={onClose}>Close</CalciteButton>
-          ) : (
-            <>
-              <CalciteButton scale="s" appearance="outline" kind="neutral" onClick={onClose}>Cancel</CalciteButton>
-              <CalciteButton scale="s" iconStart="export" onClick={() => setDone(true)}>Confirm discharge</CalciteButton>
-            </>
-          )}
-        </div>
-      </div>
-    </>
+    <CargoGateDialog
+      gate={gate}
+      containerNo={move.container.containerNo}
+      lifecycle={lifecycleOf(move)}
+      yardBlock={rec?.yard_block}
+      customsStatus={rec?.customs_status}
+      verifyKind={verifyKindFor(rec?.customs_status, rms.selected, move.container.containerNo)}
+      vesselName={rec?.vessel_name}
+      facts={facts}
+      note={gate === 'discharge' ? (
+        <CalciteNotice open kind="warning" icon="information" scale="s">
+          <div slot="title">COARRI discharge confirmation not available</div>
+          <div slot="message">
+            No COARRI discharge report exists for JNPA calls in this dataset, so the
+            crane, bay and per-move detail cannot be shown. Confirming still records
+            the real lifecycle transition — it does not invent the missing document.
+          </div>
+        </CalciteNotice>
+      ) : undefined}
+      onClose={onClose}
+    />
   );
 }
 
+const PAGE_SIZE = 50;
+
 const CUSTOMS_STATUSES: CargoCustomsStatus[] = ['PENDING', 'CLEARED', 'HELD', 'UNDER_INSPECTION'];
+
+
+/** A row with no recorded status has not started the lifecycle — treat as CREATED. */
+const lifecycleOf = (m: ContainerMovementDTO): string =>
+  m.cargo?.lifecycle_status || 'CREATED';
+
+/**
+ * The next lifecycle gate for a row — discharge → yard → verify → release.
+ *
+ * Shared with the Scan tab (panels/cargoGates.ts) so the two panels cannot
+ * disagree. They previously each had their own idea of what came next, which is
+ * how a container verified in Scan ended up with no way to release it here.
+ *
+ * `inYard` is taken from the record's own yard block: a row whose block was
+ * written directly still reads `CREATED` to the state machine, and its real next
+ * step is to catch that up rather than to be discharged again. `direction` is read
+ * because the export leg shares none of these gates.
+ */
+const gateOf = (m: ContainerMovementDTO): CargoGate | null =>
+  nextGate(lifecycleOf(m), {
+    inYard: Boolean(m.cargo?.yard_block),
+    direction: m.cargo?.direction,
+  });
+
+/** Colour a lifecycle chip by how far along it is: start → mid → complete. */
+function lifecycleColor(status: string): string {
+  if (status === 'RELEASED' || status === 'VESSEL_LOADED') return tokens.congestion.GREEN;
+  if (status === 'CREATED') return tokens.color.textMuted;
+  return tokens.color.brand;
+}
 
 /**
  * Create Cargo modal — books a NEW cargo record into the POC-3 shared backend via
@@ -345,20 +329,42 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState(false);
   const set = (patch: Partial<CargoCreateInput>) => setForm((f) => ({ ...f, ...patch }));
   const cn = form.container_number.trim().toUpperCase().replace(/\s+/g, '');
-  // TODO(TEMP — ISO-6346 bypass): The Create button was gated on the ISO-6346
-  // check digit via `isValidContainerNo(cn)`, which blocked any number whose check
-  // digit did not match. For UC2↔UC3 manual testing the gate is temporarily reduced
-  // to "required field filled" (non-empty container number) so any container number
-  // can be created. RESTORE `const cnValid = isValidContainerNo(cn);` (and the
-  // import above) after end-to-end testing is complete. Backend POST /api/cargo and
-  // the request payload are unchanged — only this client-side gate is relaxed.
-  const cnValid = cn.length > 0; // was: isValidContainerNo(cn)
+  /**
+   * ISO-6346 check-digit gate (restored — it was bypassed for UC2↔UC3 manual
+   * testing, which let phantom numbers like ABCD1234567 into the shared store).
+   *
+   * The 11th digit is a checksum over the first ten characters, so a single
+   * mistyped character almost always fails it. Catching that HERE keeps bad
+   * identities out of a store three PoCs read from — a phantom container number
+   * is not a display bug, it is a row that can never be reconciled with any
+   * manifest, gate document or customs record.
+   */
+  const cnValid = isValidContainerNo(cn);
+  /**
+   * The digit the number SHOULD have ended with, when the structure is right and
+   * only the checksum is wrong. Telling the operator "check digit should be 8"
+   * turns a rejection into a correction; "invalid container number" does not.
+   * Null when the shape itself is wrong — there is no meaningful digit to suggest.
+   */
+  const expectedCheckDigit = (() => {
+    if (cnValid || !/^[A-Z]{3}[UJZ][0-9]{7}$/.test(cn)) return null;
+    try {
+      return computeCheckDigit(cn.slice(0, 10));
+    } catch {
+      return null;
+    }
+  })();
 
   const submit = async () => {
     if (!adapter.createCargo) { setError('Cargo write is unavailable in this data mode.'); return; }
-    // TODO(TEMP — ISO-6346 bypass): message relaxed to match the temporary
-    // required-field-only gate. Restore the ISO-6346 message with the validation.
-    if (!cnValid) { setError('Enter a container number.'); return; }
+    if (!cnValid) {
+      setError(cn.length === 0
+        ? 'Enter a container number.'
+        : expectedCheckDigit != null
+          ? `${cn} fails the ISO-6346 check digit — it should end in ${expectedCheckDigit}.`
+          : `${cn} is not a valid ISO-6346 container number (4 letters, the 4th being U, J or Z, then 7 digits).`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -412,6 +418,15 @@ function CreateCargoModal({ onClose }: { onClose: () => void }) {
                   status={form.container_number && !cnValid ? 'invalid' : 'idle'}
                   onCalciteInputInput={(e) => set({ container_number: (e.target as unknown as { value: string }).value })} />
               </CalciteLabel>
+              {/* Inline, as you type — naming the digit turns a rejection into a
+                  correction. Silent until something has actually been typed. */}
+              {form.container_number.trim() !== '' && !cnValid && (
+                <p style={{ fontSize: 11.5, color: tokens.severity.CRIT, margin: '-6px 0 6px' }}>
+                  {expectedCheckDigit != null
+                    ? <>ISO-6346 check digit fails — <code>{cn}</code> should end in <strong>{expectedCheckDigit}</strong>.</>
+                    : <>Not an ISO-6346 number: 3 letters, then U / J / Z, then 7 digits (e.g. <code>MAEU6123458</code>).</>}
+                </p>
+              )}
               <CalciteLabel>Vessel name
                 <CalciteInput value={form.vessel_name ?? ''} placeholder="MAERSK SEMBAWANG"
                   onCalciteInputInput={(e) => set({ vessel_name: (e.target as unknown as { value: string }).value })} />
@@ -532,6 +547,8 @@ function DeleteCargoDialog({ containerNo, onClose }: { containerNo: string; onCl
 }
 
 export function ContainerMovements() {
+  // Shared with the Scan tab: whether a scan was ever ordered for each container.
+  const rms = useRmsSelection();
   const { adapter, role, lang } = useApp();
   const [stream, setStream] = useState<OriginStream | 'ALL'>('ALL');
   // Container whose lifecycle timeline is open in the slide-over (null = closed).
@@ -561,21 +578,105 @@ export function ContainerMovements() {
   const [released, setReleased] = useState<'ALL' | 'IN_PORT' | 'RELEASED'>('ALL');
   // Bumped after any cargo write → this list refetches from the Cargo API.
   const cargoRev = useCargoRefresh();
-  const state = useAsync<ContainerMovementDTO[]>(
-    () => adapter.getContainerMovements({
-      role,
-      ...(searchApplied ? { containerNo: searchApplied } : {}),
-      ...(stream !== 'ALL' ? { originStream: stream } : {}),
-      ...(customsStatus !== 'ALL' ? { customsStatus } : {}),
-      ...(released !== 'ALL' ? { isReleased: released === 'RELEASED' } : {}),
-    }),
-    [adapter, role, stream, customsStatus, released, searchApplied, cargoRev],
+  // Server-side pagination. The register is ~11,900 rows, so the page must be
+  // fetched rather than sliced: the old code asked for 100 and rendered the first
+  // 50, which meant rows 51+ were fetched and thrown away and rows 101+ were
+  // simply unreachable.
+  const [pageIndex, setPageIndex] = useState(0);
+  // Any filter change invalidates the current page — otherwise a narrower filter
+  // leaves you stranded on a page that no longer exists, showing nothing.
+  //
+  // The `n === 0 ? n : 0` returns the SAME value when already on page 1, so React
+  // bails out of the re-render and the fetch below is not fired twice. Only a real
+  // reset (from page 2+) costs a refetch, which it has to.
+  useEffect(() => {
+    setPageIndex((n) => (n === 0 ? n : 0));
+  }, [stream, customsStatus, released, searchApplied]);
+
+  const page = useAsync<{ items: ContainerMovementDTO[]; total: number | null }>(
+    () => {
+      const filter = {
+        role,
+        limit: PAGE_SIZE,
+        offset: pageIndex * PAGE_SIZE,
+        ...(searchApplied ? { containerNo: searchApplied } : {}),
+        ...(stream !== 'ALL' ? { originStream: stream } : {}),
+        ...(customsStatus !== 'ALL' ? { customsStatus } : {}),
+        ...(released !== 'ALL' ? { isReleased: released === 'RELEASED' } : {}),
+      };
+      return adapter.getContainerMovementsPage
+        ? adapter.getContainerMovementsPage(filter)
+        : adapter.getContainerMovements(filter).then((items) => ({ items, total: null }));
+    },
+    [adapter, role, stream, customsStatus, released, searchApplied, pageIndex, cargoRev],
   );
+  // Adapt the paged result back to the shape <Panel> renders, so the loading and
+  // error handling below are unchanged.
+  const state = {
+    ...page,
+    data: page.data?.items,
+  } as ReturnType<typeof useAsync<ContainerMovementDTO[]>>;
+  const total = page.data?.total ?? null;
+  // Paging maths. Without a total the API gave us no count, so we cannot know how
+  // many pages there are — pageCount collapses to 1 and the controls hide rather
+  // than guessing.
+  const pageCount = total !== null ? Math.max(1, Math.ceil(total / PAGE_SIZE)) : 1;
+  const rangeFrom = pageIndex * PAGE_SIZE + 1;
+  const rangeTo = pageIndex * PAGE_SIZE + (page.data?.items.length ?? 0);
+  /**
+   * Stream options taken from the DATA, not the enum — see the note on the select.
+   *
+   * Derived from the currently-loaded page, so it cannot offer a value that would
+   * filter to nothing. Held across filter changes would be better still, but the
+   * page is the only set we can see without a distinct-values endpoint.
+   */
+  const streamOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const m of page.data?.items ?? []) {
+      const s = m.cargo?.origin_stream;
+      if (s) seen.add(s);
+    }
+    return [...seen].sort();
+  }, [page.data]);
   // Reflect the manual customs flag (customsFlagStore) so the Flag action visibly
   // transitions the container's Customs cell to a "Flagged" state. Raw snapshot
   // (not audience-scoped) so the operator who flagged always sees the transition.
   const flags = useSyncExternalStore(customsFlagStore.subscribe, customsFlagStore.getSnapshot, customsFlagStore.getSnapshot);
   const flaggedNos = useMemo(() => new Set(flags.map((f) => f.containerNo)), [flags]);
+
+  /** Container whose flag write is in flight (null = none), so the row can spin. */
+  const [flagging, setFlagging] = useState<string | null>(null);
+  const [flagError, setFlagError] = useState<string | null>(null);
+
+  /**
+   * Flag a container for a customs scan — for real.
+   *
+   * Writes `customs_status = UNDER_INSPECTION` to the shared cargo record, so the
+   * flag survives a reload and is visible to every other panel and to UC-III. The
+   * in-memory notification is still raised alongside it (that is what the
+   * Notifications centre reads), but it is no longer the only effect: previously
+   * Flag did nothing but push a client-side notification that vanished on refresh.
+   *
+   * ⚠ Flagging does NOT by itself put the box in the Scan queue. That queue is
+   * membership-by-yard ("not released AND yard-assigned AND not yet verified") —
+   * customs_status is not part of its rule. A flagged container appears there once
+   * it has a yard assignment.
+   */
+  const flagForScan = async (m: ContainerMovementDTO) => {
+    const cn = m.container.containerNo;
+    if (!adapter.updateCargo) { setFlagError('Cargo write is unavailable in this data mode.'); return; }
+    setFlagging(cn);
+    setFlagError(null);
+    try {
+      await adapter.updateCargo(cn, { customs_status: 'UNDER_INSPECTION' });
+      customsFlagStore.flagForCustoms(cn, m.facilityId); // notification, as before
+      cargoRefreshStore.bump();
+    } catch (e) {
+      setFlagError(`${cn}: ${cargoErrorMessage(e)}`);
+    } finally {
+      setFlagging(null);
+    }
+  };
 
   return (
     <>
@@ -614,9 +715,31 @@ export function ContainerMovements() {
               />
             </div>
           </div>
-          {/* Sources per event are in the trail (TOS gate/yard, ICEGATE customs,
-              FOIS rail, e-Seal). See the per-record Source column + timeline. */}
-          <div><SourceBadge source="TOS · ICEGATE · FOIS · e-Seal" live /></div>
+          {/* ⚠ The badge names POC-3 Cargo, NOT ICEGATE.
+              These rows are `core.cargo` records. That set shares ZERO containers
+              with `core.ooc_item` — the filed customs documents on the Customs and
+              Scan tabs (00_Session_Context.md) — and the CLEARED customs_status
+              values are seeded rather than derived from a filed out-of-charge. The
+              old badge read "TOS · ICEGATE · FOIS · e-Seal", claiming ICEGATE as a
+              source for rows no ICEGATE document backs. Per-event source systems
+              are still shown in the Source column and the timeline. */}
+          <div><SourceBadge source="POC-3 Cargo" live /></div>
+          {flagError && (
+            <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ margin: '6px 0' }}>
+              <div slot="title">Could not flag for customs</div>
+              <div slot="message">{flagError}</div>
+            </CalciteNotice>
+          )}
+          <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '6px 0 4px' }}>
+            <div slot="title">These are POC-3 cargo records, not filed customs documents</div>
+            <div slot="message">
+              This grid tracks the shared Cargo API. Its containers do not overlap the
+              filed manifests, bills of entry or gate documents shown on the Customs,
+              Scan and Gate tabs, so a customs status here is the cargo record&apos;s own
+              field — not evidence of a granted out-of-charge. Use the Import tab to
+              follow a container through its actual filed documents.
+            </div>
+          </CalciteNotice>
           {/* Container Search + POC-3 filters (additive; the Stream filter below is
               unchanged). Search = exact ISO-6346 lookup (GET /api/cargo/{id});
               Customs status / Release state map to the existing GET /api/cargo params. */}
@@ -673,16 +796,71 @@ export function ContainerMovements() {
               </CalciteSelect>
             </CalciteLabel>
           </div>
+          {/* ⚠ The options come from the LOADED ROWS, not from the ORIGIN_STREAMS
+              enum. That enum is the UC-2 simulator's taxonomy (IMPORT_CFS,
+              EXPORT_DPE, …); `core.cargo.origin_stream` does not use it — it is
+              NULL on 11,939 of 11,944 records and 'UC-II' on the rest. Offering the
+              enum meant every option filtered to zero rows once the parameter was
+              actually sent. Driving the list off the data keeps the control honest,
+              and it grows on its own as the column gets populated. */}
           <CalciteSelect
             label="Stream filter"
             onCalciteSelectChange={(e) => setStream((e.target as unknown as { value: OriginStream | 'ALL' }).value)}
           >
             <CalciteOption value="ALL" selected={stream === 'ALL'}>All streams</CalciteOption>
-            {ORIGIN_STREAMS.map((s) => (
+            {streamOptions.map((s) => (
               <CalciteOption key={s} value={s} selected={stream === s}>{s}</CalciteOption>
             ))}
           </CalciteSelect>
-          <p style={{ fontSize: 12, color: 'var(--calcite-color-text-3)' }}>{moves.length} containers</p>
+          {streamOptions.length === 0 && (
+            <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '4px 0 0' }}>
+              No container in this result set declares an origin stream —
+              <code> origin_stream</code> is unset on the cargo records, so there is
+              nothing to filter by. Use Customs status or Release state instead.
+            </p>
+          )}
+          {/* The count is the FILTERED total from X-Total-Count, not the page
+              length. `moves.length` alone read "100 containers" on every filter,
+              because 100 is the default page size — which is exactly what made
+              the filters look like they were doing nothing. */}
+          {/* The count is the FILTERED total from X-Total-Count, not the page
+              length. `moves.length` alone read "100 containers" on every filter,
+              because 100 is the default page size — which is exactly what made
+              the filters look like they were doing nothing. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '6px 0' }}>
+            <p style={{ fontSize: 12, color: 'var(--calcite-color-text-3)', margin: 0 }}>
+              {total !== null
+                ? total === 0
+                  ? 'No containers match the current filters'
+                  : <>Showing <strong>{rangeFrom.toLocaleString()}–{rangeTo.toLocaleString()}</strong> of{' '}
+                      <strong>{total.toLocaleString()}</strong> containers</>
+                : <>{moves.length.toLocaleString()} container{moves.length === 1 ? '' : 's'}</>}
+            </p>
+
+            {/* Server-side paging: each click refetches with a new offset. Only
+                rendered when there is more than one page. */}
+            {pageCount > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                <CalciteButton
+                  scale="s" appearance="outline" kind="neutral" iconStart="chevron-left"
+                  disabled={pageIndex === 0 || page.loading}
+                  onClick={() => setPageIndex((n) => Math.max(0, n - 1))}
+                >
+                  Previous
+                </CalciteButton>
+                <span style={{ fontSize: 12, color: tokens.color.textMuted, minWidth: 96, textAlign: 'center' }}>
+                  Page {pageIndex + 1} of {pageCount.toLocaleString()}
+                </span>
+                <CalciteButton
+                  scale="s" appearance="outline" kind="neutral" iconEnd="chevron-right"
+                  disabled={pageIndex >= pageCount - 1 || page.loading}
+                  onClick={() => setPageIndex((n) => n + 1)}
+                >
+                  Next
+                </CalciteButton>
+              </div>
+            )}
+          </div>
           <CalciteTable caption="container movements">
             <CalciteTableRow slot="table-header">
               <CalciteTableHeader heading="Container" />
@@ -696,10 +874,14 @@ export function ContainerMovements() {
               <CalciteTableHeader heading="Source" />
               <CalciteTableHeader heading="Events" />
               <CalciteTableHeader heading="Customs" />
-              <CalciteTableHeader heading="Discharge" />
+              {/* Action where discharge is legal, current state everywhere else. */}
+              <CalciteTableHeader heading="Lifecycle" />
               <CalciteTableHeader heading="Manage" />
             </CalciteTableRow>
-            {moves.slice(0, 50).map((m) => (
+            {/* No client-side slice: the server already returned exactly this
+                page (limit = PAGE_SIZE, offset = pageIndex * PAGE_SIZE). Slicing
+                here again would silently hide rows the user paged to. */}
+            {moves.map((m) => (
               <CalciteTableRow key={m.container.containerNo}>
                 <CalciteTableCell>{m.container.containerNo}</CalciteTableCell>
                 <CalciteTableCell>
@@ -741,44 +923,117 @@ export function ContainerMovements() {
                   </CalciteButton>
                 </CalciteTableCell>
                 <CalciteTableCell>
-                  {flaggedNos.has(m.container.containerNo) ? (
-                    // Flagged state — the Flag action transitioned this container.
-                    <CalciteChip
-                      scale="s"
-                      icon="flag"
-                      value="Flagged"
-                      title="Flagged for customs scan"
-                      style={{ ['--calcite-chip-text-color' as never]: tokens.congestion.AMBER }}
-                    >
-                      Flagged
-                    </CalciteChip>
-                  ) : (
-                    <CalciteButton
-                      scale="s"
-                      appearance="outline"
-                      kind="danger"
-                      iconStart="flag"
-                      title="Flag this container for a customs scan (raises a notification)"
-                      onClick={() => customsFlagStore.flagForCustoms(m.container.containerNo, m.facilityId)}
-                    >
-                      Flag
-                    </CalciteButton>
-                  )}
+                  {/* Conditional on the customs disposition, not on a session flag.
+                      This used to show a Flag button on EVERY row — including
+                      released ones, which have left the port and cannot be scanned —
+                      and clicking it only raised an in-memory notification that
+                      vanished on reload. It now writes customs_status for real. */}
+                  {(() => {
+                    const cs = m.cargo?.customs_status ?? 'PENDING';
+                    const released = m.cargo?.is_released || lifecycleOf(m) === 'RELEASED';
+                    const sessionFlagged = flaggedNos.has(m.container.containerNo);
+
+                    // Gone from the port — the customs outcome is history, not an
+                    // action. UNLESS the two tracks contradict each other, in which
+                    // case greying it out would present an impossible record as a
+                    // settled one.
+                    if (released) {
+                      const clash = customsLifecycleConflict(cs, lifecycleOf(m));
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <CalciteChip scale="s" value={cs}
+                            title={clash ? clash.message
+                              : 'Container has left the port — its customs disposition is final.'}
+                            style={{ ['--calcite-chip-text-color' as never]:
+                              clash ? tokens.severity.CRIT : tokens.color.textMuted }}>
+                            {cs}
+                          </CalciteChip>
+                          {clash && (
+                            <CalciteIcon icon="exclamation-mark-triangle" scale="s"
+                              title={clash.message}
+                              style={{ color: tokens.severity.CRIT }} />
+                          )}
+                        </span>
+                      );
+                    }
+                    // Already carrying a disposition — show it rather than re-offering Flag.
+                    if (cs !== 'PENDING' || sessionFlagged) {
+                      const label = cs === 'UNDER_INSPECTION' ? 'Flagged' : cs;
+                      const color = cs === 'CLEARED' ? tokens.kpi.better
+                        : cs === 'HELD' ? tokens.severity.CRIT : tokens.congestion.AMBER;
+                      return (
+                        <CalciteChip scale="s" icon={cs === 'CLEARED' ? 'check' : 'flag'} value={label}
+                          title={cs === 'UNDER_INSPECTION'
+                            ? 'Flagged for customs scan — record the result on the Scan step of the Import tab.'
+                            : cs === 'CLEARED'
+                              ? 'Customs cleared (an out-of-charge sets this).'
+                              : `Customs status: ${cs}`}
+                          style={{ ['--calcite-chip-text-color' as never]: color }}>
+                          {label}
+                        </CalciteChip>
+                      );
+                    }
+                    return (
+                      <CalciteButton
+                        scale="s"
+                        appearance="outline"
+                        kind="danger"
+                        iconStart="flag"
+                        loading={flagging === m.container.containerNo}
+                        disabled={flagging !== null}
+                        title="Flag for a customs scan — sets customs_status to UNDER_INSPECTION on the shared record"
+                        onClick={() => void flagForScan(m)}
+                      >
+                        Flag
+                      </CalciteButton>
+                    );
+                  })()}
                 </CalciteTableCell>
                 <CalciteTableCell>
-                  {/* Per-container discharge report (lifecycle step 2/3). Opens a
-                      dialog with this container's vessel/ETA facts; the confirm
-                      action is UI-level only — no backend discharge write exists. */}
-                  <CalciteButton
-                    scale="s"
-                    appearance="outline"
-                    kind="brand"
-                    iconStart="export"
-                    title="Open the discharge report for this container"
-                    onClick={() => setDischargeTarget(m)}
-                  >
-                    Discharge
-                  </CalciteButton>
+                  {/* The NEXT GATE, not a fixed action. The lifecycle is
+                      forward-only with mandatory gates, so offering a move the
+                      container is not eligible for produced a 409 the operator
+                      read as a failure. Shared with the Scan tab via cargoGates.
+                      A released or export row has no gate and shows its state. */}
+                  {(() => {
+                    const gate = gateOf(m);
+                    if (gate && gate !== 'done') {
+                      // The button must say which check it is: on a facilitated box
+                      // the verify gate is a pre-release check, not a scan.
+                      const ui = gateUi(gate, verifyKindFor(
+                        m.cargo?.customs_status, rms.selected, m.container.containerNo));
+                      return (
+                        <CalciteButton
+                          scale="s"
+                          appearance="outline"
+                          kind="brand"
+                          iconStart={ui.icon}
+                          title={`${ui.title} — currently ${lifecycleOf(m)}`}
+                          onClick={() => setDischargeTarget(m)}
+                        >
+                          {ui.label}
+                        </CalciteButton>
+                      );
+                    }
+                    const st = lifecycleOf(m);
+                    const dir = (m.cargo?.direction ?? '').toUpperCase();
+                    // No gate applies: either the export leg (different machine) or
+                    // already released. Say which, so an absent button reads as a
+                    // reason rather than a gap.
+                    const why = dir === 'EXPORT' || EXPORT_STATES.includes(st)
+                      ? 'Export container — it runs the export states (EXPORT_BOOKED → … → VESSEL_LOADED), not the import gates.'
+                      : 'Released — the import lifecycle is complete and handed over to UC-III.';
+                    return (
+                      <CalciteChip
+                        scale="s"
+                        value={st}
+                        title={`${st}\n\n${why}`}
+                        style={{ ['--calcite-chip-text-color' as never]: lifecycleColor(st) }}
+                      >
+                        {st.replace(/_/g, ' ')}
+                      </CalciteChip>
+                    );
+                  })()}
                 </CalciteTableCell>
                 <CalciteTableCell>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

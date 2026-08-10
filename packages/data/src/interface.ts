@@ -137,6 +137,26 @@ export interface CargoRecord {
   pre_document_status?: CargoPreDocStatus | null;
   /** Origin stream (surfaced in the Movements tab's Stream column). */
   origin_stream?: string | null;
+  /**
+   * Position in the forward-only UC-II lifecycle:
+   * `CREATED → VESSEL_DISCHARGED → YARD_ASSIGNED → VERIFIED → RELEASED`
+   * (plus optional planning states, and the export-leg states from migration 0115).
+   *
+   * The UI gates its lifecycle ACTIONS on this — a transition is only offered from a
+   * state it is legal from, so the server's 409 becomes a button that isn't shown
+   * rather than an error the operator has to read.
+   */
+  lifecycle_status?: string | null;
+  /**
+   * Which leg this container is on: `IMPORT` | `EXPORT` | `TRANSHIPMENT`.
+   *
+   * The two legs run DIFFERENT state machines off the same `lifecycle_status`
+   * column — import goes `… → VESSEL_DISCHARGED → YARD_ASSIGNED → … → RELEASED`,
+   * export goes `… → EXPORT_BOOKED → … → VESSEL_LOADED`. Both start at `CREATED`,
+   * so status alone cannot tell you which transitions are meaningful; the UI must
+   * read direction as well before offering a leg-specific action.
+   */
+  direction?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -178,6 +198,21 @@ export interface GateQueueForecastDTO {
   /** 30–120 min ahead, per-step queue length. */
   curve: Array<{ ts: string; predictedQueue: number }>;
   recommendedDeferralWindows: Array<{ from: string; to: string; reason: string }>;
+  /**
+   * WHICH engine produced this (ticket UC2-015).
+   *
+   * `MODEL` — the trained Python gate-queue forecaster answered.
+   * `HEURISTIC` — it did not, and a deterministic arrival/service curve stood in.
+   *
+   * Not optional in spirit: the dashboard used to render the heuristic with no
+   * way to tell it apart from a model, which is what made "proven end-to-end"
+   * untrue. Anything that displays a forecast must display this too.
+   */
+  source?: 'MODEL' | 'HEURISTIC';
+  /** Model version from `GET /health`, when a model answered. */
+  modelVersion?: string;
+  /** Why the fallback engaged — shown on the degraded badge. */
+  fallbackReason?: string;
 }
 
 export interface PendencyDTO {
@@ -861,6 +896,214 @@ export interface RmsScanContainer {
   goods_description?: string | null;
 }
 
+// ---- Data upload (ingest) ---------------------------------------------------
+//
+// Every ingest module on POC-3 exposes the SAME two-step contract, which is what
+// makes one shared dialog possible:
+//
+//   POST /api/{module}/validate  -> dry-run: parse + preview, writes nothing
+//   POST /api/{module}/upload    -> persist valid rows, idempotent by row hash
+//
+// Both take multipart `file` plus ONE discriminator naming the document kind,
+// whose form field differs per module (`list_type` / `doc_type` / `facility`).
+// Mirrors the POC-1 upload panels, which drive the same endpoints.
+//
+// ⚠ Uploads are RBAC-gated server-side (CONTROL_ROOM / CUSTOMS / ADMIN). A role
+// without the right claim gets 403 `upload_forbidden` — surface it, don't hide it.
+
+/** Which ingest module a panel's Import button targets, and as what document. */
+export interface UploadTarget {
+  /** URL segment: 'shipping-lines' | 'gate-docs' | 'cfs-ecy' | 'customs'. */
+  module: string;
+  /**
+   * The multipart field naming the document kind, e.g. 'list_type'.
+   *
+   * OPTIONAL because not every module has one. Customs detects the document type
+   * from the FILENAME (CHPOI03 / CHPOI10 / CHPOI13 prefixes, .TXT, an .XLSX
+   * header probe), so there is nothing for the caller to declare — and sending a
+   * discriminator it does not read would be a field the server silently ignores.
+   */
+  param?: string;
+  /** The value for `param`, e.g. 'EAL'. Omitted with `param`. */
+  value?: string;
+  /** `accept` hint for the OS file dialog. The backend detects format by content. */
+  accept?: string;
+  /** Human label shown in the dialog, e.g. "EAL — Export Advance List". */
+  label?: string;
+  /**
+   * Whether `POST /api/{module}/validate` exists for this module. Default true.
+   *
+   * ⚠ Customs has no parse-without-persist path, and faking one by importing then
+   * deleting would leave ledger and event rows behind. Rather than offer a preview
+   * the server cannot honour, the dialog imports directly and says so. Set false
+   * ONLY where the endpoint genuinely does not exist — a false here removes the
+   * operator's chance to see what a file contains before it lands.
+   */
+  dryRun?: boolean;
+  /** Whether `GET /api/{module}/templates/{value}` exists. Default true. */
+  template?: boolean;
+}
+
+/**
+ * One rejected row. Field names verified against a live
+ * `POST /api/shipping-lines/validate` response — a missing-column rejection comes
+ * back as `{row_number: null, column_name: 'Container Number',
+ * error_code: 'missing_column', error_detail: '…download the latest template'}`.
+ */
+export interface UploadParseError {
+  row_number?: number | null;
+  column_name?: string | null;
+  error_code?: string | null;
+  error_detail?: string | null;
+  raw_value?: string | null;
+}
+
+/** Row counts, as the parser reported them. Never recomputed client-side. */
+export interface UploadSummary {
+  rows?: number | null;
+  valid?: number | null;
+  invalid?: number | null;
+  duplicates?: number | null;
+  importable?: number | null;
+  errors?: number | null;
+  warnings?: number | null;
+  rejected?: boolean | null;
+  valid_bool?: boolean | null;
+}
+
+/**
+ * The validate/upload response. `status` distinguishes outcomes the UI must NOT
+ * conflate: VALIDATED (dry run passed) · SUCCESS · PARTIAL · SKIPPED_DUPLICATE
+ * (already imported — idempotency working, not a failure) · REJECTED / FAILED.
+ *
+ * ⚠ Counts live under `summary`, and the import step reports `imported`/`skipped`
+ * at the top level. Both shapes are modelled here because one dialog renders both.
+ */
+export interface UploadResult {
+  status?: string | null;
+  valid?: boolean | null;
+  file_id?: number | string | null;
+  summary?: UploadSummary | null;
+  /** Import step only: rows actually persisted / skipped as duplicates. */
+  imported?: number | null;
+  skipped?: number | null;
+  invalid?: number | null;
+  errors?: UploadParseError[] | null;
+  warnings?: UploadParseError[] | null;
+  preview?: unknown[] | null;
+  [k: string]: unknown;
+}
+
+// ---- Per-container import chain views --------------------------------------
+//
+// The import lifecycle (markdowns/02_Import_Container_Lifecycle.md) runs
+// `IGM -> arrival -> discharge -> yard -> [RMS] -> OOC -> E-DO -> PIN -> EIR ->
+// CODECO gate-out`, but the dashboard only ever showed those documents in
+// separate REGISTERS on four different tabs. These two container-keyed reads are
+// what turns them back into one chain:
+//
+//   GET /api/customs/containers/{container_no}   -> IGM line, OOC, SMTP, RMS
+//   GET /api/gate-docs/container/{container_no}  -> EIR, PIN, Form 13
+//
+// Both already existed on POC-3 with no client at all. Neither invents a join:
+// each is a by-value lookup on the container number, so a box with no document of
+// a given kind comes back with an empty array — which is the honest answer, and
+// exactly what the Import tab renders as a documented gap.
+
+/** Derived customs stage flags for one container. */
+export interface ContainerCustomsStatus {
+  container_no?: string | null;
+  igm_no?: number | string | null;
+  declared_igm?: boolean | null;
+  rms_selected?: boolean | null;
+  ooc_cleared?: boolean | null;
+  smtp_bonded?: boolean | null;
+}
+
+/** The manifest line this container was declared on. */
+export interface ContainerIgmLine {
+  igm_no: number | string;
+  line_no?: number | string | null;
+  container_no?: string | null;
+  seal_no?: string | null;
+  container_agent_code?: string | null;
+  container_status?: string | null;
+  iso_size_type?: string | null;
+}
+
+/** The bill of entry + out-of-charge granted against this container. */
+export interface ContainerOocLine {
+  bill_of_entry_no: number | string;
+  out_of_charge_no?: string | null;
+  out_of_charge_date?: string | null;
+  importer_name?: string | null;
+}
+
+/** A transhipment permit naming this container. */
+export interface ContainerSmtpLine {
+  smtp_no: number | string;
+  bond_no?: string | null;
+  destination_code?: string | null;
+  consignee_name?: string | null;
+}
+
+/** An RMS scanning selection for this container. */
+export interface ContainerRmsLine {
+  igm_no?: number | string | null;
+  /** "D" (drive-through) or "M" (mobile). */
+  scan_machine?: string | null;
+  scan_location?: string | null;
+  cfs_name?: string | null;
+}
+
+/**
+ * Everything the customs layer holds for one container, from
+ * `GET /api/customs/containers/{container_no}`.
+ *
+ * ⚠ `vessel` is the manifest's vessel, joined container → cargo line → IGM. It is
+ * the ONLY vessel binding available per box on the import leg; there is no COARRI
+ * discharge for a JNPA call to corroborate it.
+ */
+export interface ContainerCustomsView {
+  container_no: string;
+  status?: ContainerCustomsStatus | null;
+  vessel?: {
+    igm_no?: number | string | null;
+    igm_date?: string | null;
+    imo_code?: string | null;
+    vessel_code?: string | null;
+    voyage_no?: string | null;
+    shipping_line_code?: string | null;
+    terminal_operator_code?: string | null;
+    port_of_arrival?: string | null;
+    expected_arrival?: string | null;
+    entry_inward?: string | null;
+  } | null;
+  igm: ContainerIgmLine[];
+  ooc: ContainerOocLine[];
+  smtp: ContainerSmtpLine[];
+  rms: ContainerRmsLine[];
+  /** The ICEGATE message envelope that delivered the manifest, when linkable. */
+  message?: {
+    message_id_code?: string | null;
+    message_type?: string | null;
+    sent_ts?: string | null;
+    source_file?: string | null;
+  } | null;
+}
+
+/**
+ * Every gate document referencing one container, from
+ * `GET /api/gate-docs/container/{container_no}` — the PIN → EIR → gate steps.
+ */
+export interface ContainerGateDocs {
+  container_no?: string;
+  eir: EirTransaction[];
+  pin: PinTicket[];
+  form13: Array<Record<string, unknown>>;
+  total?: number;
+}
+
 // ---- Export customs documents: Shipping Bill, LEO, SMTP --------------------
 //
 // The three customs document families named in WS4 §2 ("Customs views: IGM,
@@ -1472,8 +1715,107 @@ export interface DataAdapter {
   /** Shipping-line advance-list lines, IAL or EAL (`GET /api/shipping-lines`). Optional: POC-3 path only. */
   getAdvanceList?(filter?: AdvanceListFilter): Promise<AdvanceListContainer[]>;
 
+  /**
+   * The same read, plus the register's row count from the `Page` envelope.
+   *
+   * ⚠ Any panel that displays a count must use this, not `getAdvanceList().length`
+   * — the EAL register holds 5,743 rows, so a page length is not the population.
+   * `total` is null when the endpoint answered with a bare array.
+   */
+  getAdvanceListPage?(
+    filter?: AdvanceListFilter,
+  ): Promise<{ items: AdvanceListContainer[]; total: number | null }>;
+
   /** Per-terminal yard / pendency snapshot (`GET /api/performance/daily/status`). Optional: POC-3 path only. */
   getTerminalYardStatus?(reportDate?: string): Promise<TerminalYardStatus[]>;
+
+  /**
+   * The container movement list PLUS the filtered total from `X-Total-Count`.
+   *
+   * ⚠ Any panel that shows a count must use this. `/api/cargo` returns a bare
+   * array, so `items.length` is the PAGE SIZE (default 100) — not the population.
+   */
+  getContainerMovementsPage?(
+    filter: ContainerMovementFilter,
+  ): Promise<{ items: ContainerMovementDTO[]; total: number | null }>;
+
+  /**
+   * Dry-run a data upload — `POST /api/{module}/validate`. Writes NOTHING, so it is
+   * safe to call every time the user re-picks a file. A structurally invalid file
+   * RESOLVES with `status: 'REJECTED'` rather than rejecting the promise.
+   */
+  validateUpload?(target: UploadTarget, file: File): Promise<UploadResult>;
+
+  /**
+   * Persist a data upload — `POST /api/{module}/upload`. Idempotent: byte-identical
+   * content resolves with `status: 'SKIPPED_DUPLICATE'`, and content-hashed rows
+   * collapse on re-import, so a double-click cannot duplicate data.
+   */
+  importUpload?(target: UploadTarget, file: File): Promise<UploadResult>;
+
+  /**
+   * Yard assignment — `PUT /api/cargo/{cn}/yard-assignment`. The second mandatory
+   * gate; lenient on the source state so a row whose `yard_block` was set directly
+   * (without the transition) can be caught up.
+   */
+  assignYard?(containerNo: string, yardBlock: string): Promise<CargoRecord>;
+
+  /**
+   * Scan verification — `POST /api/cargo/{cn}/verify`. The scan OUTCOME, and the
+   * gate Release waits on. `verified: false` records a failed check without
+   * advancing the lifecycle.
+   */
+  verifyCargo?(
+    containerNo: string,
+    input?: { verified?: boolean; remarks?: string },
+  ): Promise<{ container_number: string; verified: boolean; lifecycle_status: string }>;
+
+  /**
+   * Release — `POST /api/cargo/{cn}/release`, the final gate and the UC-III
+   * handover. Requires `VERIFIED`. Use this rather than `PUT {is_released:true}`:
+   * both face the same gate, but only this one reads as the transition it is.
+   */
+  releaseCargo?(containerNo: string, note?: string): Promise<CargoRecord>;
+
+  /**
+   * Vessel discharge — `POST /api/cargo/{cn}/discharge`, the FIRST mandatory gate
+   * of the UC-II lifecycle (`CREATED -> VESSEL_DISCHARGED`).
+   *
+   * Why this matters beyond one button: the cargo lifecycle is a forward-only
+   * state machine whose mandatory gates are CREATED → VESSEL_DISCHARGED →
+   * YARD_ASSIGNED → VERIFIED → RELEASED. Nothing downstream — yard assignment,
+   * the scan queue, release, and UC-III's truck-job assignment — can be reached
+   * until discharge is recorded, so leaving this unwired stalled every container
+   * at CREATED.
+   *
+   * The transition also emits `cargo.vessel_discharged`, which is one of the few
+   * events distributed on the shared bus (Kafka + WebSocket) rather than only
+   * logged — it is the handover signal UC-III listens for.
+   *
+   * Rejects with 409 when the container is not in a dischargeable state (already
+   * discharged or further along); 404 when unknown.
+   */
+  dischargeCargo?(
+    containerNo: string,
+    input?: { vessel_name?: string; discharge_time?: string },
+  ): Promise<{ container_number: string; lifecycle_status: string; status: string }>;
+
+  /**
+   * The customs layer's full view of ONE container (`GET /api/customs/containers/{cn}`)
+   * — manifest line, out-of-charge, transhipment permit and RMS selection together.
+   * Resolves to null when the box appears in no customs document (the API 404s),
+   * which the Import tab reports as "not in the customs corpus", never as an error.
+   */
+  getContainerCustoms?(containerNo: string): Promise<ContainerCustomsView | null>;
+
+  /**
+   * Every gate document for ONE container (`GET /api/gate-docs/container/{cn}`) —
+   * the PIN pickup ticket, the EIR and any Form 13. Null when the box has none.
+   */
+  getContainerGateDocs?(containerNo: string): Promise<ContainerGateDocs | null>;
+
+  /** Delivery orders naming ONE container (`GET /api/shipping-lines/edo?container_no=`). */
+  getEdoForContainer?(containerNo: string): Promise<EdoRecord[]>;
 
   /** Filed export declarations (`GET /api/customs/shipping-bills`). Optional: POC-3 path only. */
   getShippingBills?(filter?: IgmContainerFilter): Promise<ShippingBillRecord[]>;
@@ -1489,6 +1831,85 @@ export interface DataAdapter {
   /** Per-container CFS dwell rows (`GET /api/cfs-ecy/dwell`). Optional: POC-3 path only. */
   getCfsEcyDwell?(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]>;
 
+  /**
+   * Health of the JNPA Simulated Port-Data API poller
+   * (`GET /api/integrations/jnpa/health`) — the ONE genuinely external live
+   * source in UC-II. Reports the mode, the per-group watermarks and the last
+   * poll, so the dashboard can state whether "LIVE" currently means anything.
+   *
+   * Optional: POC-3 path only. Absent on the mock adapter, which has no feed to
+   * report on — the panel then says so rather than inventing a green light.
+   */
+  getJnpaApiHealth?(): Promise<JnpaApiHealth>;
+
+  /** The poller's run audit trail (`GET /api/integrations/jnpa/runs`). */
+  getJnpaApiRuns?(limit?: number): Promise<JnpaApiRun[]>;
+
+  /**
+   * Runtime deviations the client observed against API Reference v2.0
+   * (`GET /api/integrations/jnpa/defects`) — the register JNPA asked bidders to
+   * report. EMPTY IS A RESULT: it means no new deviation fired, not that the
+   * check is missing.
+   */
+  getJnpaApiDefects?(limit?: number): Promise<JnpaApiDefect[]>;
+
   /** Which mode this adapter is operating in (for the UI badge). */
   readonly mode: 'mock' | 'live';
+}
+
+/** One data group's poll state, as reported by the JNPA sync health endpoint. */
+export interface JnpaApiGroupHealth {
+  group: string;
+  /** `indexed` (records + files), `report` (JSON envelope) or `static` (not served). */
+  kind: string;
+  /** Newest `publishedAt` consumed. Null before the group's first successful poll. */
+  watermark_ts: string | null;
+  last_status: string;
+  updated_at: string | null;
+}
+
+/** One poll of one group, with the counters that make the volume claim checkable. */
+export interface JnpaApiRun {
+  id: number;
+  group_slug: string | null;
+  status: string;
+  trigger: string | null;
+  api_mode: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  records_listed: number | null;
+  records_new: number | null;
+  records_duplicate: number | null;
+  files_downloaded: number | null;
+  files_skipped_checksum: number | null;
+  bytes_downloaded: number | null;
+  request_count: number | null;
+  error: string | null;
+}
+
+export interface JnpaApiHealth {
+  /** False when no client key is configured — the sync is then OFF by design. */
+  configured: boolean;
+  /** `LIVE` | `SIM` | `DISABLED`. */
+  mode: string;
+  api_url: string;
+  groups: JnpaApiGroupHealth[];
+  last_run?: JnpaApiRun | null;
+}
+
+/**
+ * One observed deviation from API Reference v2.0.
+ *
+ * ⚠ `requestId` is deliberately absent: JNPA's own notice says to quote it in
+ * support requests, but the API returns it in no body or header (register item
+ * D3). `ingest_run_id` is what we quote instead — it identifies the exact poll.
+ */
+export interface JnpaApiDefect {
+  id: number;
+  defect_code: string;
+  endpoint: string | null;
+  severity: string;
+  description: string | null;
+  observed_at: string;
+  ingest_run_id: number | null;
 }

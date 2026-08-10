@@ -25,6 +25,7 @@ import type { EdoDetail, EdoRecord } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { tokens } from '../theme/tokens.js';
 
@@ -257,6 +258,7 @@ export function EdoPanel() {
             </CalciteLabel>
             <div style={{ marginLeft: 'auto' }}>
               <ImportExportToolbar
+                importTarget={UPLOAD_TARGETS.edo}
                 data={rows.map((r) => ({
                   'DO Number': r.do_number,
                   'DO Date': r.do_date,

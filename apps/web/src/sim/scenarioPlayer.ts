@@ -16,9 +16,9 @@
 
 /** Which dashboard tab a step is about (matches Dashboard TABS ids). */
 export type TabId =
-  | 'movements' | 'igm' | 'rail' | 'itrho' | 'gate' | 'pendency'
-  | 'scan' | 'empty' | 'export' | 'cfsecy' | 'scenarios' | 'health' | 'notifications'
-  | 'models' | 'methodology' | 'workflows';
+  | 'import' | 'export'
+  | 'gate' | 'pendency' | 'rail' | 'itrho' | 'empty' | 'cfsecy' | 'movements'
+  | 'scenarios' | 'workflows' | 'models' | 'health' | 'notifications' | 'methodology';
 
 /** A single human-readable metric change surfaced in the coach-mark. */
 export interface MetricChange {
@@ -63,6 +63,13 @@ export interface ScenarioStep {
   explain: string;
   /** Which dashboard tab to switch to + spotlight for this step. */
   tab: TabId;
+  /**
+   * Optional sub-view within that tab, for the tabs whose lifecycle steps are
+   * sub-views (Import: `igm|scan|ooc|edo|smtp`; Export: `list|docs|sb|leo|…`).
+   * Without it the tab opens on its own default, which for a step that narrates a
+   * specific register would land the viewer one click short of what it describes.
+   */
+  view?: string;
   /** Map asset ids to spotlight (gates/facilities/terminals). [] = none. */
   spotlight: string[];
   /**
@@ -178,7 +185,10 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
         title: 'Customs flags a surge of containers',
         explain:
           'A wave of containers gets flagged for customs scanning. The scan queue depth jumps, so boxes start waiting for the scanner.',
-        tab: 'scan',
+        // The scan queue is now Import step 5, so the step opens that view
+        // directly rather than the Import tab's overview.
+        tab: 'import',
+        view: 'scan',
         spotlight: [G_NSICT],
         valueTargets: [{ kind: 'kpi', key: 'scannerTurnaroundTime' }],
         metrics: [{ label: 'Pending scans', from: 8, to: 45, unit: 'boxes', tone: 'worse' }],
