@@ -11,7 +11,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DataAdapter, ReferenceCargoOverride } from '@jnpa/data';
 import {
-  AiForecastAdapter, LiveAdapter, MockAdapter, Poc3CargoAdapter, ReferenceCargoAdapter,
+  AiForecastAdapter, ConnectorAdapter, LiveAdapter, MockAdapter, Poc3CargoAdapter, ReferenceCargoAdapter,
 } from '@jnpa/data';
 import type { Role } from '@jnpa/schemas';
 import type { BaselinesConfig } from '@jnpa/kpi';
@@ -153,8 +153,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
      */
     const withForecast = new AiForecastAdapter(withCargo, { gateQueueBaseUrl: AI_GATE_QUEUE_BASE });
 
+    /**
+     * Route the Integration health cards through the six real connectors
+     * (UC2-040).
+     *
+     * Layered here, INSIDE SimAdapter, for the same reason the forecast is: the
+     * fault console's overrides must still apply on top, so injecting a fault
+     * from the console moves a connector-sourced card rather than being ignored.
+     *
+     * Each card carries whether a connector answered. Stop a container and its
+     * card flips CONNECTOR -> SIMULATED with the reason — that flip is the
+     * ticket's acceptance.
+     */
+    const withConnectors = new ConnectorAdapter(withForecast);
+
     // Wrap so the live-data Simulator's overrides flow into every tab + the map.
-    return new SimAdapter(withForecast);
+    return new SimAdapter(withConnectors);
   }, []);
 
   // Reference mode only: fetch the generated reference dataset at runtime (it is

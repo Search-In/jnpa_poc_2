@@ -57,10 +57,34 @@ class HealthCard:
             self.degradation = Degradation.RED if self.error_count >= 3 else Degradation.AMBER
 
     def inject_fault(self, level: Optional[Degradation]) -> None:
-        """Demo console fault injection — pin to AMBER/RED, or None to clear."""
+        """Demo console fault injection — pin to AMBER/RED, or None to clear.
+
+        ⚠ Clearing must RECOMPUTE the visible degradation, not merely drop the
+        pin. Before UC2-041 this only unset ``forced``, so a card pinned RED kept
+        reporting RED until the next successful poll — and ``POST /inject-fault``
+        returned that stale RED as its own response, telling the operator the
+        fault was still active at the very instant they cleared it. Recovery is
+        half of the chaos drill, so it has to be true the moment it happens.
+        """
         self.forced = level
         if level is not None:
             self.degradation = level
+            return
+        self.degradation = self._derive_degradation()
+
+    def _derive_degradation(self) -> Degradation:
+        """The honest degradation with no fault pinned.
+
+        Same rules the rest of the class already applies: accumulated errors
+        dominate (as in :meth:`record_error`), otherwise the serving tier decides
+        (as in :meth:`record_success`, where SYNTHETIC is deliberately GREEN — a
+        healthy simulator is not a degraded source).
+        """
+        if self.error_count >= 3:
+            return Degradation.RED
+        if self.error_count > 0:
+            return Degradation.AMBER
+        return Degradation.AMBER if self.mode == IntegrationMode.CACHED else Degradation.GREEN
 
     def to_dict(self) -> dict:
         return {

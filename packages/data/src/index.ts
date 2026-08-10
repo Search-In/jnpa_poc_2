@@ -15,6 +15,15 @@ export { LiveAdapter } from './live-adapter.js';
 export { Poc3CargoAdapter, CargoApiError } from './poc3-cargo-adapter.js';
 export type { Poc3CargoAdapterDeps } from './poc3-cargo-adapter.js';
 export { AiForecastAdapter } from './ai-forecast-adapter.js';
+export { ConnectorAdapter } from './connector-adapter.js';
+export type { ConnectorAdapterDeps } from './connector-adapter.js';
+export {
+  CONNECTORS, connectorHealth, injectFault, pollConnector, publishedEvents,
+  toIntegrationHealth,
+} from './connectors.js';
+export type {
+  ConnectorDeps, ConnectorHealthBody, ConnectorPollBody, PublishedEvent,
+} from './connectors.js';
 export type { AiForecastAdapterDeps } from './ai-forecast-adapter.js';
 export { GATE_QUEUE_FEATURES, toInstance } from './ai-forecast.js';
 export { ReferenceCargoAdapter } from './reference-cargo-adapter.js';

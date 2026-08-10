@@ -77,6 +77,12 @@ services:
         condition: service_healthy
 
   # --- connectors (sim mode) — one container per source -----------------------
+  # UC2-040: every connector PUBLISHES its port. They implement /health, /poll,
+  # /inject-fault and /published (WS3 §1) and had no `ports:` at all, so nothing
+  # outside this network could call them and the claim was unverifiable — the
+  # same defect UC2-015 found in the four AI services. Each port is declared per
+  # service, NOT on the &connector anchor: an anchored `ports:` would give all
+  # six the same host port and only the first would bind.
   connector-ulip: &connector
     build:
       context: .
@@ -85,24 +91,36 @@ services:
       DATA_MODE: mock
       CONNECTOR: ulip
       KAFKA_BROKERS: redpanda:29092
+    ports:
+      - "${CONNECTOR_ULIP_PORT:-8101}:8100"
     depends_on:
       redpanda:
         condition: service_healthy
   connector-icegate:
     <<: *connector
     environment: { DATA_MODE: mock, CONNECTOR: icegate, KAFKA_BROKERS: redpanda:29092 }
+    ports:
+      - "${CONNECTOR_ICEGATE_PORT:-8102}:8100"
   connector-tos:
     <<: *connector
     environment: { DATA_MODE: mock, CONNECTOR: tos, KAFKA_BROKERS: redpanda:29092 }
+    ports:
+      - "${CONNECTOR_TOS_PORT:-8103}:8100"
   connector-fois:
     <<: *connector
     environment: { DATA_MODE: mock, CONNECTOR: fois, FOIS_VIA_ULIP: "true", KAFKA_BROKERS: redpanda:29092 }
+    ports:
+      - "${CONNECTOR_FOIS_PORT:-8104}:8100"
   connector-eseal:
     <<: *connector
     environment: { DATA_MODE: mock, CONNECTOR: eseal, KAFKA_BROKERS: redpanda:29092 }
+    ports:
+      - "${CONNECTOR_ESEAL_PORT:-8105}:8100"
   connector-shipline:
     <<: *connector
     environment: { DATA_MODE: mock, CONNECTOR: shipline, KAFKA_BROKERS: redpanda:29092 }
+    ports:
+      - "${CONNECTOR_SHIPLINE_PORT:-8106}:8100"
 
   # --- AI services ------------------------------------------------------------
   # UC-2 model services (UC2-015).

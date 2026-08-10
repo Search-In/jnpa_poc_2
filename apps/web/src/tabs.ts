@@ -39,6 +39,7 @@ export const TABS = [
   { id: 'workflows', label: 'Workflows' },
   { id: 'models', label: 'AI Models' },
   { id: 'health', label: 'Integration' },
+  { id: 'dataquality', label: 'Data Quality' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'methodology', label: 'Methodology' },
 ] as const;
@@ -51,12 +52,15 @@ export const TABS = [
 export const ROLE_TAB_IDS: Record<Role, readonly TabId[]> = {
   DTCCC_ADMIN: TABS.map((tb) => tb.id), // full access
   JNPA_MARINE: ['movements', 'gate', 'itrho', 'pendency', 'notifications', 'scenarios', 'methodology'],
-  JNPA_TRAFFIC: ['import', 'export', 'gate', 'pendency', 'rail', 'itrho', 'cfsecy', 'movements', 'notifications', 'scenarios', 'methodology'],
+  JNPA_TRAFFIC: ['import', 'export', 'gate', 'pendency', 'rail', 'itrho', 'cfsecy', 'movements', 'dataquality', 'notifications', 'scenarios', 'methodology'],
   TERMINAL_OPS: ['import', 'export', 'gate', 'pendency', 'rail', 'itrho', 'empty', 'cfsecy', 'movements', 'notifications', 'methodology'],
   // The customs registers now live inside the leg they belong to (IGM/OOC/E-DO in
   // Import; Shipping Bill/LEO in Export), so this role takes both legs where it
   // previously took the separate `igm` + `scan` tabs.
-  CUSTOMS: ['import', 'export', 'pendency', 'movements', 'notifications', 'scenarios', 'methodology'],
+  // Data Quality is granted here because the findings are overwhelmingly customs
+  // and manifest defects in JNPA's own source files — the people who can act on
+  // "agency PAN stuffed into the IMO field" are the ones who read the documents.
+  CUSTOMS: ['import', 'export', 'pendency', 'movements', 'dataquality', 'notifications', 'scenarios', 'methodology'],
   CTO_RAIL: ['movements', 'rail', 'itrho', 'pendency', 'notifications', 'methodology'],
   // CFS/ECY stays top-level precisely so these two reach it WITHOUT the export leg.
   ICD_OPERATOR: ['gate', 'pendency', 'rail', 'cfsecy', 'movements', 'notifications', 'methodology'],

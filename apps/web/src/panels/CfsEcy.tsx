@@ -34,6 +34,7 @@ import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
+import { EmptyTrtChains } from './EmptyTrtChains.js';
 import { tokens } from '../theme/tokens.js';
 
 /** Postgres numerics arrive as decimal STRINGS — coerce before any maths. */
@@ -284,6 +285,14 @@ function ChainCompleteness({ stats }: { stats: CfsEcyChainStats }) {
 export function CfsEcy() {
   const { adapter } = useApp();
   const [facility, setFacility] = useState<CfsEcyFacility | 'ALL'>('ALL');
+  /**
+   * UC2-010 added a second question to this tab. `throughput` is the original
+   * port-wide view; `chains` is the empty-container cohort with its own KPI and
+   * anomaly ledger. They are separate views rather than one long page because
+   * their scope notices contradict each other — the first is explicitly
+   * un-joinable to any named container, the second is entirely per-container.
+   */
+  const [view, setView] = useState<'throughput' | 'chains'>('throughput');
 
   const unavailable = () =>
     Promise.reject(new Error('The CFS/ECY API is unavailable in this data mode.'));
@@ -359,6 +368,24 @@ export function CfsEcy() {
     <>
       <SourceBadge source="POC-3 · CFS-CODECO + ECY-CODECO (off-dock gate movements)" live />
 
+      <div style={{ margin: '4px 0 10px' }}>
+        <CalciteSegmentedControl
+          scale="s"
+          onCalciteSegmentedControlChange={(e) =>
+            setView((e.target as unknown as { selectedItem?: { value?: string } })
+              .selectedItem?.value as 'throughput' | 'chains')}
+        >
+          <CalciteSegmentedControlItem value="throughput" checked={view === 'throughput'}>
+            Throughput &amp; dwell
+          </CalciteSegmentedControlItem>
+          <CalciteSegmentedControlItem value="chains" checked={view === 'chains'}>
+            Empty-container chains
+          </CalciteSegmentedControlItem>
+        </CalciteSegmentedControl>
+      </div>
+
+      {view === 'chains' ? <EmptyTrtChains /> : (
+        <>
       {completeness && (
         <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s" style={{ margin: '4px 0 10px' }}>
           <div slot="title">The last days of this feed are incomplete</div>
@@ -533,6 +560,8 @@ export function CfsEcy() {
               </CalciteTable>
             </div>
           )}
+        </>
+      )}
         </>
       )}
     </>

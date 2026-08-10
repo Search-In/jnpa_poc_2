@@ -67,4 +67,25 @@ export interface IntegrationHealth {
   mode: IntegrationMode;
   /** Optional human note shown on the Operator Banner. */
   note?: string;
+  /**
+   * WHICH thing produced this card (UC2-040).
+   *
+   * `CONNECTOR` — a real connector service answered `GET /health`.
+   * `SIMULATED` — the in-browser fault console produced it because no connector
+   *               was reachable.
+   *
+   * ⚠ `mode` and `source` answer DIFFERENT questions and must not be conflated.
+   * `mode` is which tier of the connector's OWN fallback chain is serving
+   * (LIVE → CACHED → SYNTHETIC); `source` is whether a connector was involved at
+   * all. A card can legitimately read `mode: SYNTHETIC, source: CONNECTOR` — a
+   * real service honestly reporting that it is running on simulated data. What
+   * must never happen again is `source: SIMULATED` presented as if a connector
+   * had spoken.
+   *
+   * Optional so a build that has not been wired to connectors still typechecks;
+   * absent is read as SIMULATED by the UI.
+   */
+  source?: 'CONNECTOR' | 'SIMULATED';
+  /** Why no connector answered, when `source` is SIMULATED. Shown, not logged. */
+  fallbackReason?: string;
 }

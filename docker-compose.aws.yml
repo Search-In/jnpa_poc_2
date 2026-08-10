@@ -64,24 +64,39 @@ services:
     ports: !reset []
     restart: unless-stopped
 
+  # Connectors and model services are NOT published on the EC2 host, matching
+  # gateway/postgres/redpanda/minio above. nginx reaches them by service name over
+  # the compose network (see apps/web/nginx.conf), so the host ports the local
+  # compose file publishes for dev — 8101-8106 and 8201-8204 — would be extra
+  # internet-facing surface here for no benefit.
   connector-ulip:
     restart: unless-stopped
+    ports: !reset []
   connector-icegate:
     restart: unless-stopped
+    ports: !reset []
   connector-tos:
     restart: unless-stopped
+    ports: !reset []
   connector-fois:
     restart: unless-stopped
+    ports: !reset []
   connector-eseal:
     restart: unless-stopped
+    ports: !reset []
   connector-shipline:
     restart: unless-stopped
+    ports: !reset []
 
   ai-dwell:
     restart: unless-stopped
+    ports: !reset []
   ai-gate-queue:
     restart: unless-stopped
+    ports: !reset []
   ai-rake-tat:
     restart: unless-stopped
+    ports: !reset []
   ai-anomaly:
     restart: unless-stopped
+    ports: !reset []

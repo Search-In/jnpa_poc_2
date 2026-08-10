@@ -72,6 +72,54 @@ def test_fault_injection_flips_health_card(ConnCls):
     assert c.health.to_dict()["degradation"] == "GREEN"
 
 
+@pytest.mark.parametrize("ConnCls", ALL)
+def test_clearing_a_fault_is_true_immediately_not_after_the_next_poll(ConnCls):
+    """UC2-041 — the recovery half of the chaos drill.
+
+    `inject_fault(None)` used to drop the `forced` pin WITHOUT recomputing the
+    visible degradation, so a card pinned RED kept reporting RED until something
+    else polled it. `POST /inject-fault` returns the card immediately, so the
+    operator clearing a fault was told it was still active at the exact moment
+    they cleared it. The test above hid this by polling first.
+    """
+    c = ConnCls()
+    c.poll()
+    c.health.inject_fault(Degradation.RED)
+    assert c.health.to_dict()["degradation"] == "RED"
+
+    c.health.inject_fault(None)  # no poll in between — this is the point
+
+    assert c.health.to_dict()["degradation"] == "GREEN"
+    assert c.health.forced is None
+
+
+def test_clearing_does_not_hide_real_accumulated_errors():
+    """Clearing removes the OPERATOR's pin, not the source's actual state.
+
+    A connector that has genuinely failed three times must not come back GREEN
+    just because someone cleared a fault they had injected on top of it — that
+    would turn the console into a way of hiding an outage.
+    """
+    h = HealthCard(source_system="ULIP", mode=IntegrationMode.LIVE)
+    for _ in range(3):
+        h.record_error()
+    assert h.to_dict()["degradation"] == "RED"
+
+    h.inject_fault(Degradation.AMBER)
+    h.inject_fault(None)
+
+    assert h.to_dict()["degradation"] == "RED"
+    assert h.error_count == 3
+
+
+def test_cleared_card_reports_cached_as_amber():
+    """With no pin, the serving tier decides — CACHED is a degraded state."""
+    h = HealthCard(source_system="TOS", mode=IntegrationMode.CACHED)
+    h.inject_fault(Degradation.RED)
+    h.inject_fault(None)
+    assert h.to_dict()["degradation"] == "AMBER"
+
+
 def test_fallback_chain_live_to_cached_to_synthetic():
     health = HealthCard(source_system="ULIP")
     chain = FallbackChain(health, cache_staleness_s=3600)

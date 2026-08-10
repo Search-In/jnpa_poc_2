@@ -38,6 +38,34 @@ function modeBadge(mode: IntegrationHealth['mode']) {
   );
 }
 
+/**
+ * WHO produced this card (UC2-040) — a real connector, or the browser simulator.
+ *
+ * Separate from the mode badge on purpose. `mode` is which tier of the
+ * connector's own fallback chain is serving; this is whether a connector spoke
+ * at all. `mode: SYNTHETIC, source: CONNECTOR` is a real service honestly
+ * reporting simulated data, and that is a different claim from a card the
+ * browser invented — which is the confusion this ticket exists to end.
+ */
+function sourceBadge(h: IntegrationHealth) {
+  const live = h.source === 'CONNECTOR';
+  return (
+    <span
+      title={live
+        ? 'This card came from the connector service’s own /health endpoint.'
+        : h.fallbackReason ?? 'No connector answered; this card is simulated in the browser.'}
+      style={{
+        fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4,
+        padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap',
+        border: `1px solid ${live ? tokens.degradation.GREEN : tokens.color.border}`,
+        color: live ? tokens.degradation.GREEN : tokens.color.textMuted,
+      }}
+    >
+      {live ? 'connector' : 'simulated'}
+    </span>
+  );
+}
+
 export function HealthCards() {
   const { adapter, lang } = useApp();
   // Refetch whenever the Integration Console injects/clears a fault, so the
@@ -51,7 +79,9 @@ export function HealthCards() {
           <OperatorBanner health={health} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
             <span style={{ fontSize: 12, color: tokens.color.textMuted }}>
-              Inject a source fault (DEGRADED / OFFLINE / kill) and watch fallback engage.
+              {health.some((h) => h.source === 'CONNECTOR')
+                ? 'Faults are injected into the real connector services (POST /inject-fault). Stop a container and its card flips to simulated.'
+                : 'No connector service answered, so these cards and the fault console are simulated in the browser. Start the connectors to drive the real ones.'}
             </span>
             <CalciteButton scale="s" appearance="outline" iconStart="plug" style={{ marginLeft: 'auto' }} onClick={() => faultStore.setOpen(true)}>
               Integration Console
@@ -75,7 +105,10 @@ export function HealthCards() {
                   <br />
                   Last poll: {h.lastGoodPollTs ? new Date(h.lastGoodPollTs).toLocaleString() : '—'}
                 </div>
-                <div slot="footer-start">{modeBadge(h.mode)}</div>
+                <div slot="footer-start" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {modeBadge(h.mode)}
+                  {sourceBadge(h)}
+                </div>
               </CalciteCard>
             ))}
           </div>
