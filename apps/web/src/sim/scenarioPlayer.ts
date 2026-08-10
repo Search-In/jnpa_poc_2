@@ -18,7 +18,8 @@
 export type TabId =
   | 'import' | 'export'
   | 'gate' | 'pendency' | 'rail' | 'itrho' | 'empty' | 'cfsecy' | 'movements'
-  | 'scenarios' | 'workflows' | 'models' | 'health' | 'notifications' | 'methodology';
+  | 'scenarios' | 'workflows' | 'models' | 'health' | 'dataquality'
+  | 'notifications' | 'methodology';
 
 /** A single human-readable metric change surfaced in the coach-mark. */
 export interface MetricChange {

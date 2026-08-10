@@ -20,6 +20,8 @@ import type {
   IgmManifest, IgmContainer, IgmContainerFilter, RmsScanList, RmsScanContainer,
   GateMovement, GateMovementGate, OocRecord, OocDetail, EdoRecord, EdoDetail, EirTransaction, PinTicket,
   CfsEcyChainStats, CfsEcyDwellItem, CfsEcyFacility, CfsEcyStats,
+  EmptyTrtOverview, EmptyTrtChain, EmptyTrtChainFilter, EmptyTrtAnomalyDetail,
+  EmptyTrtContainerDetail, DqSummary, DqIssue, DqFilter,
   ShippingBillRecord, LeoRecord, SmtpRecord, TerminalYardStatus,
   AdvanceListContainer, AdvanceListFilter, SourceGateDocument,
   Form11Entry, CoprarItem, CoarriMove, VesselDeparture, VesselCutoff, SyntheticChain,
@@ -57,6 +59,12 @@ export class SimAdapter implements DataAdapter {
     if (base.getJnpaApiHealth) this.getJnpaApiHealth = () => base.getJnpaApiHealth!();
     if (base.getJnpaApiRuns) this.getJnpaApiRuns = (n) => base.getJnpaApiRuns!(n);
     if (base.getJnpaApiDefects) this.getJnpaApiDefects = (n) => base.getJnpaApiDefects!(n);
+    // UC2-040 — same presence-preserving rule, same reason.
+    if (base.injectConnectorFault) {
+      this.injectConnectorFault = (s, l) => base.injectConnectorFault!(s, l);
+    }
+    if (base.pollConnector) this.pollConnector = (s) => base.pollConnector!(s);
+    if (base.getPublishedEvents) this.getPublishedEvents = (s) => base.getPublishedEvents!(s);
   }
 
   get mode() {
@@ -283,6 +291,44 @@ export class SimAdapter implements DataAdapter {
   getCfsEcyDwell(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]> {
     return this.base.getCfsEcyDwell ? this.base.getCfsEcyDwell(filter) : SimAdapter.unavailable();
   }
+  // UC2-010 — empty-container TRT chains. The simulator overlays nothing here:
+  // these are measured CODECO events, and a What-If that invented a chain would
+  // make the anomaly ledger describe a port that does not exist.
+  getEmptyTrt(): Promise<EmptyTrtOverview> {
+    return this.base.getEmptyTrt ? this.base.getEmptyTrt() : SimAdapter.unavailable();
+  }
+  getEmptyTrtChains(filter?: EmptyTrtChainFilter): Promise<{ items: EmptyTrtChain[]; total: number | null }> {
+    return this.base.getEmptyTrtChains ? this.base.getEmptyTrtChains(filter) : SimAdapter.unavailable();
+  }
+  getEmptyTrtAnomaly(code: string, filter?: { limit?: number; offset?: number }): Promise<EmptyTrtAnomalyDetail> {
+    return this.base.getEmptyTrtAnomaly ? this.base.getEmptyTrtAnomaly(code, filter) : SimAdapter.unavailable();
+  }
+  getEmptyTrtContainer(containerNo: string): Promise<EmptyTrtContainerDetail> {
+    return this.base.getEmptyTrtContainer ? this.base.getEmptyTrtContainer(containerNo) : SimAdapter.unavailable();
+  }
+  // UC2-012 — the data-quality ledger. Also never overlaid: a recorded corpus
+  // defect is evidence, and a simulator that could clear one would be hiding it.
+  getDqSummary(filter?: DqFilter): Promise<DqSummary> {
+    return this.base.getDqSummary ? this.base.getDqSummary(filter) : SimAdapter.unavailable();
+  }
+  getDqIssues(filter?: DqFilter): Promise<{ items: DqIssue[]; total: number | null }> {
+    return this.base.getDqIssues ? this.base.getDqIssues(filter) : SimAdapter.unavailable();
+  }
+  // UC2-040 — the connector control surface. Presence-preserving on purpose:
+  // the console branches on whether these EXIST to decide between driving a real
+  // connector and driving the browser fault store, so a method that is always
+  // present and always rejects would make a Docker-less laptop look like a
+  // broken backend instead of a simulator.
+  injectConnectorFault?: (
+    sourceSystem: IntegrationHealth['sourceSystem'],
+    level: 'AMBER' | 'RED' | null,
+  ) => Promise<IntegrationHealth | null>;
+  pollConnector?: (
+    sourceSystem: IntegrationHealth['sourceSystem'],
+  ) => Promise<{ emitted: number; tier: string } | null>;
+  getPublishedEvents?: (
+    sourceSystem: IntegrationHealth['sourceSystem'],
+  ) => Promise<Array<{ topic: string; event: Record<string, unknown> }> | null>;
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
     return applyGateOps(await this.base.getGateOps(window), simStore.getState());

@@ -38,6 +38,14 @@ import type {
   AdvanceListFilter,
   CfsEcyChainStats,
   CfsEcyDwellItem,
+  EmptyTrtOverview,
+  EmptyTrtChain,
+  EmptyTrtChainFilter,
+  EmptyTrtAnomalyDetail,
+  EmptyTrtContainerDetail,
+  DqSummary,
+  DqIssue,
+  DqFilter,
   CfsEcyFacility,
   CfsEcyStats,
   ContainerMovementDTO,
@@ -965,6 +973,102 @@ export class Poc3CargoAdapter implements DataAdapter {
       limit: String(filter.limit ?? 200),
       offset: String(filter.offset ?? 0),
     });
+  }
+
+  // 14b) Empty-container TRT chains (UC2-010) --------------------------------
+  /**
+   * The whole cohort in one call: KPI, its definition, the chain census and the
+   * anomaly classes.
+   *
+   * `anomalies` is normalised to an array here — the backend omits it when
+   * nothing is anomalous, and a panel that maps over undefined is a crash where
+   * "no anomalies" is the good news.
+   */
+  async getEmptyTrt(): Promise<EmptyTrtOverview> {
+    const body = await this.getJson<EmptyTrtOverview>('/api/cfs-ecy/empty-trt');
+    return { ...body, anomalies: Array.isArray(body?.anomalies) ? body.anomalies : [] };
+  }
+
+  /**
+   * Chains, filterable by status or anomaly class.
+   *
+   * Paged with the count kept: the register is 1,202 chains and the COMPLETE
+   * cohort is 242, so `items.length` is never the population — the same trap
+   * `getAdvanceListPage` exists to avoid.
+   */
+  async getEmptyTrtChains(
+    filter: EmptyTrtChainFilter = {},
+  ): Promise<{ items: EmptyTrtChain[]; total: number | null }> {
+    return this.getPage<EmptyTrtChain>('/api/cfs-ecy/empty-trt/chains', {
+      container: filter.container,
+      chain_status: filter.chainStatus,
+      anomaly_code: filter.anomalyCode,
+      // Only send the flag when set — the backend defaults it to false, and an
+      // explicit 'false' would still be a filter the operator did not ask for.
+      anomaly_only: filter.anomalyOnly ? 'true' : undefined,
+      limit: String(filter.limit ?? 100),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /** The containers behind one anomaly class — the ledger's drill-down. */
+  async getEmptyTrtAnomaly(
+    code: string,
+    filter: { limit?: number; offset?: number } = {},
+  ): Promise<EmptyTrtAnomalyDetail> {
+    const key = encodeURIComponent(code.trim());
+    const body = await this.getJson<EmptyTrtAnomalyDetail>(
+      `/api/cfs-ecy/empty-trt/anomalies/${key}`,
+      { limit: String(filter.limit ?? 100), offset: String(filter.offset ?? 0) },
+    );
+    return { ...body, items: Array.isArray(body?.items) ? body.items : [] };
+  }
+
+  /** One container's legs, durations and raw events. */
+  async getEmptyTrtContainer(containerNo: string): Promise<EmptyTrtContainerDetail> {
+    const key = encodeURIComponent(containerNo.trim());
+    const body = await this.getJson<EmptyTrtContainerDetail>(
+      `/api/cfs-ecy/empty-trt/containers/${key}`);
+    return { ...body, legs: Array.isArray(body?.legs) ? body.legs : [] };
+  }
+
+  // 14c) Data-quality ledger (UC2-012) ---------------------------------------
+  /**
+   * Roll-up by severity, source table and issue type.
+   *
+   * Takes the SAME filters as {@link getDqIssues} and is sent through the same
+   * builder, so a tile and the list it opens can never be counting different
+   * things — the defect that makes a quality dashboard worse than none.
+   */
+  async getDqSummary(filter: DqFilter = {}): Promise<DqSummary> {
+    const body = await this.getJson<DqSummary>('/api/dq/summary', Poc3CargoAdapter.dqQuery(filter));
+    return {
+      ...body,
+      by_source_table: Array.isArray(body?.by_source_table) ? body.by_source_table : [],
+      by_issue_type: Array.isArray(body?.by_issue_type) ? body.by_issue_type : [],
+    };
+  }
+
+  /** The findings themselves, paged and filtered. */
+  async getDqIssues(filter: DqFilter = {}): Promise<{ items: DqIssue[]; total: number | null }> {
+    return this.getPage<DqIssue>('/api/dq/issues', {
+      ...Poc3CargoAdapter.dqQuery(filter),
+      sort: filter.sort,
+      order: filter.order,
+      limit: String(filter.limit ?? 100),
+      offset: String(filter.offset ?? 0),
+    });
+  }
+
+  /** The filter half shared by both DQ calls. Kept in one place on purpose. */
+  private static dqQuery(filter: DqFilter): Record<string, string | undefined> {
+    return {
+      source_table: filter.sourceTable,
+      issue_type: filter.issueType,
+      severity: filter.severity,
+      file_id: filter.fileId != null ? String(filter.fileId) : undefined,
+      q: filter.q,
+    };
   }
 
   // 15) Marine API — Live Vessels ----------------------------------------------

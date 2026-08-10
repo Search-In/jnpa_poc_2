@@ -53,6 +53,20 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/ai\/gate-queue/, ''),
         },
+        // UC2-040: the six connector services. Each publishes /health, /poll,
+        // /inject-fault and /published on 8100 inside its container; compose now
+        // maps them to 8101-8106 so the browser can reach one through this proxy
+        // without any connector being internet-facing. Stopping a container is
+        // what flips its Health Card from CONNECTOR to SIMULATED.
+        ...Object.fromEntries(
+          ([['ulip', 8101], ['icegate', 8102], ['tos', 8103],
+            ['fois', 8104], ['eseal', 8105], ['shipline', 8106]] as const)
+            .map(([slug, port]) => [`/connectors/${slug}`, {
+              target: env[`CONNECTOR_${slug.toUpperCase()}_URL`] ?? `http://localhost:${port}`,
+              changeOrigin: true,
+              rewrite: (p: string) => p.replace(new RegExp(`^/connectors/${slug}`), ''),
+            }]),
+        ),
         // NLDS Logistics Data Bank — Manage → Track. Browser calls /ldb/…;
         // Vite rewrites to the public LDB origin (avoids CORS). LDB rejects
         // requests whose Origin is localhost ("Invalid CORS request" → 403), so

@@ -36,6 +36,7 @@ import { GateOps } from './panels/GateOps.js';
 import { EmptyPool } from './panels/EmptyPool.js';
 import { CfsEcy } from './panels/CfsEcy.js';
 import { HealthCards } from './panels/HealthCards.js';
+import { DataQuality } from './panels/DataQuality.js';
 import { JnpaApiFeed, JNPA_FEED_ENABLED } from './panels/JnpaApiFeed.js';
 import { Notifications } from './panels/Notifications.js';
 import { Scenarios } from './panels/Scenarios.js';
@@ -546,6 +547,7 @@ export function Dashboard() {
                   requests at all — its three health calls would otherwise fire on
                   every visit to this tab. Off unless VITE_SHOW_JNPA_FEED says otherwise. */}
               {canSeeTab('health') && <CalciteTab tab="health" selected={activeTab === 'health'}><div data-tour-tab="health">{JNPA_FEED_ENABLED && <JnpaApiFeed />}<HealthCards /></div></CalciteTab>}
+              {canSeeTab('dataquality') && <CalciteTab tab="dataquality" selected={activeTab === 'dataquality'}><div data-tour-tab="dataquality"><DataQuality /></div></CalciteTab>}
               {canSeeTab('notifications') && <CalciteTab tab="notifications" selected={activeTab === 'notifications'}><div data-tour-tab="notifications"><Notifications /></div></CalciteTab>}
               {canSeeTab('methodology') && <CalciteTab tab="methodology" selected={activeTab === 'methodology'}><div data-tour-tab="methodology"><MethodologyPanel /></div></CalciteTab>}
             </CalciteTabs>

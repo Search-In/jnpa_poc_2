@@ -1575,6 +1575,253 @@ export interface CfsEcyDwellItem {
   dwell_hours?: number | string | null;
 }
 
+// ---- UC2-010: empty-container TRT chains -----------------------------------
+//
+// `GET /api/cfs-ecy/empty-trt*`, added by POC-3's UC3-003. This supersedes the
+// older `/chains/stats` for the ticket's question — "verify the 242 chains and
+// ledger the anomalies" — because it reports the 242 as a named, filterable
+// cohort (`chain_status = COMPLETE`) instead of a bare count, and it DETECTS
+// anomalies without patching them. Every shape below is transcribed from a live
+// response, not from the router signature.
+
+/** One numbered leg of an empty container's ECY→CFS→out cycle. */
+export interface EmptyTrtLeg {
+  seq: number;
+  /** e.g. 'ECY_GATE_OUT'. */
+  leg: string;
+  /** Prose supplied by the backend, so the UI invents no wording. */
+  label: string;
+  ts?: string | null;
+  /** False when the corpus has no event for this leg — the gap IS the finding. */
+  present: boolean;
+}
+
+/**
+ * One container's chain.
+ *
+ * ⚠ `trt_min` / `dwell_min` / `cycle_min` arrive as decimal STRINGS ("240.00"),
+ * being Postgres numerics. Do not assume number.
+ */
+export interface EmptyTrtChain {
+  container_no: string;
+  ecy_out_ts?: string | null;
+  ecy_in_ts?: string | null;
+  cfs_in_ts?: string | null;
+  cfs_out_ts?: string | null;
+  cfs_first_out_ts?: string | null;
+  ecy_out_events?: number;
+  ecy_in_events?: number;
+  cfs_in_events?: number;
+  cfs_out_events?: number;
+  event_count?: number;
+  first_event_ts?: string | null;
+  last_event_ts?: string | null;
+  legs_present?: number;
+  /** COMPLETE (counts toward the KPI) | PARTIAL | ORPHAN. */
+  chain_status: string;
+  trt_min?: number | string | null;
+  dwell_min?: number | string | null;
+  cycle_min?: number | string | null;
+  anomaly_codes?: string[];
+  anomaly_labels?: string[];
+}
+
+/** An anomaly class and how many containers exhibit it. */
+export interface EmptyTrtAnomaly {
+  /** e.g. 'NO_CFS_IN'. */
+  code: string;
+  containers: number;
+  /** Backend prose, e.g. "an ECY gate-OUT that never reached a CFS". */
+  label: string;
+}
+
+/** The KPI card, already scored against target and baseline by the backend. */
+export interface EmptyTrtKpi {
+  key: string;
+  label: string;
+  unit: string;
+  value: number;
+  target: number;
+  baseline: number;
+  deltaPct: number;
+  direction: string;
+  onTarget: boolean;
+  trend: number[];
+  /** 'live' when computed from real CODECO events. */
+  source: string;
+  /** Sample size behind `value` — the 242. */
+  n: number;
+}
+
+/** What the KPI means, in the backend's own words. Shown, never paraphrased. */
+export interface EmptyTrtDefinition {
+  key: string;
+  label: string;
+  measure: string;
+  unit: string;
+  target: number;
+  baseline: number;
+  direction: string;
+  /** Which chains are eligible, e.g. 'chain_status = COMPLETE (…)'. */
+  eligible: string;
+}
+
+export interface EmptyTrtDistribution {
+  /** The cohort UC2-010 asks to verify. */
+  valid_containers: number;
+  avg_trt_min: number;
+  median_trt_min: number;
+  min_trt_min: number;
+  max_trt_min: number;
+  avg_dwell_min: number;
+  avg_cycle_min: number;
+  window_from?: string | null;
+  window_to?: string | null;
+  vs_target_min: number;
+  vs_baseline_min: number;
+}
+
+/** Chain census. complete + partial + orphan = total. */
+export interface EmptyTrtChainCounts {
+  complete: number;
+  partial: number;
+  orphan: number;
+  total: number;
+}
+
+/** One corpus file behind the numbers — the provenance the demo is asked for. */
+export interface EmptyTrtSourceFile {
+  file_id: number;
+  path: string;
+  source_system?: string | null;
+  file_format?: string | null;
+  row_count?: number | null;
+  loaded_at?: string | null;
+  imported_events?: number | null;
+}
+
+export interface EmptyTrtSource {
+  ecy_out_events: number;
+  ecy_in_events: number;
+  cfs_in_events: number;
+  cfs_out_events: number;
+  total_events: number;
+  files: EmptyTrtSourceFile[];
+  ecy_pairing_gap?: number | null;
+  cfs_paired?: number | null;
+}
+
+/** `GET /api/cfs-ecy/empty-trt`. */
+export interface EmptyTrtOverview {
+  kpi: EmptyTrtKpi;
+  definition: EmptyTrtDefinition;
+  distribution: EmptyTrtDistribution;
+  chains: EmptyTrtChainCounts;
+  source: EmptyTrtSource;
+  anomalies: EmptyTrtAnomaly[];
+}
+
+/** `GET /api/cfs-ecy/empty-trt/anomalies/{code}` — the containers behind a class. */
+export interface EmptyTrtAnomalyDetail {
+  code: string;
+  label: string;
+  items: EmptyTrtChain[];
+  total: number;
+  limit?: number;
+  offset?: number;
+  count?: number;
+}
+
+/** `GET /api/cfs-ecy/empty-trt/containers/{cn}` — one container's whole cycle. */
+export interface EmptyTrtContainerDetail {
+  container_no: string;
+  chain: EmptyTrtChain;
+  legs: EmptyTrtLeg[];
+  events?: unknown[];
+  trt_min?: number | string | null;
+  dwell_min?: number | string | null;
+  cycle_min?: number | string | null;
+  chain_status?: string;
+  /** Whether this container is one of the 242 the KPI averages. */
+  counts_toward_kpi?: boolean;
+}
+
+export interface EmptyTrtChainFilter {
+  container?: string;
+  /** COMPLETE | PARTIAL | ORPHAN. */
+  chainStatus?: string;
+  anomalyCode?: string;
+  anomalyOnly?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+// ---- UC2-012: the data-quality ledger --------------------------------------
+//
+// `GET /api/dq/*`. Findings the corpus importers RECORDED rather than fixed —
+// which is the ticket's requirement: quarantine, do not silently repair. The
+// per-class rollups below are what the ticket calls "per-class tiles".
+
+export type DqSeverity = 'error' | 'warn' | 'info';
+
+/** One recorded finding. `source_path` is the file it came from. */
+export interface DqIssue {
+  issue_id: number;
+  file_id?: number | null;
+  /** The table the bad value landed in, e.g. 'core.berth_application'. */
+  source_table: string;
+  /** Natural key of the offending record, for evidence retrieval. */
+  record_ref?: string | null;
+  /** e.g. 'bad_imo', 'count_mismatch', 'truncated_value'. */
+  issue_type: string;
+  severity: DqSeverity | string;
+  /** Backend prose naming the defect. Displayed verbatim. */
+  description?: string | null;
+  detected_at?: string | null;
+  source_path?: string | null;
+}
+
+export interface DqBySourceTable {
+  source_table: string;
+  issues: number;
+  errors: number;
+  warnings: number;
+  info: number;
+  last_seen?: string | null;
+}
+
+export interface DqByIssueType {
+  issue_type: string;
+  severity: DqSeverity | string;
+  issues: number;
+  first_seen?: string | null;
+  last_seen?: string | null;
+}
+
+/** `GET /api/dq/summary`. Honours the same filters as `/issues`. */
+export interface DqSummary {
+  total: number;
+  errors: number;
+  warnings: number;
+  info: number;
+  by_source_table: DqBySourceTable[];
+  by_issue_type: DqByIssueType[];
+}
+
+/** Filters shared by `/api/dq/issues` and `/api/dq/summary`. */
+export interface DqFilter {
+  sourceTable?: string;
+  issueType?: string;
+  severity?: string;
+  fileId?: number;
+  /** Free text across description and record_ref. */
+  q?: string;
+  sort?: string;
+  order?: string;
+  limit?: number;
+  offset?: number;
+}
+
 // ---- the interface ---------------------------------------------------------
 
 export interface DataAdapter {
@@ -1830,6 +2077,63 @@ export interface DataAdapter {
   getCfsEcyChainStats?(): Promise<CfsEcyChainStats>;
   /** Per-container CFS dwell rows (`GET /api/cfs-ecy/dwell`). Optional: POC-3 path only. */
   getCfsEcyDwell?(filter?: IgmContainerFilter): Promise<CfsEcyDwellItem[]>;
+
+  /**
+   * UC2-010 — the empty-container TRT cohort (`GET /api/cfs-ecy/empty-trt`).
+   *
+   * Reports the KPI, its definition, the chain census and the anomaly classes
+   * in one call. Prefer this over {@link getCfsEcyChainStats} when the question
+   * is "which chains are verified and what is wrong with the rest": this one
+   * names the eligible cohort and hands back the anomalies as filterable
+   * classes rather than a single anomaly count.
+   *
+   * Optional: POC-3 path only.
+   */
+  getEmptyTrt?(): Promise<EmptyTrtOverview>;
+  /** Paged chains, filterable by status or anomaly class. Optional: POC-3 only. */
+  getEmptyTrtChains?(
+    filter?: EmptyTrtChainFilter,
+  ): Promise<{ items: EmptyTrtChain[]; total: number | null }>;
+  /** The containers behind ONE anomaly class. Optional: POC-3 only. */
+  getEmptyTrtAnomaly?(code: string, filter?: { limit?: number; offset?: number }):
+    Promise<EmptyTrtAnomalyDetail>;
+  /** One container's legs, durations and raw events. Optional: POC-3 only. */
+  getEmptyTrtContainer?(containerNo: string): Promise<EmptyTrtContainerDetail>;
+
+  /**
+   * UC2-012 — the data-quality ledger (`GET /api/dq/summary`, `/api/dq/issues`).
+   *
+   * Findings the importers RECORDED rather than repaired, which is the whole
+   * point: a corpus defect that is silently fixed cannot be shown to anyone.
+   * Summary and list take the same filters, so a tile and its drill-down cannot
+   * disagree about what they are counting.
+   *
+   * Optional: POC-3 path only.
+   */
+  getDqSummary?(filter?: DqFilter): Promise<DqSummary>;
+  /** Paged findings. Optional: POC-3 path only. */
+  getDqIssues?(filter?: DqFilter): Promise<{ items: DqIssue[]; total: number | null }>;
+
+  /**
+   * UC2-040 — the three connector endpoints beyond `/health`.
+   *
+   * `/health` feeds {@link getIntegrationHealth}, which every adapter implements;
+   * these three exist only when a real connector service is reachable, which is
+   * why they are optional. Each returns null when the connector does not answer,
+   * so a caller can never report an injection or a poll that did not happen.
+   */
+  injectConnectorFault?(
+    sourceSystem: IntegrationHealth['sourceSystem'],
+    level: 'AMBER' | 'RED' | null,
+  ): Promise<IntegrationHealth | null>;
+  /** One fallback-chain cycle; reports which tier served. Optional. */
+  pollConnector?(
+    sourceSystem: IntegrationHealth['sourceSystem'],
+  ): Promise<{ emitted: number; tier: string } | null>;
+  /** The CloudEvents the connector actually emitted — evidence, not claim. Optional. */
+  getPublishedEvents?(
+    sourceSystem: IntegrationHealth['sourceSystem'],
+  ): Promise<Array<{ topic: string; event: Record<string, unknown> }> | null>;
 
   /**
    * Health of the JNPA Simulated Port-Data API poller
