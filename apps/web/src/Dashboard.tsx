@@ -16,6 +16,8 @@ import { ROLES } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { useApp } from './state/AppContext.js';
 import { useAsync } from './state/useAsync.js';
+import { authEnabled, getUsername, logout } from './auth/session.js';
+import { cargoTokenStore } from './state/cargoTokenStore.js';
 import { PortMap } from './map/PortMap.js';
 import { PortScene, type PortSceneHandle, type CameraPreset, type Lighting } from './map/PortScene.js';
 import { AssetExplorer } from './map/AssetExplorer.js';
@@ -150,6 +152,20 @@ export function Dashboard() {
   // Seeded from data/positions.json, so Export/Reset are live from first render.
   const [placementCount, setPlacementCount] = useState(() => placementStore.count());
 
+  // Sign-out affordance. Rendered ONLY when the sign-in gate is on
+  // (VITE_AUTH_ENABLED) — with it off there is no session to end and the header
+  // is exactly as it was for the credential-free mock demo. The account name is
+  // read once on mount; it cannot change without a sign-out.
+  const signedInAs = useMemo(() => (authEnabled() ? getUsername() : null), []);
+  const signOut = () => {
+    // Drop the in-memory POC-3 bearer first so nothing can present it during
+    // tear-down, then hand off to the shared auth module: it clears the stored
+    // session (jnpa_uc3_*) and reloads at '/', which rebuilds AuthGate with no
+    // token — so the login screen is the only thing that can render.
+    cargoTokenStore.setToken(undefined);
+    logout();
+  };
+
   // Demo convenience: `?scenario=CGO-2` (or &auto=0 to pause, &step=N to jump to
   // a step) auto-starts a guided What-If tour on load, so a single link can open
   // straight into it.
@@ -215,6 +231,25 @@ export function Dashboard() {
               <CalciteOption value="mr" selected={lang === 'mr'}>मराठी</CalciteOption>
             </CalciteSelect>
           </CalciteLabel>
+          {/* Sign out — the only authenticated-session control in the shell.
+              Hidden entirely when VITE_AUTH_ENABLED is off (no session exists). */}
+          {authEnabled() && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {signedInAs && (
+                <span style={{ fontSize: 12, color: tokens.color.textMuted }}>{signedInAs}</span>
+              )}
+              <CalciteButton
+                appearance="outline"
+                kind="neutral"
+                iconStart="sign-out"
+                scale="s"
+                onClick={signOut}
+                title="Sign out and return to the sign-in screen"
+              >
+                Sign out
+              </CalciteButton>
+            </div>
+          )}
         </div>
       </CalciteNavigation>
 

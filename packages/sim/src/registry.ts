@@ -71,7 +71,7 @@ export const UC2_REGISTRY: UseCaseRegistry = {
     },
     {
       id: 'S4', label: 'S4 · Gate Closure → Dynamic Lane', group: 'scenario', shortcut: '4',
-      params: [{ key: 'gateId', label: 'Congested gate', type: 'select', options: ['NSICT-G1', 'GTI-G2', 'BMCT-G2'], default: 'NSICT-G1' }],
+      params: [{ key: 'gateId', label: 'Congested gate', type: 'select', options: ['NSICT-G1', 'GTI-G2', 'BMCT-G1'], default: 'NSICT-G1' }],
     },
     {
       id: 'S5', label: 'S5 · Trailer-Driver Shortage', group: 'scenario', shortcut: '5',

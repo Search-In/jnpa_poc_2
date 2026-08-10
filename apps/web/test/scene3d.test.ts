@@ -25,6 +25,7 @@ import {
   yardAssetPosition,
   yardPkeyFromAssetId,
 } from '../src/map/scene3d.js';
+import { graphicsFor } from '../src/map/layers.js';
 import { buildSceneAnim } from '../src/map/sceneAnim.js';
 import { placementStore } from '../src/map/placementStore.js';
 
@@ -199,20 +200,9 @@ describe('quay line — nothing standing in the water', () => {
 
 });
 
-/** Gates that serve the whole port from the main access road, not one terminal. */
-const PORT_WIDE_GATES = new Set(['North Gate', 'Central Gate']);
-
 describe('JNPA gate layout', () => {
-  /** The seven real JNPA gates kept in the scene. */
-  const REAL_GATES = [
-    'North Gate',
-    'Central Gate',
-    'JNPCT Gate 2',
-    'NSICT Entry Gate',
-    'NSIGT Entry Gate',
-    'GTI Entry Gate',
-    'BMCT Entry Gate',
-  ];
+  /** The five JNPA gates — one per terminal, nothing else exists. */
+  const REAL_GATES = ['North Gate', 'NSIGT Parking Gate', 'Central Gate', 'BMCT Out Gate', 'South Gate'];
   const ids = terminals.flatMap((t) => t.gates);
   const gateOps = ids.map((gateId) => ({
     gateId,
@@ -223,44 +213,56 @@ describe('JNPA gate layout', () => {
   }));
   const rendered = graphicsFor3d.gates(gateOps as never, terminals);
 
-  it('has exactly the 7 real gates, with no duplicates or extras', () => {
-    expect(ids.length, 'gates in config').toBe(7);
-    expect(new Set(ids).size, 'no duplicate ids').toBe(7);
-    expect(rendered.length, 'gates rendered').toBe(7);
+  it('has exactly the 5 gates, with no duplicates or extras', () => {
+    expect(ids.length, 'gates in config').toBe(5);
+    expect(new Set(ids).size, 'no duplicate ids').toBe(5);
+    expect(rendered.length, 'gates rendered').toBe(5);
     const names = rendered.map((g) => (g.attributes as { gateName: string }).gateName);
     expect(new Set(names)).toEqual(new Set(REAL_GATES));
-    // Retired gates must be gone from config AND from the placements.
-    for (const retired of ['NSICT-G2', 'BMCT-G3', 'BMCT-G2']) {
+    // Retired gates are gone from config AND from the placements — a lingering
+    // gate3d:* override would be an orphan the placement store still resolves.
+    for (const retired of ['GTI-G1', 'BMCT-G2', 'JNPCT-G2', 'NSICT-G2', 'BMCT-G3']) {
       expect(ids, `${retired} retired from config`).not.toContain(retired);
       expect(placements[`gate3d:${retired}`], `${retired} placement removed`).toBeUndefined();
     }
+    // Every terminal keeps exactly one gate: the sim picks with
+    // rng.pick(terminal.gates), which yields undefined on an empty array.
+    for (const t of terminals) {
+      expect(t.gates.length, `${t.terminalId} gate count`).toBe(1);
+    }
   });
 
-  it('stands every gate on a traced road, never in water or mangrove', () => {
-    // The truck-route paths were drawn waypoint-by-waypoint on the satellite
-    // imagery along the real port roads, so a point on one is provably on a road
-    // inside the estate. The previous coordinates put four gates in the creek.
-    const roads = Object.entries(placements)
-      .filter(([k, v]) => k.startsWith('truckroute:') && Array.isArray(v.path))
-      .map(([, v]) => v.path!);
-    expect(roads.length).toBeGreaterThan(0);
-    const toRoad = (p: [number, number]) =>
-      Math.min(
-        ...roads.flatMap((path) =>
-          path.slice(1).map((w, i) => {
-            const a = path[i]!;
-            const ax = (a[0] - p[0]) * M_PER_DEG_LON;
-            const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
-            const bx = (w[0] - p[0]) * M_PER_DEG_LON;
-            const by = (w[1] - p[1]) * M_PER_DEG_LAT;
-            const dx = bx - ax;
-            const dy = by - ay;
-            const len = dx * dx + dy * dy || 1;
-            const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
-            return Math.hypot(ax + u * dx, ay + u * dy);
-          }),
-        ),
-      );
+  it('leaves no gate id referenced elsewhere without a definition', () => {
+    // These ids are hard-coded in causalGraph.ts, the sim registry, the CODECO
+    // fixtures and the scenario/KPI/gateway tests, so they must keep existing.
+    for (const referenced of ['NSICT-G1', 'NSIGT-G1', 'GTI-G2', 'BMCT-G1', 'JNPCT-G1']) {
+      expect(ids, `${referenced} is defined`).toContain(referenced);
+      expect(placements[`gate3d:${referenced}`], `${referenced} has a placement`).toBeTruthy();
+    }
+    // …and no placement exists for a gate the config does not declare.
+    const placed = Object.keys(placements).filter((k) => k.startsWith('gate3d:')).map((k) => k.slice('gate3d:'.length));
+    expect(new Set(placed)).toEqual(new Set(ids));
+  });
+
+  /**
+   * The surveyed checkpoint each gate now stands on, taken from the red-circled
+   * buildings in the reference screenshots. These are real checkpoint structures,
+   * NOT points derived from the model's own geometry, so they are asserted
+   * exactly — a drift here means someone moved a gate off its checkpoint.
+   */
+  const CHECKPOINTS: Record<string, [number, number]> = {
+    'North Gate': [18.952950, 72.960450],
+    'NSIGT Parking Gate': [18.931437, 72.964438],
+    'Central Gate': [18.935800, 72.950530],
+    'BMCT Out Gate': [18.928423, 72.951902],
+    'South Gate': [18.931123, 72.953597],
+  };
+
+  it('stands every gate on its surveyed checkpoint, never in water or mangrove', () => {
+    // Gates are pinned to the checkpoint buildings circled in the reference
+    // screenshots. That corridor runs 0.9–2.3 km inland of the modelled truck
+    // routes, so "on a traced route" is deliberately NOT asserted any more — see
+    // the traffic-coupling test below, which measures what that costs.
     const water = Object.entries(placements)
       .filter(([k]) => k.startsWith('vessel:'))
       .map(([, v]) => [v.lng, v.lat] as [number, number]);
@@ -268,51 +270,114 @@ describe('JNPA gate layout', () => {
       const geo = g.geometry as unknown as { longitude: number; latitude: number };
       const a = g.attributes as { gateName: string; roleLabel: string };
       const p: [number, number] = [geo.longitude, geo.latitude];
-      // The two PORT-WIDE gates are pinned to surveyed OSM toll plazas on the real
-      // JNPT access roads, which are ~1 km east of this model's traced routes —
-      // see the separate test below. Every TERMINAL gate stays on a traced road.
-      if (!PORT_WIDE_GATES.has(a.gateName)) {
-        expect(toRoad(p), `${a.gateName} sits on a traced road`).toBeLessThan(1);
-      }
+      const want = CHECKPOINTS[a.gateName];
+      expect(want, `${a.gateName} has a surveyed checkpoint`).toBeTruthy();
+      expect(geo.latitude, `${a.gateName} latitude`).toBeCloseTo(want![0], 6);
+      expect(geo.longitude, `${a.gateName} longitude`).toBeCloseTo(want![1], 6);
       expect(Math.min(...water.map((w) => metres(p, w))), `${a.gateName} is clear of the water`).toBeGreaterThan(200);
       // The 3D label must carry the real name, not the internal id.
       expect(a.roleLabel, `${a.gateName} label`).toContain(a.gateName);
     }
   });
 
-  it('puts every TERMINAL gate at its own terminal, within reach of its yard', () => {
+  it('connects every checkpoint to the truck-route network', () => {
+    // Each truck route now runs from its terminal out to that terminal's gate, so
+    // every gate sits ON its carriageway. That is what keeps the traffic overlay
+    // alive: the gate-queue term falls off as (1 − d/170)^1.6, so a gate even
+    // 110 m off the road drops it to 20% and the Green/Orange/Red indicators go
+    // flat. It also means the indicators — drawn on these same paths — reach the
+    // gates instead of stopping short at the terminal.
+    const roads = Object.entries(placements)
+      .filter(([k, v]) => k.startsWith('truckroute:') && Array.isArray(v.path))
+      .map(([, v]) => v.path!);
+    for (const g of rendered) {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const p: [number, number] = [geo.longitude, geo.latitude];
+      const d = Math.min(
+        ...roads.flatMap((path) =>
+          path.slice(1).map((w, i) => {
+            const a = path[i]!;
+            const ax = (a[0] - p[0]) * M_PER_DEG_LON;
+            const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
+            const dx = (w[0] - a[0]) * M_PER_DEG_LON;
+            const dy = (w[1] - a[1]) * M_PER_DEG_LAT;
+            const len = dx * dx + dy * dy || 1;
+            const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
+            return Math.hypot(ax + u * dx, ay + u * dy);
+          }),
+        ),
+      );
+      expect(d, `${(g.attributes as { gateName: string }).gateName} is on its truck route`).toBeLessThan(1);
+    }
+  });
+
+  it('keeps every gate inside the port estate and off the stacks', () => {
     for (const g of rendered) {
       const geo = g.geometry as unknown as { longitude: number; latitude: number };
       const a = g.attributes as { gateName: string; terminalId: string };
-      // Port-wide gates serve the whole estate from the main access road, so they
-      // are deliberately not tied to one terminal's stacks.
-      if (PORT_WIDE_GATES.has(a.gateName)) continue;
+      const p: [number, number] = [geo.longitude, geo.latitude];
+      const yards = Object.entries(placements)
+        .filter(([k]) => k.startsWith('yard:'))
+        .map(([, v]) => [v.lng, v.lat] as [number, number]);
+      const cranes = cranePlacements(terminals).map((c) => c.pos);
+      expect(Math.min(...yards.map((y) => metres(p, y))), `${a.gateName} clears the stacks`).toBeGreaterThan(150);
+      expect(Math.min(...cranes.map((c) => metres(p, c))), `${a.gateName} clears the crane runs`).toBeGreaterThan(150);
+    }
+  });
+
+  it('puts every gate within the estate access corridor', () => {
+    for (const g of rendered) {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const a = g.attributes as { gateName: string; terminalId: string };
       const yards = Object.entries(placements)
         .filter(([k]) => k.startsWith(`yard:${a.terminalId}:`))
         .map(([, v]) => [v.lng, v.lat] as [number, number]);
       const d = Math.min(...yards.map((y) => metres([geo.longitude, geo.latitude], y)));
-      // A terminal entrance is a few hundred metres from its stacks — not the
-      // 1.7–5.1 km the previous coordinates put them at.
-      expect(d, `${a.gateName} is at the ${a.terminalId} entrance`).toBeLessThan(700);
+      // The checkpoints line the estate access road, which runs inland of the
+      // wharf — so a gate is 0.4–3.5 km from the stacks it serves, not adjacent
+      // to them. This still catches a gate flung right out of the port.
+      expect(d, `${a.gateName} is in the ${a.terminalId} access corridor`).toBeLessThan(3600);
     }
   });
 
-  it('pins the port-wide gates to the surveyed OSM toll plazas', () => {
-    // Verified against OpenStreetMap via Overpass `is_in` containment in the
-    // "Jawaharlal Nehru Port" polygon (way 49499133). Plaza A is 6 barrier=toll_booth
-    // nodes on the named "JNPT Terminal 1" access road (way 587671181); Plaza B is
-    // 2 booths on the "JNPT Terminal 2" branch. These are real coordinates, so they
-    // are asserted exactly — a drift here means someone moved a surveyed gate.
-    const SURVEYED: Record<string, [number, number]> = {
-      'North Gate': [18.952913, 72.960401],
-      'Central Gate': [18.935804, 72.950528],
-    };
-    for (const [name, [lat, lng]] of Object.entries(SURVEYED)) {
-      const g = rendered.find((x) => (x.attributes as { gateName: string }).gateName === name);
-      expect(g, `${name} is rendered`).toBeTruthy();
-      const geo = g!.geometry as unknown as { longitude: number; latitude: number };
-      expect(geo.latitude, `${name} latitude`).toBeCloseTo(lat, 6);
-      expect(geo.longitude, `${name} longitude`).toBeCloseTo(lng, 6);
+  it('renders each gate at the SAME coordinate in 2D and in 3D', () => {
+    // The 2D map used to derive gate positions from its own GATE_OFFSET table —
+    // terminal centroid + a hard-coded degree offset — and never read
+    // data/positions.json, which only the 3D scene consulted. Every surveyed
+    // correction therefore moved the 3D gate and left the 2D marker behind:
+    // they diverged by 106 m (BMCT-G1) up to 2290 m (JNPCT-G1), and the 2D
+    // markers landed inside the container stacks. Both views now resolve through
+    // pkeyPosition, and this test fails the moment anything forks them again.
+    const flat = graphicsFor.gates(gateOps as never, terminals);
+    expect(flat.length, '2D gates rendered').toBe(rendered.length);
+    const by2d = new Map(
+      flat.map((g) => {
+        const geo = g.geometry as unknown as { longitude: number; latitude: number };
+        return [(g.attributes as { gateId: string }).gateId, [geo.longitude, geo.latitude] as [number, number]];
+      }),
+    );
+    for (const g of rendered) {
+      const a = g.attributes as { gateId: string; gateName: string };
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const two = by2d.get(a.gateId);
+      expect(two, `${a.gateName} exists on the 2D map`).toBeTruthy();
+      expect(metres(two!, [geo.longitude, geo.latitude]), `${a.gateName} 2D↔3D divergence`).toBeLessThan(0.5);
+    }
+  });
+
+  it('keeps every gate out of the container stacks and the crane runs', () => {
+    // A gate is a road structure at the terminal boundary, never on the stacks.
+    // NSIGT-G1 stood 36 m from a yard-block centre — inside the block grid.
+    const yards = Object.entries(placements)
+      .filter(([k]) => k.startsWith('yard:'))
+      .map(([, v]) => [v.lng, v.lat] as [number, number]);
+    const cranes = cranePlacements(terminals).map((c) => c.pos);
+    for (const g of rendered) {
+      const geo = g.geometry as unknown as { longitude: number; latitude: number };
+      const a = g.attributes as { gateName: string };
+      const p: [number, number] = [geo.longitude, geo.latitude];
+      expect(Math.min(...yards.map((y) => metres(p, y))), `${a.gateName} clears the stacks`).toBeGreaterThan(75);
+      expect(Math.min(...cranes.map((c) => metres(p, c))), `${a.gateName} clears the crane runs`).toBeGreaterThan(180);
     }
   });
 
@@ -681,7 +746,7 @@ describe('trucks never overlap', () => {
         heading: (298 + 180 + (a.headingDelta ?? 0)) % 360,
       };
     });
-    expect(queued.length).toBe(7 * 12); // 7 real JNPA gates × the 12-truck cap
+    expect(queued.length).toBe(5 * 12); // 5 JNPA gates × the 12-truck cap
     for (let i = 0; i < queued.length; i++) {
       for (let j = i + 1; j < queued.length; j++) {
         const a = queued[i]!;

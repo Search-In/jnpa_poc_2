@@ -364,44 +364,47 @@
       "heading": 218
     },
     "gate3d:NSICT-G1": {
-      "lng": 72.952119,
-      "lat": 18.957701,
-      "heading": 205
+      "lng": 72.96045,
+      "lat": 18.95295,
+      "heading": 90
     },
     "gate3d:NSIGT-G1": {
-      "lng": 72.950686,
-      "lat": 18.954845,
-      "heading": 207
-    },
-    "gate3d:GTI-G1": {
-      "lng": 72.947342,
-      "lat": 18.943807,
-      "heading": 127
+      "lng": 72.964438,
+      "lat": 18.931437,
+      "heading": 346
     },
     "gate3d:GTI-G2": {
-      "lng": 72.950528,
-      "lat": 18.935804,
-      "heading": 148
-    },
-    "gate3d:BMCT-G1": {
-      "lng": 72.941252,
-      "lat": 18.937301,
-      "heading": 307
+      "lng": 72.95053,
+      "lat": 18.9358,
+      "heading": 317
     },
     "gate3d:JNPCT-G1": {
-      "lng": 72.960401,
-      "lat": 18.952913,
-      "heading": 100
-    },
-    "gate3d:JNPCT-G2": {
-      "lng": 72.935797,
-      "lat": 18.933054,
-      "heading": 311
+      "lng": 72.953597,
+      "lat": 18.931123,
+      "heading": 141
     },
     "truckroute:NSICT": {
       "lng": 72.953205,
       "lat": 18.948736,
-      "heading": 130
+      "heading": 130,
+      "path": [
+        [
+          72.953428,
+          18.95855
+        ],
+        [
+          72.95793,
+          18.953095
+        ],
+        [
+          72.959727,
+          18.953109
+        ],
+        [
+          72.96045,
+          18.95295
+        ]
+      ]
     },
     "truckroute:NSIGT": {
       "lng": 72.952119,
@@ -425,8 +428,68 @@
           18.952212
         ],
         [
-          72.949362,
-          18.951957
+          72.955734,
+          18.948118
+        ],
+        [
+          72.956503,
+          18.949107
+        ],
+        [
+          72.957112,
+          18.949884
+        ],
+        [
+          72.957708,
+          18.950701
+        ],
+        [
+          72.95848,
+          18.95167
+        ],
+        [
+          72.959373,
+          18.952141
+        ],
+        [
+          72.962402,
+          18.952184
+        ],
+        [
+          72.963554,
+          18.951955
+        ],
+        [
+          72.964789,
+          18.951298
+        ],
+        [
+          72.965569,
+          18.950398
+        ],
+        [
+          72.966054,
+          18.949612
+        ],
+        [
+          72.966302,
+          18.948445
+        ],
+        [
+          72.966117,
+          18.945824
+        ],
+        [
+          72.966,
+          18.944957
+        ],
+        [
+          72.964908,
+          18.932314
+        ],
+        [
+          72.964438,
+          18.931437
         ]
       ]
     },
@@ -440,20 +503,32 @@
           18.945266
         ],
         [
-          72.945835,
-          18.944901
-        ],
-        [
           72.946322,
           18.944547
         ],
         [
-          72.946848,
-          18.944166
-        ],
-        [
           72.947342,
           18.943807
+        ],
+        [
+          72.949397,
+          18.939772
+        ],
+        [
+          72.948777,
+          18.938654
+        ],
+        [
+          72.949117,
+          18.937585
+        ],
+        [
+          72.950595,
+          18.935854
+        ],
+        [
+          72.95053,
+          18.9358
         ]
       ]
     },
@@ -463,24 +538,40 @@
       "heading": 208,
       "path": [
         [
-          72.941252,
-          18.937301
-        ],
-        [
-          72.940808,
-          18.937624
+          72.939647,
+          18.938617
         ],
         [
           72.940368,
           18.937985
         ],
         [
-          72.940101,
-          18.938204
+          72.941252,
+          18.937301
         ],
         [
-          72.939647,
-          18.938617
+          72.942607,
+          18.938795
+        ],
+        [
+          72.943591,
+          18.93768
+        ],
+        [
+          72.947976,
+          18.932704
+        ],
+        [
+          72.950002,
+          18.930406
+        ],
+        [
+          72.953288,
+          18.927428
+        ],
+        [
+          72.951902,
+          18.928423
         ]
       ]
     },
@@ -490,24 +581,76 @@
       "heading": 208,
       "path": [
         [
-          72.935797,
-          18.933054
-        ],
-        [
-          72.935566,
-          18.933245
+          72.934153,
+          18.934417
         ],
         [
           72.935029,
           18.93369
         ],
         [
-          72.934593,
-          18.934052
+          72.935797,
+          18.933054
         ],
         [
-          72.934153,
-          18.934417
+          72.942251,
+          18.9392
+        ],
+        [
+          72.943034,
+          18.938311
+        ],
+        [
+          72.943591,
+          18.93768
+        ],
+        [
+          72.947976,
+          18.932704
+        ],
+        [
+          72.953671,
+          18.927714
+        ],
+        [
+          72.954589,
+          18.926874
+        ],
+        [
+          72.956945,
+          18.925324
+        ],
+        [
+          72.958912,
+          18.924035
+        ],
+        [
+          72.959867,
+          18.925691
+        ],
+        [
+          72.959064,
+          18.926177
+        ],
+        [
+          72.958033,
+          18.926986
+        ],
+        [
+          72.95727,
+          18.927893
+        ],
+        [
+          72.955381,
+          18.930074
+        ],
+        [
+          72.954079,
+          18.931596
+        ],
+        [
+          72.953597,
+          18.931123
         ]
       ]
     },
@@ -516,8 +659,14 @@
       "lat": 18.964178
     },
     "$yardNote": "Yard blocks compacted 0.48x about each terminal's grid centroid (pitch 50/44 m -> 24/21 m); four NSIGT blocks nudged 1-6 m clear of the NSIGT truck route. JNPCT additionally tightened to the same 24/21 m pitch and moved 165 m LANDWARD: its yard sat 204-272 m behind the quay, ~150 m closer than every other terminal (351-472 m), leaving the terminal's open apron covered in isolated stacks. It now sits at 369-411 m, in line with the rest and still 1.5 km clear of its gates.",
-    "$gateNote": "North Gate and Central Gate are placed on the two real toll plazas OSM records INSIDE the Jawaharlal Nehru Port polygon (way 49499133), verified by Overpass is_in containment: 6 barrier=toll_booth nodes centred 18.952913,72.960401 sitting 45 m from the named \"JNPT Terminal 1\" access road (way 587671181), and 2 booths centred 18.935804,72.950528 on the \"JNPT Terminal 2\" branch (ways 807490638/807538918). Headings follow those road bearings (100 and 148 deg). The five terminal Entry Gates are NOT moved: OSM carries no terminal-gate feature, and this model's terminals sit 1.2-2.3 km west of the real JNPT road spine, so putting them on the real roads would detach them from the terminals they serve.",
+    "$gateNote": "GEOREFERENCING VERDICT: this model is NOT a 1:1 georeferenced copy of JNPA. Fitting a total-least-squares line through the 22 crane anchors and comparing it with the line through the OSM man_made=pier polygons of the real container quay gives a 3.05 deg rotation (model 32.20 deg vs real 29.16 deg) and a systematic seaward bias of +29 to +363 m (mean +164, sd 104) that grows toward the south-west end - JNPCT sits about +350 m off the real quay while NSIGT sits about +30 m. One independent tie point does match: APM Terminals Mumbai (GTI) is published at 18.948333,72.941389 and the model GTI crane centroid is 10 m away, so the model is accurate near GTI and drifts away from there. CONSEQUENCE FOR GATES: applying the rigid quay-frame transform (rotate 3.05 deg, translate, no scale) to the real gate coordinates shows why they cannot be used. Measured perpendicular to the quay, the real gate complexes lie 1322 m (OSM toll plazas) to 2848 m (NSICT/NSIGT Parking Plaza, Google plus code WXJ7+HQ = 18.931437,72.964438) INLAND, whereas the whole modelled scene ends 754 m inland - the truck roads are its innermost feature. The real gates are therefore 570 m to 2.1 km beyond the edge of any modelled ground; no offset, rotation or scale places them on an existing road, because there is no road, yard or terrain there to place them on. Gates are consequently positioned at the in-model equivalent of the terminal entrance: the most landward legal point of the terminal own access road, at least 80 m from any yard block and 180 m from any crane. data/positions.json is the single source of truth - apps/web/src/map/layers.ts (2D) and scene3d.ts (3D) both resolve gates through pkeyPosition, and scene3d.test.ts asserts the two views agree to within 0.5 m. LIMITATION, stated rather than hidden: the BMCT road spans seaward +4..+134 m and the JNPCT road +16..+245 m, so both lie entirely on the berth side of their stacks and BMCT-G1, JNPCT-G1, JNPCT-G2 and NSICT-G1 cannot be moved landward without extending those routes, which the brief forbids.",
     "$gateHeadingNote": "Each gate canopy is squared across the road it stands on: heading = the bearing of that traced road at the gate. The toll-naka model spans 36 m across the carriageway and 14 m along it, and with no heading set every gate fell back to the port-wide 298 deg default. NSICT-G1 and NSIGT-G1 were the worst - 91-93 deg out, so their canopies blocked the road sideways instead of spanning it.",
-    "$tugNote": "tug moved 230 m further SEAWARD along the NSICT quay normal, from 421 m to ~651 m off the quay line. It was reported as looking beached on a mudflat edge. Its committed coordinate had not changed and no code touches it, so this is a judgement move, not a regression fix: the only trustworthy water references in the project are the hand-placed berthed vessels (141-493 m seaward), so pushing the tug beyond the furthest of them along the same axis is the one direction guaranteed to lead further from shore. Previous: [72.94631,18.963279]."
+    "$tugNote": "tug moved 230 m further SEAWARD along the NSICT quay normal, from 421 m to ~651 m off the quay line. It was reported as looking beached on a mudflat edge. Its committed coordinate had not changed and no code touches it, so this is a judgement move, not a regression fix: the only trustworthy water references in the project are the hand-placed berthed vessels (141-493 m seaward), so pushing the tug beyond the furthest of them along the same axis is the one direction guaranteed to lead further from shore. Previous: [72.94631,18.963279].",
+    "gate3d:BMCT-G1": {
+      "lng": 72.951902,
+      "lat": 18.928423,
+      "heading": 317
+    },
+    "$truckrouteNote": "Each truckroute:<T> path now runs from its terminal out to that terminal own gate, so the trucks enter and leave through the gate and the congestion overlay - which roadSegments() builds from these same paths - carries the Green/Orange/Red indicators all the way to the gate. The extensions follow the real JNPT road network: a routable graph was built from the OSM JNPT-named ways (282 nodes), the two disconnected pieces OSM leaves there were bridged across their 209 m gap, and a shortest path was taken from each route landward end to its gate, then thinned to 90 m spacing. NSICT had no traced route at all and now gets one from its nearest yard block to North Gate. The long straight legs (496-1403 m) are the connectors between the terminal apron and the nearest mapped road - OSM does not map the in-port service roads, so there is nothing to follow there; every one of them was sampled at 25 m and none crosses a water or wetland polygon. Waypoint ORDER still runs terminal-first, so truck direction, lane offsets and the spawn stagger in sceneAnim.ts are unchanged."
   }
 }

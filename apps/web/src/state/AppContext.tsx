@@ -22,6 +22,7 @@ import { SimAdapter } from '../sim/SimAdapter.js';
 import { cargoRefreshStore } from './cargoRefreshStore.js';
 import { cargoTokenStore } from './cargoTokenStore.js';
 import { getDataSourceMode } from './dataSourceMode.js';
+import { getToken as getSessionToken } from '../auth/session.js';
 
 interface AppState {
   adapter: DataAdapter;
@@ -63,21 +64,18 @@ const CARGO_FROM_REFERENCE = CARGO_SOURCE === 'reference';
 const REFERENCE_DATASET_URL = '/reference-dataset.json';
 
 // POC-3 authentication (the Cargo API returns 401 when the gateway runs with
-// AUTH_ENABLED=true). POC-2 mints a POC-3-issued JWT from POC-3's own `/api/auth`
-// surface — INDEPENDENT of DATA_MODE, because the cargo adapter runs in every
-// mode. A pre-issued token can be injected verbatim via VITE_CARGO_API_TOKEN
-// (skips minting). Otherwise POC-2 mints one via POC-3's documented
-// `POST /api/auth/login` with the configured credentials. (The legacy
-// `/api/auth/dev-token` endpoint is no longer served by POC-3 — it 404s — so it
-// has been removed from this flow.)
+// AUTH_ENABLED=true). The JWT now comes from the SIGNED-IN USER: auth/session.ts
+// posts what they typed to POC-3's `POST /api/auth/login` — the same endpoint,
+// the same core.app_user accounts and the same 8 h token UC-3's console uses.
+//
+// It used to be minted here from VITE_CARGO_AUTH_USER / VITE_CARGO_AUTH_PASS,
+// which Vite inlines at build time: the credentials shipped inside the JS bundle
+// and were readable in devtools by anyone. Those two variables, and the GitHub
+// Actions secrets feeding them, are gone.
+//
+// A pre-issued token can still be injected verbatim via VITE_CARGO_API_TOKEN for
+// unattended/service use; that path is unchanged.
 const CARGO_STATIC_TOKEN = (import.meta.env?.VITE_CARGO_API_TOKEN as string | undefined) || undefined;
-const CARGO_AUTH_USER = (import.meta.env?.VITE_CARGO_AUTH_USER as string | undefined) || undefined;
-const CARGO_AUTH_PASS = (import.meta.env?.VITE_CARGO_AUTH_PASS as string | undefined) || undefined;
-
-/** POC-3 `/api/auth` TokenResponse (access_token is the JWT; note: NOT `token`). */
-interface CargoTokenResponse {
-  access_token?: string;
-}
 
 /**
  * Mint a POC-3-issued JWT via POC-3's documented `POST /api/auth/login` using the
@@ -86,24 +84,10 @@ interface CargoTokenResponse {
  * from this flow.) Returns undefined if no token could be obtained (caller degrades).
  */
 async function mintCargoToken(): Promise<string | undefined> {
-  const base = CARGO_API_BASE.replace(/\/$/, '');
-  const post = async (path: string, body: unknown): Promise<string | undefined> => {
-    try {
-      const res = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) return undefined;
-      return ((await res.json()) as CargoTokenResponse).access_token;
-    } catch {
-      return undefined;
-    }
-  };
-  if (CARGO_AUTH_USER && CARGO_AUTH_PASS) {
-    return post('/api/auth/login', { username: CARGO_AUTH_USER, password: CARGO_AUTH_PASS });
-  }
-  return undefined;
+  // The signed-in user's own POC-3 JWT, minted by auth/session.ts against the
+  // same `POST /api/auth/login` this used to call with build-time credentials.
+  // Nothing credential-shaped is compiled into the bundle any more.
+  return getSessionToken() ?? undefined;
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {

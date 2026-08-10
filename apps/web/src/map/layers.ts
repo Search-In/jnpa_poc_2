@@ -11,18 +11,13 @@ import Polyline from '@arcgis/core/geometry/Polyline';
 import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, LiveVesselDTO, PendencyDTO } from '@jnpa/data';
 import { tokens } from '../theme/tokens.js';
+import { stableOid } from './oid.js';
+// The 2D map resolves a gate's coordinate through the SAME override-aware
+// resolver the 3D scene uses, so data/positions.json is the one source of truth
+// for where a gate is. See the note on gatePositions below.
+import { pkeyPosition } from './scene3d.js';
 
-/**
- * Stable, deterministic objectId from a logical key (gateId, facilityId, …).
- * Using a stable id per asset lets the FeatureLayerView UPDATE a feature in
- * place (smooth attribute/renderer transition) instead of delete+re-add, which
- * is what caused the whole-layer "blink" on every sim tick.
- */
-export function stableOid(key: string): number {
-  let h = 5381;
-  for (let i = 0; i < key.length; i++) h = ((h << 5) + h + key.charCodeAt(i)) | 0;
-  return Math.abs(h) || 1;
-}
+export { stableOid } from './oid.js';
 
 function facilityGraphics(facilities: Facility[]): Graphic[] {
   return facilities
@@ -78,32 +73,31 @@ export function facilitiesLayer(facilities: Facility[]): FeatureLayer {
 }
 
 /**
- * Per-gate offset (deg lng/lat) FROM the gate's own terminal, visually fine-tuned
- * against the JNPA satellite + Page-57 reference. Each gate is set individually
- * (not a global formula) and kept as an offset so it stays attached to its
- * terminal. All gates sit on the landward (ESE) internal road; a terminal's
- * first gate is ~250 m landward, and its EXTRA gates cluster next to the first
- * instead of fanning progressively 400–700 m to the south-east.
+ * Where a gate is, for the 2D map — resolved through `pkeyPosition`, exactly as
+ * the 3D scene does it, so BOTH views read `data/positions.json` and a gate can
+ * never be in two places at once.
+ *
+ * This replaced a `GATE_OFFSET` table that added a hard-coded degree offset
+ * (~[+0.002, −0.001], i.e. ~210 m E / ~110 m S) to the gate's terminal centroid
+ * and never consulted the placement store at all. Because the 3D scene DID
+ * consult it, every surveyed correction landed in the 3D view only and the 2D
+ * markers stayed put — they diverged by 106 m (BMCT-G1) to 2290 m (JNPCT-G1),
+ * and the centroid-plus-offset put several markers inside the container stacks.
+ * That is the bug this function exists to make impossible.
  */
-const GATE_OFFSET: Record<string, [number, number]> = {
-  'BMCT-G1': [0.002, -0.001], 'BMCT-G2': [0.0028, -0.0016], 'BMCT-G3': [0.0036, -0.0022],
-  'GTI-G1': [0.002, -0.001], 'GTI-G2': [0.0028, -0.0016],
-  'NSIGT-G1': [0.002, -0.001],
-  'NSICT-G1': [0.002, -0.001], 'NSICT-G2': [0.0028, -0.0016],
-  'JNPCT-G1': [0.002, -0.001], 'JNPCT-G2': [0.0028, -0.0016],
-};
-
-function gateGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
+function gatePositions(terminals: Terminal[]): Map<string, [number, number]> {
   const gatePos = new Map<string, [number, number]>();
   for (const t of terminals) {
-    const c = (t.geom as { coordinates: [number, number] }).coordinates;
-    // Individual landward offset per gate (see GATE_OFFSET), applied to the
-    // gate's terminal so every gate stays attached to it.
-    t.gates.forEach((g) => {
-      const o = GATE_OFFSET[g] ?? [0.002, -0.001];
-      gatePos.set(g, [c[0] + o[0], c[1] + o[1]]);
-    });
+    for (const g of t.gates) {
+      const p = pkeyPosition(`gate3d:${g}`, terminals);
+      if (p) gatePos.set(g, p);
+    }
   }
+  return gatePos;
+}
+
+function gateGraphics(gateOps: GateOpsDTO[], terminals: Terminal[]): Graphic[] {
+  const gatePos = gatePositions(terminals);
   return gateOps
     .filter((g) => gatePos.has(g.gateId))
     .map((g) => {
@@ -230,13 +224,10 @@ export function highlightGraphics(
   for (const t of terminals) {
     const c = (t.geom as { coordinates: [number, number] }).coordinates;
     pos.set(t.terminalId, c);
-    // Same per-gate offsets as gateGraphics (GATE_OFFSET), so a scenario
-    // spotlight rings the gate marker at its fine-tuned position.
-    t.gates.forEach((g) => {
-      const o = GATE_OFFSET[g] ?? [0.002, -0.001];
-      pos.set(g, [c[0] + o[0], c[1] + o[1]]);
-    });
   }
+  // Same resolver as gateGraphics, so a scenario spotlight rings the gate marker
+  // where it actually is rather than at a second, independently-derived point.
+  for (const [gateId, p] of gatePositions(terminals)) pos.set(gateId, p);
 
   return assetIds
     .filter((id) => pos.has(id))

@@ -41,7 +41,10 @@ import Polyline from '@arcgis/core/geometry/Polyline';
 import type { Facility, Terminal } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
 import { tokens } from '../theme/tokens.js';
-import { stableOid } from './layers.js';
+// From './oid.js', not './layers.js': layers.ts imports pkeyPosition from THIS
+// module so 2D and 3D share one gate coordinate; pulling stableOid back out of
+// layers.ts would close that into an import cycle.
+import { stableOid } from './oid.js';
 import { placementStore } from './placementStore.js';
 
 /**
@@ -759,22 +762,30 @@ function gatePosition(t: Terminal, gateIndex: number): [number, number] {
 // gate — the placements in data/positions.json stay exactly as surveyed.
 
 /**
- * Real JNPA gate names, by the gate id the rest of the system uses.
+ * The FIVE JNPA gates, by the gate id the rest of the system uses — one per
+ * terminal, and nothing else exists:
+ *
+ *   NSICT-G1  North Gate           (NSICT)
+ *   NSIGT-G1  NSIGT Parking Gate   (NSIGT)
+ *   GTI-G2    Central Gate         (GTI)
+ *   BMCT-G1   BMCT Out Gate        (BMCT)
+ *   JNPCT-G1  South Gate           (JNPCT)
  *
  * The ids are deliberately NOT renamed: scenario definitions, the sim registry,
- * the causal graph and the KPI / gateway / notification / scenario-engine tests
- * all key off them. So the real-world name lives here as the DISPLAY label — it
- * is what the 3D label, the popup and the asset tree show — while the id stays
- * stable for everything downstream. Positions live in data/positions.json.
+ * the causal graph, the CODECO fixtures and the KPI / gateway / notification /
+ * scenario-engine tests all key off them. So the real-world name lives here as
+ * the DISPLAY label — what the 3D label, the popup and the asset tree show —
+ * while the id stays stable for everything downstream. Retired with no
+ * counterpart in the reference imagery: GTI-G1, BMCT-G2, JNPCT-G2, NSICT-G2,
+ * BMCT-G3. Positions live in data/positions.json, which both the 2D map
+ * (layers.ts) and the 3D scene read through pkeyPosition.
  */
 export const GATE_NAMES: Record<string, string> = {
-  'JNPCT-G1': 'North Gate',
-  'JNPCT-G2': 'JNPCT Gate 2',
+  'NSICT-G1': 'North Gate',
+  'NSIGT-G1': 'NSIGT Parking Gate',
   'GTI-G2': 'Central Gate',
-  'NSICT-G1': 'NSICT Entry Gate',
-  'NSIGT-G1': 'NSIGT Entry Gate',
-  'GTI-G1': 'GTI Entry Gate',
-  'BMCT-G1': 'BMCT Entry Gate',
+  'BMCT-G1': 'BMCT Out Gate',
+  'JNPCT-G1': 'South Gate',
 };
 
 /** Display name for a gate id, falling back to the id itself. */
