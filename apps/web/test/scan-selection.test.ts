@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { partitionScanQueue, scanSelectionFor } from '../src/panels/scanSelection.js';
-import { gateUi, customsLifecycleConflict } from '../src/panels/cargoGates.js';
+import { gateUi, customsLifecycleConflict, customsActionsFor } from '../src/panels/cargoGates.js';
 
 const row = (containerNo: string, result: 'CLEAR' | 'HOLD' | 'EXAM' | undefined) => ({ containerNo, result });
 
@@ -120,6 +120,48 @@ describe('the verify gate says which check it is', () => {
   });
 });
 
+describe('customs dispositions an operator can still record', () => {
+  it('offers both outcomes of an examination', () => {
+    // A scan ends one of two ways: out-of-charge, or a hold.
+    expect(customsActionsFor('UNDER_INSPECTION')).toEqual(['CLEAR', 'HOLD']);
+  });
+
+  it('leaves a way out of a hold', () => {
+    // Already the worst case, so Hold is not offered again — but an out-of-charge
+    // has to stay reachable or the container can never leave the port.
+    expect(customsActionsFor('HELD')).toEqual(['CLEAR']);
+  });
+
+  it('never strands a flagged container', () => {
+    // The regression this exists to prevent: Flag wrote UNDER_INSPECTION, nothing
+    // could write CLEARED, and the server refuses to release goods under
+    // examination — so a flagged box could be scanned, verified, and then never
+    // released by any action the operator could reach.
+    for (const cs of ['UNDER_INSPECTION', 'HELD']) {
+      expect(customsActionsFor(cs)).toContain('CLEAR');
+    }
+  });
+
+  it('starts at Flag and stops at cleared', () => {
+    expect(customsActionsFor('PENDING')).toEqual(['FLAG']);
+    expect(customsActionsFor(null)).toEqual(['FLAG']);
+    expect(customsActionsFor(undefined)).toEqual(['FLAG']);
+    expect(customsActionsFor('CLEARED')).toEqual([]);
+  });
+
+  it('offers nothing once the container has left the port', () => {
+    // Its disposition is history, not a decision still to be made.
+    for (const cs of ['PENDING', 'UNDER_INSPECTION', 'HELD', 'CLEARED']) {
+      expect(customsActionsFor(cs, { released: true })).toEqual([]);
+    }
+  });
+
+  it('tolerates a status it does not model rather than offering nothing', () => {
+    expect(customsActionsFor('SOME_NEW_STATUS')).toEqual(['FLAG']);
+    expect(customsActionsFor('under_inspection')).toEqual(['CLEAR', 'HOLD']); // case-insensitive
+  });
+});
+
 describe('impossible combinations of the two tracks', () => {
   it('flags released-while-under-examination as an error', () => {
     // GESU5123996 in the movements grid: UNDER_INSPECTION + RELEASED.
@@ -133,10 +175,23 @@ describe('impossible combinations of the two tracks', () => {
     expect(customsLifecycleConflict('HELD', 'RELEASED')?.severity).toBe('error');
   });
 
-  it('warns before the release that would create the contradiction', () => {
-    // VERIFIED is the last moment the operator can still avoid it.
-    expect(customsLifecycleConflict('UNDER_INSPECTION', 'VERIFIED')?.severity).toBe('warning');
-    expect(customsLifecycleConflict('HELD', 'VERIFIED')?.severity).toBe('warning');
+  it('BLOCKS the release that would create the contradiction', () => {
+    // Not a "you may, but should not": the server refuses this release outright
+    // (409 customs_not_cleared), so the dialog has to refuse it first. It used to
+    // report severity 'warning' and tell the operator the gate "will not stop
+    // you" — they clicked Confirm and got a 409 back.
+    for (const cs of ['UNDER_INSPECTION', 'HELD']) {
+      const clash = customsLifecycleConflict(cs, 'VERIFIED');
+      expect(clash?.severity).toBe('error');
+      expect(clash?.blocksRelease).toBe(true);
+      expect(clash?.message).toMatch(/refuse to release/i);
+      expect(clash?.message).not.toMatch(/will not stop you/i);
+    }
+  });
+
+  it('reports an already-released contradiction without claiming it can be prevented', () => {
+    // The box has left. Disabling something is not the remedy — the record is.
+    expect(customsLifecycleConflict('HELD', 'RELEASED')?.blocksRelease).toBe(false);
   });
 
   it('leaves legitimate pairings alone', () => {

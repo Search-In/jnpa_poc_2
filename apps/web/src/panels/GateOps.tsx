@@ -9,7 +9,7 @@ import {
   CalciteSelect, CalciteOption, CalciteChip, CalciteNotice, CalciteIcon,
   CalciteLoader,
 } from '@esri/calcite-components-react';
-import type { EirTransaction, GateMovement, GateMovementGate, GateOpsDTO, GateQueueForecastDTO, PinTicket } from '@jnpa/data';
+import type { EirTransaction, GateEvent, GateMovement, GateMovementGate, GateOpsDTO, GateQueueForecastDTO, PinTicket } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
@@ -436,6 +436,129 @@ function PinTicketSection({ gate }: { gate: string }) {
  * CODECO records rather than via the delivery-order join, because a container can
  * be gated out with no E-DO on file (the two document sets do not fully overlap).
  */
+/**
+ * Recorded gate crossings — the UC-III return leg.
+ *
+ * `core.gate_event` is written by `POST /api/gate/events` when a truck actually
+ * passes a lane, and until this section existed NO UC-2 panel read it. The three
+ * tables above come from filed documents (`core.eir`, `core.pin_ticket`, CODECO),
+ * none of which UC-III writes — so a container could be assigned a truck and
+ * gated out in UC-III and leave no trace anywhere in this dashboard.
+ *
+ * ⚠ Deliberately NOT merged into the CODECO table above. A recorded crossing and
+ * a filed CODECO movement are different evidence: one is UC-III's operational
+ * log, the other the terminal's EDI message. Showing them as one list would let
+ * an operational event pass as a filed document.
+ */
+function GateCrossingSection() {
+  const { adapter } = useApp();
+  const events = useAsync<GateEvent[]>(
+    () => (adapter.getGateEvents ? adapter.getGateEvents({ limit: 200 }) : Promise.resolve([])),
+    [adapter],
+  );
+  const rows = events.data ?? [];
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <h4 style={{ margin: '0 0 6px', fontSize: 13 }}>
+        Recorded gate crossings (UC-III)
+        <InfoPopover label="About recorded gate crossings">
+          Live crossings logged by UC-III when a truck passes a lane
+          (<code>core.gate_event</code>), not filed documents. This is the only place UC-2
+          can show that a box physically moved: UC-III writes here and updates nothing on
+          the cargo record but <code>customs_status</code>, so a gate-out performed there
+          does not change a container&apos;s lifecycle in Movements.
+        </InfoPopover>
+      </h4>
+      <div><SourceBadge source="UC-III gate events" live /></div>
+      {/* Say this on screen, not only in the code. An unfiltered table sitting
+          under a gate selector reads as broken; the reason it cannot be scoped is
+          a real data gap the operator should know about. */}
+      <p style={{ fontSize: 11.5, color: tokens.color.textMuted, margin: '0 0 6px' }}>
+        <CalciteIcon icon="information" scale="s" style={{ marginRight: 6 }} />
+        <strong>Not scoped to the selected gate — every recorded crossing is listed.</strong>{' '}
+        The two systems name gates differently and nothing joins them: this dashboard
+        uses simulated ids from the terminal config (<code>NSICT-G1</code>), while a
+        crossing carries the terminal&apos;s own gate code as filed
+        (<code>IGTK01</code>, <code>OGTK05</code>). Filtering one against the other
+        would hide every real crossing, so the filter is deliberately not applied.
+        Scoping needs a JNPA gate reference — the equivalent of{' '}
+        <code>core.ref_terminal_alias</code> for gates.
+      </p>
+      {events.loading ? (
+        <CalciteLoader inline label="Loading gate crossings" />
+      ) : events.error ? (
+        <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
+          <div slot="title">Could not read recorded crossings</div>
+          <div slot="message">{String(events.error)}</div>
+        </CalciteNotice>
+      ) : rows.length === 0 ? (
+        <CalciteNotice open kind="info" icon="information" scale="s">
+          <div slot="title">No crossings recorded</div>
+          <div slot="message">
+            UC-III has logged no gate crossing yet. This table stays empty until a truck is
+            assigned and driven through a lane there — it is not fed by the filed gate
+            documents above.
+          </div>
+        </CalciteNotice>
+      ) : (
+        <>
+          <ImportExportToolbar
+            data={rows.map((e) => ({
+              'Event': e.event_type ?? '',
+              'Timestamp': e.ts ?? '',
+              'Container': e.container_number ?? '',
+              'Plate': e.plate ?? '',
+              'Gate': e.gate_id ?? '',
+              'BAT Lane': e.bat_lane ?? '',
+              'Document': `${e.document_type ?? ''} ${e.document_reference ?? ''}`.trim(),
+              'Job': e.job_id ?? '',
+            }))}
+            filename="gate-crossings.csv"
+          />
+          <CalciteTable scale="s" caption="Gate crossings recorded by UC-III">
+            <CalciteTableRow slot="table-header">
+              <CalciteTableHeader heading="Event" />
+              <CalciteTableHeader heading="Time" />
+              <CalciteTableHeader heading="Container" />
+              <CalciteTableHeader heading="Plate" />
+              <CalciteTableHeader heading="Gate" />
+              <CalciteTableHeader heading="Lane" />
+              <CalciteTableHeader heading="Document" />
+              <CalciteTableHeader heading="Job" />
+            </CalciteTableRow>
+            {rows.map((e) => (
+              <CalciteTableRow key={e.id ?? `${e.ts}-${e.plate}-${e.event_type}`}>
+                <CalciteTableCell>
+                  <CalciteChip scale="s" value={e.event_type ?? '—'}
+                    style={{ ['--calcite-chip-text-color' as never]:
+                      (e.event_type ?? '').toUpperCase() === 'GATE_OUT'
+                        ? tokens.kpi.better : tokens.color.textMuted }}>
+                    {e.event_type ?? '—'}
+                  </CalciteChip>
+                </CalciteTableCell>
+                <CalciteTableCell>
+                  {e.ts ? new Date(e.ts).toLocaleString() : '—'}
+                </CalciteTableCell>
+                <CalciteTableCell>{e.container_number || '—'}</CalciteTableCell>
+                <CalciteTableCell>{e.plate || '—'}</CalciteTableCell>
+                <CalciteTableCell>{e.gate_id || '—'}</CalciteTableCell>
+                <CalciteTableCell>{e.bat_lane || '—'}</CalciteTableCell>
+                <CalciteTableCell>
+                  {e.document_type
+                    ? `${e.document_type}${e.document_reference ? ` ${e.document_reference}` : ''}`
+                    : '—'}
+                </CalciteTableCell>
+                <CalciteTableCell>{e.job_id != null ? `#${e.job_id}` : '—'}</CalciteTableCell>
+              </CalciteTableRow>
+            ))}
+          </CalciteTable>
+        </>
+      )}
+    </div>
+  );
+}
+
 function GateOutSection({ gate }: { gate: string }) {
   const { adapter } = useApp();
 
@@ -790,6 +913,13 @@ export function GateOps({ window }: { window: { from: string; to: string } }) {
 
           {/* Lifecycle final step: the containers that actually left on a truck. */}
           <GateOutSection gate={gate} />
+
+          {/* The UC-III return leg — recorded crossings, not filed documents.
+              Gate-scoped filtering is deliberately NOT applied: core.gate_event
+              carries a terminal gate code (IGTK01), not the dashboard's
+              terminal-plus-number id, and guessing a mapping would silently hide
+              crossings under the wrong gate. */}
+          <GateCrossingSection />
         </>
       )}
     </Panel>

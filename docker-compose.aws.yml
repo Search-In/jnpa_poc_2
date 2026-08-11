@@ -8,20 +8,24 @@
 #     gateway/db/etc. stay on the internal compose network
 #   • restart: unless-stopped on every service (survives reboots)
 #   • pulls JWT_DEV_SECRET (and any future live creds) from .env, not hardcoded
-#   • the web bundle is built in `live` mode so the dashboard exercises the
-#     gateway round-trip. Set WEB_DATA_MODE=mock to ship a 100%-client-side demo
-#     (then the gateway/connectors/AI containers are optional).
+#   • ⚠ the web bundle's data mode is NOT set here — see below.
 #
-# .env (next to this file, gitignored) supplies: JWT_DEV_SECRET, WEB_DATA_MODE,
-# and the live-onboarding creds when DATA_MODE flips to live.
+# .env (next to this file, gitignored) supplies: JWT_DEV_SECRET and the
+# live-onboarding creds when DATA_MODE flips to live.
+#
+# UC2-064 — WEB_DATA_MODE used to be passed to the web image as a build arg, and
+# it did nothing in either direction. apps/web/Dockerfile declares no ARG and
+# simply copies a dist/ that the CI runner already built, and Vite inlines
+# VITE_* at BUILD time. So the knob documented here could not affect the bundle,
+# and the deployment claimed `live` while shipping a mock-mode build. The arg is
+# gone; the mode is set where it can actually take effect, in the workflow's
+# build step (.github/workflows/deploy.yml).
 
 services:
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-      args:
-        DATA_MODE: ${WEB_DATA_MODE:-live}
     ports:
       - "80:80"
       - "443:443"  # Open HTTPS port

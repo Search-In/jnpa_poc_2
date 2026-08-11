@@ -18,6 +18,7 @@
  * (`POST /verify` only inserts a `cargo_scan_verification` row). Never infer one
  * from the other.
  */
+import type { CargoCustomsStatus } from '@jnpa/data';
 
 /** The next action a container is eligible for, or `done` when released. */
 export type CargoGate = 'discharge' | 'yard' | 'verify' | 'release' | 'done';
@@ -161,6 +162,80 @@ export const uiGate = (g: CargoGate): Exclude<CargoGate, 'done'> =>
   (g === 'done' ? 'release' : g);
 
 /**
+ * A customs disposition an operator can record from here.
+ *
+ *   FLAG   nothing recorded yet → select the box for examination.
+ *   CLEAR  the out-of-charge: customs releases the goods. This is what unblocks
+ *          the port's release gate.
+ *   HOLD   the examination found a problem; the goods stay under customs control.
+ */
+export type CargoCustomsAction = 'FLAG' | 'CLEAR' | 'HOLD';
+
+/**
+ * Which customs outcomes can still be recorded for a container.
+ *
+ * The customs track has to be navigable in BOTH directions. It used to be
+ * write-once in the UI — Flag wrote UNDER_INSPECTION and nothing could write
+ * CLEARED — which made an examination a one-way door: the server refuses to
+ * release goods customs is examining, so a flagged box could be scanned,
+ * verified, and then never released by any action the operator could reach.
+ *
+ * ⚠ Recording a SCAN is not one of these. `POST /verify` deliberately leaves
+ * `customs_status` alone (`02_Import_Container_Lifecycle.md`: the RMS scan and
+ * the customs out-of-charge are separate steps by separate parties), so passing
+ * the scan gate never clears an exam. These are the customs acts; verify is the
+ * port's.
+ *
+ * A released container returns none: it has left, so its disposition is history
+ * rather than something still to decide.
+ */
+export function customsActionsFor(
+  customsStatus: string | null | undefined,
+  opts: { released?: boolean } = {},
+): CargoCustomsAction[] {
+  if (opts.released) return [];
+  switch ((customsStatus || 'PENDING').toUpperCase()) {
+    case 'UNDER_INSPECTION':
+      return ['CLEAR', 'HOLD']; // the two ways an examination ends
+    case 'HELD':
+      return ['CLEAR'];         // already the worst case; the only way out is OOC
+    case 'CLEARED':
+      return [];                // out-of-charge granted, nothing left to record
+    default:
+      return ['FLAG'];          // PENDING, or a status we do not model
+  }
+}
+
+/**
+ * Button copy for each customs outcome an operator can record.
+ *
+ * The wording is deliberately careful about WHAT is being written. "Record OOC"
+ * writes `customs_status = CLEARED` on the cargo record; it does not file an
+ * ICEGATE out-of-charge, and no document backs it (these rows share no containers
+ * with `core.ooc_item`). Calling the button "Clear customs" would let a simulated
+ * field write read as a granted clearance.
+ */
+export const CUSTOMS_ACTION_UI: Record<CargoCustomsAction, {
+  label: string; icon: string; kind: 'brand' | 'danger'; status: CargoCustomsStatus; title: string;
+}> = {
+  FLAG: {
+    label: 'Flag', icon: 'flag', kind: 'danger', status: 'UNDER_INSPECTION',
+    title: 'Flag for a customs scan — sets customs_status to UNDER_INSPECTION on the shared record',
+  },
+  CLEAR: {
+    label: 'Record OOC', icon: 'unlock', kind: 'brand', status: 'CLEARED',
+    title: 'Record an out-of-charge on this cargo record (customs_status → CLEARED). '
+      + 'This is what permits the port to release the container. An operator action '
+      + 'on the cargo record — NOT a filed ICEGATE document.',
+  },
+  HOLD: {
+    label: 'Hold', icon: 'lock', kind: 'danger', status: 'HELD',
+    title: 'The examination found a problem — hold the goods (customs_status → HELD). '
+      + 'The port will not release a held container.',
+  },
+};
+
+/**
  * A combination of the two tracks that cannot be true of a real container.
  *
  * The tracks are INDEPENDENT — one is the port's custody of the box, the other
@@ -169,15 +244,24 @@ export const uiGate = (g: CargoGate): Exclude<CargoGate, 'done'> =>
  * from customs control, so a box customs is still examining, or holding, cannot
  * lawfully have been gate-out released.
  *
- * The server permits it: `release_cargo` gates on the lifecycle alone (it
- * requires VERIFIED and never reads `customs_status`). That is a real gap, and
- * until it is closed the UI's job is to make the contradiction visible rather
- * than render it as two unremarkable chips side by side.
+ * The server agrees and ENFORCES it: `release_cargo` passes
+ * `blocked_customs=CUSTOMS_BLOCKS_RELEASE` ({HELD, UNDER_INSPECTION}) into the
+ * same locked read that checks the lifecycle, and a blocked release comes back as
+ * `409 customs_not_cleared`.
+ *
+ * ⚠ This used to say the gate "checks the lifecycle only and will not stop you".
+ * That was true of an older backend, and it made the VERIFIED case a soft warning
+ * — so the dialog promised a release that the server then refused, and the
+ * operator got a 409 after being told to expect a success.
+ *
+ * `blocksRelease` separates the two cases. A RELEASED row is a contradiction that
+ * has ALREADY happened: report it, there is nothing left to prevent. A VERIFIED
+ * one is a release the server is about to refuse, so the UI must refuse it first.
  */
 export function customsLifecycleConflict(
   customsStatus: string | null | undefined,
   lifecycle: string | null | undefined,
-): { severity: 'error' | 'warning'; message: string } | null {
+): { severity: 'error' | 'warning'; blocksRelease: boolean; message: string } | null {
   const cs = (customsStatus ?? '').toUpperCase();
   const lc = (lifecycle ?? '').toUpperCase();
   if (cs !== 'HELD' && cs !== 'UNDER_INSPECTION') return null;
@@ -187,6 +271,7 @@ export function customsLifecycleConflict(
   if (lc === 'RELEASED') {
     return {
       severity: 'error',
+      blocksRelease: false,
       message: `This container ${what}, yet it has been released from the port. `
         + 'Those cannot both be true: out-of-charge is what permits goods to leave '
         + 'customs control. Either the customs status is stale or the release was '
@@ -195,10 +280,12 @@ export function customsLifecycleConflict(
   }
   if (lc === 'VERIFIED') {
     return {
-      severity: 'warning',
-      message: `The scan gate has passed but this container ${what}. Releasing it now `
-        + 'would put the record in a state no real container can be in — the release '
-        + 'gate checks the lifecycle only and will not stop you.',
+      severity: 'error',
+      blocksRelease: true,
+      message: `The scan gate has passed, but this container ${what} — so the port will `
+        + 'refuse to release it. Out-of-charge is what permits goods to leave customs '
+        + 'control, and it has not been granted. Record the customs outcome first: '
+        + 'release becomes available once the disposition is CLEARED.',
     };
   }
   return null;
