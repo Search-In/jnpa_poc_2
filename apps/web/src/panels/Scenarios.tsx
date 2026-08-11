@@ -21,6 +21,7 @@ import { tokens } from '../theme/tokens.js';
 import { simStore } from '../sim/simStore.js';
 import { useSimStore } from '../sim/useSimStore.js';
 import { SCENARIO_SCRIPTS } from '../sim/scenarioPlayer.js';
+import { AuditedAnswer } from '../whatif/AuditedAnswer.js';
 
 export function Scenarios({ onResult }: { onResult?: (r: ScenarioResultDTO) => void }) {
   const { adapter, lang } = useApp();
@@ -52,6 +53,13 @@ export function Scenarios({ onResult }: { onResult?: (r: ScenarioResultDTO) => v
               tip card explains each change — no port-ops experience needed.
             </div>
           </CalciteNotice>
+
+          {/* The Notice questions put to UC-2 (II-A, II-B), answered by the
+              shared engine. Above the guided scenarios because it is the
+              audited answer; S1-S6 below are the walkthrough. */}
+          <div style={{ marginTop: 12 }}>
+            <AuditedAnswer />
+          </div>
 
           <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
             {SCENARIO_SCRIPTS.map((s) => {
