@@ -16,6 +16,22 @@
  *
  * All times are Asia/Kolkata (+05:30) — the corpus timezone. The constants are
  * epoch-ms so no parsing happens at read time.
+ *
+ * ⚠ DO NOT WIDEN THIS TO REACH THE NOTICE DATES. It is tempting now that the
+ * UC-3 database carries berthing and traffic rows through 7 Aug: the Notice asks
+ * about 1-6 Aug, and this clock refuses to go there. They are different things.
+ *
+ *   this clock   drives the LOCAL replay — the generated cargo world and the
+ *                file corpus, which still cover only 20-26 Jul. Nothing has
+ *                changed about that, so the warning above still holds exactly.
+ *   the engine   answers the Notice questions over HTTP from the UC-3 database,
+ *                with explicit dates in the request body. It never reads this
+ *                clock. See `src/whatif/engineClient.ts`.
+ *
+ * So the Notice dates ARE reachable in this dashboard — through the audited
+ * answers panel on the Scenarios tab — without this clock moving an inch.
+ * Widening it would put a confident, empty 03-Aug back on the replay board,
+ * which is the precise failure this constant exists to prevent.
  */
 
 /** +05:30 in ms — the corpus is stamped in IST throughout. */

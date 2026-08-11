@@ -1,0 +1,83 @@
+/* Audited-answer panel (UC-2).
+ *
+ * Scoped to this component and imported by it. `apps/web` styles inline and via
+ * Calcite, with no global stylesheet, so a component-local file is the least
+ * intrusive way to add one — nothing here can leak into another panel because
+ * every selector is prefixed `aa-`.
+ *
+ * Colours derive from currentColor so the panel follows the Calcite theme
+ * instead of pinning its own palette. */
+
+.aa-wrap { display: flex; flex-direction: column; gap: 10px;
+  padding: 12px; border-radius: 6px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+.aa-title { margin: 0; font-size: 13px; font-weight: 650; }
+.aa-sub { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; opacity: 0.75;
+  max-width: 78ch; }
+
+.aa-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.aa-tab { font: inherit; font-size: 11.5px; cursor: pointer; padding: 4px 9px;
+  border-radius: 4px; background: transparent; color: inherit;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
+.aa-tab-on { background: color-mix(in srgb, currentColor 10%, transparent);
+  font-weight: 600; }
+.aa-ref { font-weight: 700; letter-spacing: 0.02em; }
+
+.aa-question { margin: 0; font-size: 12px; line-height: 1.45; opacity: 0.85;
+  max-width: 78ch; }
+.aa-run { align-self: flex-start; font: inherit; font-size: 12px; cursor: pointer;
+  padding: 4px 12px; border-radius: 4px; background: transparent; color: inherit;
+  border: 1px solid currentColor; }
+.aa-run[disabled] { opacity: 0.55; cursor: default; }
+
+.aa-root { display: flex; flex-direction: column; gap: 8px; }
+.aa-verdict { border-radius: 6px; padding: 10px;
+  background: color-mix(in srgb, currentColor 6%, transparent); }
+.aa-headline { margin: 0; font-size: 14px; font-weight: 650; line-height: 1.4; }
+.aa-detail { margin: 4px 0 0; font-size: 11.5px; line-height: 1.45; opacity: 0.78; }
+.aa-banner { margin: 0; font-size: 11.5px; line-height: 1.45; padding: 8px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
+.aa-section { display: flex; flex-direction: column; gap: 6px; }
+.aa-section h4 { margin: 8px 0 0; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; opacity: 0.62; }
+.aa-actions { list-style: none; margin: 0; padding: 0; display: flex;
+  flex-direction: column; gap: 6px; }
+.aa-action { font-size: 11.5px; line-height: 1.45; }
+.aa-evidence { border-radius: 6px; padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+.aa-summary { cursor: pointer; font-size: 11.5px; font-weight: 600; }
+.aa-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.aa-table th, .aa-table td { text-align: left; vertical-align: top;
+  padding: 4px 6px 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.aa-evidence pre { font-size: 10.5px; overflow-x: auto; white-space: pre-wrap;
+  word-break: break-word; }
+.aa-chip { margin-left: 6px; font-size: 10px; padding: 0 5px; border-radius: 3px;
+  background: color-mix(in srgb, currentColor 12%, transparent); }
+
+/* --- the hourly gate profile -------------------------------------------- */
+.aa-chart { margin: 0; }
+.aa-chart figcaption { font-size: 11px; opacity: 0.7; margin-bottom: 6px; }
+.aa-chart-rate { opacity: 0.85; }
+.aa-bars { position: relative; display: flex; align-items: flex-end; gap: 2px;
+  height: 132px; padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.aa-bar-col { position: relative; flex: 1 1 0; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end; }
+.aa-bar-pair { display: flex; align-items: flex-end; gap: 1px; height: 100%; }
+.aa-bar { flex: 1 1 0; min-height: 1px; border-radius: 1px 1px 0 0; }
+.aa-bar-before { background: color-mix(in srgb, currentColor 30%, transparent); }
+.aa-bar-after { background: color-mix(in srgb, #2f6fd0 78%, transparent); }
+/* Over the sustained rate is the whole point of the chart, so it is the one
+   thing that changes colour — and it is also called out in the verdict, so the
+   meaning never rests on colour alone. */
+.aa-bar-over { background: color-mix(in srgb, #c8442b 82%, transparent); }
+.aa-bar-label { position: absolute; bottom: -14px; left: 0; right: 0;
+  text-align: center; font-size: 9px; opacity: 0.6; }
+.aa-rate-line { position: absolute; left: 0; right: 0; height: 0;
+  border-top: 1px dashed color-mix(in srgb, currentColor 55%, transparent); }
+.aa-legend { display: flex; gap: 12px; margin-top: 18px; font-size: 10.5px;
+  opacity: 0.75; }
+.aa-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.aa-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
