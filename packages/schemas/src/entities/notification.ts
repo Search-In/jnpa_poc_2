@@ -88,4 +88,15 @@ export interface IntegrationHealth {
   source?: 'CONNECTOR' | 'SIMULATED';
   /** Why no connector answered, when `source` is SIMULATED. Shown, not logged. */
   fallbackReason?: string;
+  /**
+   * WHICH upstream produced the serving tier (UC2-041) — the source's own
+   * production API, the POC-3 replay reader, or the built-in simulator.
+   *
+   * A third distinct claim, and the reason `mode` alone is not enough. Once the
+   * connectors gained a live tier that actually answers, `mode: LIVE` became
+   * ambiguous: it could mean ULIP was finally onboarded, or it could mean the
+   * connector read the ingested corpus from POC-3. Those are very different
+   * statements to make to an evaluator, so the card names the upstream outright.
+   */
+  upstream?: string;
 }

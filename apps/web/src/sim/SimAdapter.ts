@@ -65,6 +65,10 @@ export class SimAdapter implements DataAdapter {
     }
     if (base.pollConnector) this.pollConnector = (s) => base.pollConnector!(s);
     if (base.getPublishedEvents) this.getPublishedEvents = (s) => base.getPublishedEvents!(s);
+    // UC2-041 — the chaos rehearsal. Same presence-preserving rule: the console
+    // hides the Run-drill button when this is absent, and a stub that always
+    // returned null would offer a button that can only ever fail.
+    if (base.runConnectorDrill) this.runConnectorDrill = (s) => base.runConnectorDrill!(s);
   }
 
   get mode() {
@@ -329,6 +333,7 @@ export class SimAdapter implements DataAdapter {
   getPublishedEvents?: (
     sourceSystem: IntegrationHealth['sourceSystem'],
   ) => Promise<Array<{ topic: string; event: Record<string, unknown> }> | null>;
+  runConnectorDrill?: DataAdapter['runConnectorDrill'];
 
   async getGateOps(window: TimeWindow): Promise<GateOpsDTO[]> {
     return applyGateOps(await this.base.getGateOps(window), simStore.getState());

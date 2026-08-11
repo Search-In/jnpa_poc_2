@@ -7,7 +7,9 @@ from __future__ import annotations
 import os
 import random
 
-from connectors_common.base import BaseConnector, ConnectorConfig
+from typing import Optional
+
+from connectors_common.base import BaseConnector, ConnectorConfig, ReplaySpec
 from connectors_common.fallback import SourceUnavailable
 from connectors_common.synth import synth_cargo_event
 
@@ -30,6 +32,23 @@ class FoisConnector(BaseConnector):
         if not self._via_ulip and not self._cris_url:
             raise SourceUnavailable("FOIS: CRIS_FOIS_URL not set (JNPA-facilitated CRIS access)")
         raise SourceUnavailable("FOIS: live rail feed not exercised in PoC build")
+
+    def replay_spec(self) -> Optional[ReplaySpec]:
+        """None — and deliberately so (UC2-041).
+
+        Every other connector got a POC-3 register that holds real ingested rows
+        for its source. Rail did not, because rail is NOT INGESTED: the CTO rail
+        consignments (349 containers across 7 rakes) and the FOIS train
+        intimations (1,613 rows) exist in the corpus and have never been loaded
+        (`10_UC2_Task_Board.md` §1.2). There is no route to read them from.
+
+        So FOIS stays honestly SYNTHETIC while the other five can reach LIVE, and
+        the Integration tab shows that asymmetry rather than hiding it. Pointing
+        this connector at some other source's register to make six green cards
+        would be the exact dishonesty this ticket exists to remove. Ingest rail
+        and this becomes four lines.
+        """
+        return None
 
     def synthetic_poll(self) -> list[dict]:
         n = self._rng.randint(2, 5)

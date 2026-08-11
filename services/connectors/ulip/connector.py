@@ -9,7 +9,9 @@ from __future__ import annotations
 import os
 import random
 
-from connectors_common.base import BaseConnector, ConnectorConfig
+from typing import Optional
+
+from connectors_common.base import BaseConnector, ConnectorConfig, ReplaySpec
 from connectors_common.fallback import SourceUnavailable
 from connectors_common.synth import synth_cargo_event
 
@@ -37,6 +39,19 @@ class UlipConnector(BaseConnector):
         # When credentials are present, an httpx call would go here. We never
         # pretend to have live data in the PoC, so this stays a guarded stub.
         raise SourceUnavailable("ULIP: live call not exercised in PoC build")
+
+    def replay_spec(self) -> Optional[ReplaySpec]:
+        """POC-3's cargo lifecycle stream stands in for ULIP track/trace (UC2-041).
+
+        ULIP is a milestone aggregator, and `/api/cargo/events` is precisely a
+        per-container milestone stream over the ingested corpus — each row
+        carries its OWN event_type, so nothing about the event is inferred. That
+        makes it the one register that needs no interpretation to replay.
+        """
+        return ReplaySpec(
+            path="/api/cargo/events",
+            event_type=lambda r: str(r.get("event_type") or "CONTAINER_MILESTONE").upper(),
+        )
 
     def synthetic_poll(self) -> list[dict]:
         n = self._rng.randint(3, 8)

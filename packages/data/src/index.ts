@@ -18,11 +18,12 @@ export { AiForecastAdapter } from './ai-forecast-adapter.js';
 export { ConnectorAdapter } from './connector-adapter.js';
 export type { ConnectorAdapterDeps } from './connector-adapter.js';
 export {
-  CONNECTORS, connectorHealth, injectFault, pollConnector, publishedEvents,
+  CONNECTORS, connectorHealth, injectFault, pollConnector, publishedEvents, runDrill,
   toIntegrationHealth,
 } from './connectors.js';
 export type {
-  ConnectorDeps, ConnectorHealthBody, ConnectorPollBody, PublishedEvent,
+  ConnectorDeps, ConnectorDrillReport, ConnectorDrillStep, ConnectorHealthBody,
+  ConnectorPollBody, PublishedEvent,
 } from './connectors.js';
 export type { AiForecastAdapterDeps } from './ai-forecast-adapter.js';
 export { GATE_QUEUE_FEATURES, toInstance } from './ai-forecast.js';

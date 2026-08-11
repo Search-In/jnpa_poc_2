@@ -2130,6 +2130,43 @@ export interface DataAdapter {
   pollConnector?(
     sourceSystem: IntegrationHealth['sourceSystem'],
   ): Promise<{ emitted: number; tier: string } | null>;
+
+  /**
+   * Run the UC2-041 chaos rehearsal on one source and return the connector's own
+   * transcript (`POST /connectors/<slug>/drill`).
+   *
+   * Null when no connector answered. A console that rendered an absent drill as
+   * a clean sweep would be worse than one with no drill at all — the point of
+   * the rehearsal is to find out what actually happens, so "nothing ran" has to
+   * be distinguishable from "everything passed".
+   *
+   * The shape is inlined rather than imported from `connectors.ts`, matching how
+   * `pollConnector` and `getPublishedEvents` above declare theirs: this file is
+   * the contract every adapter is written against, and it must not depend on the
+   * one client that happens to implement it.
+   *
+   * Optional: only the ConnectorAdapter implements it.
+   */
+  runConnectorDrill?(sourceSystem: IntegrationHealth['sourceSystem']): Promise<{
+    sourceSystem: string;
+    /** False on a machine with no live upstream — then NO step can have matched. */
+    liveUpstreamConfigured: boolean;
+    steps: Array<{
+      step: string;
+      injected: 'AMBER' | 'RED' | null;
+      expectedTier: string;
+      tier: string;
+      matched: boolean;
+      emitted: number;
+      mode: string;
+      degradation: string;
+      upstream: string | null;
+      note: string | null;
+      why: string;
+    }>;
+    allMatched: boolean;
+  } | null>;
+
   /** The CloudEvents the connector actually emitted — evidence, not claim. Optional. */
   getPublishedEvents?(
     sourceSystem: IntegrationHealth['sourceSystem'],
