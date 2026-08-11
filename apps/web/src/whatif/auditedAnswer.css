@@ -81,3 +81,13 @@
   opacity: 0.75; }
 .aa-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .aa-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* All nine scenarios; UC-2's own first, the rest tagged with their owner. */
+.aa-ref-notice { background: color-mix(in srgb, #2f6fd0 22%, transparent);
+  padding: 0 4px; border-radius: 3px; }
+.aa-ref-bidder { background: color-mix(in srgb, currentColor 12%, transparent);
+  padding: 0 4px; border-radius: 3px; }
+.aa-owner { opacity: 0.55; font-size: 10px; margin-left: 4px; }
+.aa-caveat { margin: 0; font-size: 11px; line-height: 1.45; opacity: 0.72;
+  padding-left: 8px; max-width: 78ch;
+  border-left: 2px solid color-mix(in srgb, currentColor 25%, transparent); }

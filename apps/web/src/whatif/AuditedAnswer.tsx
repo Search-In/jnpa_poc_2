@@ -11,12 +11,12 @@
  * profile is not a trade worth making — the same pattern is already used for the
  * gate forecast curve in `panels/GateOps.tsx`.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import './auditedAnswer.css';
 import WhatIfAnswer from './WhatIfAnswer';
+import { orderedFor, type ScenarioEntry } from './scenarioCatalog';
 import {
   EngineUnavailable,
-  UC2_SCENARIOS,
   runEngineScenario,
   type EngineResult,
 } from './engineClient';
@@ -96,12 +96,17 @@ function HourlyProfile({ result }: { result: EngineResult }) {
 }
 
 export function AuditedAnswer() {
-  const [active, setActive] = useState<string>(UC2_SCENARIOS[0].id);
+  // All nine, UC-2's own first. A cargo planner asking whether the gate absorbs
+  // a modal shift has an obvious reason to also ask what the berth queue is
+  // doing — hiding the marine scenarios because another department owns them
+  // would defeat the point of a cross-domain twin.
+  const catalog = useMemo(() => orderedFor('UC-2'), []);
+  const [active, setActive] = useState<string>(catalog[0].id);
   const [result, setResult] = useState<EngineResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const entry = UC2_SCENARIOS.find((s) => s.id === active) ?? UC2_SCENARIOS[0];
+  const entry: ScenarioEntry = catalog.find((s) => s.id === active) ?? catalog[0];
 
   const run = useCallback(async () => {
     setLoading(true);
@@ -134,7 +139,7 @@ export function AuditedAnswer() {
       </header>
 
       <div className="aa-tabs" role="tablist">
-        {UC2_SCENARIOS.map((s) => (
+        {catalog.map((s) => (
           <button
             key={s.id}
             role="tab"
@@ -147,12 +152,20 @@ export function AuditedAnswer() {
               setError(null);
             }}
           >
-            <span className="aa-ref">{s.ref}</span> {s.label}
+            <span className={`aa-ref aa-ref-${s.source}`}>{s.ref}</span> {s.label}
+            {s.owner !== 'UC-2' ? <span className="aa-owner"> {s.owner}</span> : null}
           </button>
         ))}
       </div>
 
       <p className="aa-question">{entry.question}</p>
+      {entry.caveat ? <p className="aa-caveat">{entry.caveat}</p> : null}
+      {entry.owner !== 'UC-2' ? (
+        <p className="aa-sub">
+          A {entry.owner} question, computed in {entry.answeredBy} where its data
+          lives. Shown here because a cargo decision often turns on it.
+        </p>
+      ) : null}
 
       <button type="button" className="aa-run" onClick={run} disabled={loading}>
         {loading ? 'Fetching…' : result ? 'Refresh figures' : 'Get the audited figures'}
