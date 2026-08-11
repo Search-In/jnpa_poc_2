@@ -2,6 +2,16 @@
  * KPI strip (prompt §10) — the seven KPIs (+ rollups) with baseline + signed
  * improvement %. Positive improvement is green, negative red (direction already
  * normalised by the engine).
+ *
+ * ⚠ It says where the numbers come from (UC2-064). This strip renders above
+ * EVERY tab and was the only panel on the board carrying no provenance at all —
+ * seven KPIs in tender-exact units, computed by the simulator, with nothing
+ * saying so while every panel beneath it named its source. It is the most-read
+ * element here, which made it the worst place for that silence.
+ *
+ * The caption is derived from the adapter delegation list, not written out, so
+ * when UC2-034/039 binds these to real events it changes by itself rather than
+ * leaving a stale "simulated" line over real numbers.
  */
 import { CalciteCard, CalciteChip } from '@esri/calcite-components-react';
 import type { KpiResult } from '@jnpa/schemas';
@@ -11,6 +21,7 @@ import { Panel } from '../components/Panel.js';
 import { t } from '../i18n/strings.js';
 import { tokens } from '../theme/tokens.js';
 import { useSimStore } from '../sim/useSimStore.js';
+import { KPI_IS_SIMULATED, KPI_PROVENANCE } from '../state/provenance.js';
 
 function KpiCard({ kpi }: { kpi: KpiResult }) {
   const { lang } = useApp();
@@ -113,6 +124,22 @@ export function KpiStrip() {
     <Panel heading={t('panel_kpis', lang)} state={state} isEmpty={(d) => d.length === 0}>
       {(kpis) => (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {/* Above the cards, not below them: a caption under seven large numbers
+              is read after the numbers have already landed. */}
+          <div style={{
+            flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 11.5, color: tokens.color.textMuted,
+          }}>
+            <span style={{
+              fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.4,
+              padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap',
+              border: `1px solid ${KPI_IS_SIMULATED ? tokens.color.border : tokens.degradation.GREEN}`,
+              color: KPI_IS_SIMULATED ? tokens.color.textMuted : tokens.degradation.GREEN,
+            }}>
+              {KPI_IS_SIMULATED ? 'Simulated' : 'Real data'}
+            </span>
+            {KPI_PROVENANCE}
+          </div>
           {kpis.slice(0, 7).map((k) => (
             <KpiCard key={k.key} kpi={k} />
           ))}

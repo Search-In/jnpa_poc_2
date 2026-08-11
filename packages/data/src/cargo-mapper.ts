@@ -141,7 +141,7 @@ export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
   const result = scanResultFor(c.customs_status);
   const event: ScanEvent & {
     sealNo?: string; esealStatus?: string; preDoc?: string;
-    yardBlock?: string; lifecycleStatus?: string;
+    yardBlock?: string; lifecycleStatus?: string; customsStatus?: string;
   } = {
     scanId: `SCAN-${c.container_number}`,
     containerNo: c.container_number,
@@ -160,6 +160,11 @@ export function mapCargoToScanEvent(c: CargoRecord): ScanEvent {
     // GATES (yard-assign → verify → release) and it cannot decide which one is
     // next without knowing where the container actually is.
     ...(c.lifecycle_status ? { lifecycleStatus: c.lifecycle_status } : {}),
+    // The RAW customs disposition. `result` above is a lossy projection of it
+    // (CLEAR/HOLD/EXAM, and nothing at all for PENDING), while the server's
+    // release gate blocks on the exact values HELD and UNDER_INSPECTION — so a
+    // panel that has to predict that gate needs the original, not the projection.
+    ...(c.customs_status ? { customsStatus: c.customs_status } : {}),
   };
   return event;
 }

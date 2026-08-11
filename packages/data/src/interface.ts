@@ -706,6 +706,52 @@ export interface EdoDetail {
 // a container, and leaving. Sourced from POC-3 `GET /api/gate-docs/eir`.
 
 /** One EIR gate transaction. */
+/**
+ * One RECORDED gate crossing from `core.gate_event` — the UC-III side of the
+ * fence, written by `POST /api/gate/events` when a truck actually passes a lane.
+ *
+ * ⚠ NOT the same thing as the GATE_OUT status on a cargo row. That one is
+ * DERIVED from `is_released` (see `cargo-mapper.ts` `deriveStatus`), so it says
+ * "UC-2 released this box", not "a truck took it through a gate". This type is
+ * the only evidence UC-2 can show that the crossing itself happened.
+ *
+ * UC-III's job flow writes here and never writes back to `core.cargo`, so
+ * without reading this table a completed UC-III gate-out is invisible to every
+ * UC-2 panel.
+ */
+export interface GateEvent {
+  id?: number;
+  /** When the crossing was recorded. */
+  ts?: string | null;
+  /** Normalised vehicle plate. */
+  plate?: string | null;
+  /** Terminal gate the truck passed, e.g. IGTK01. */
+  gate_id?: string | null;
+  /** GATE_IN | GATE_OUT (others are recorded but do not advance the job). */
+  event_type?: string | null;
+  container_number?: string | null;
+  bat_lane?: string | null;
+  /** Which document was presented at the lane — FORM13 / PIN / EIR. */
+  document_type?: string | null;
+  document_reference?: string | null;
+  /** The UC-III job this crossing advanced, when it was linked to one. */
+  job_id?: number | null;
+  /** Trip key: `JOB-<id>` when job-linked, else the plate. */
+  trip_id?: string | null;
+  /** How the row arrived — 'API' for a recorded crossing. */
+  source?: string | null;
+  driver_id?: string | null;
+  device_id?: string | null;
+}
+
+/** Filter for {@link DataAdapter.getGateEvents}. */
+export interface GateEventFilter {
+  containerNo?: string;
+  plate?: string;
+  jobId?: number;
+  limit?: number;
+}
+
 export interface EirTransaction {
   id?: number;
   /** EIR reference, e.g. E-GTI-2. */
@@ -1943,6 +1989,13 @@ export interface DataAdapter {
   /** CODECO gate-out movements, optionally for one gate (`GET /api/shipping-lines/gate-movements`). Optional: POC-3 path only. */
   getGateMovements?(gateNo?: string, filter?: IgmContainerFilter): Promise<GateMovement[]>;
 
+  /**
+   * Recorded gate crossings for a container / plate / job
+   * (`GET /api/gate/events`) — the UC-III write-back UC-2 previously could not
+   * see. Optional: POC-3 path only.
+   */
+  getGateEvents?(filter?: GateEventFilter): Promise<GateEvent[]>;
+
   /** Form 11 rail pre-advice (`GET /api/export-chain/form11`). Optional: POC-3 path only. */
   getForm11?(container?: string): Promise<Form11Entry[]>;
   /** COPRAR advance load list (`GET /api/export-chain/load-list`). Optional: POC-3 path only. */
@@ -2130,6 +2183,43 @@ export interface DataAdapter {
   pollConnector?(
     sourceSystem: IntegrationHealth['sourceSystem'],
   ): Promise<{ emitted: number; tier: string } | null>;
+
+  /**
+   * Run the UC2-041 chaos rehearsal on one source and return the connector's own
+   * transcript (`POST /connectors/<slug>/drill`).
+   *
+   * Null when no connector answered. A console that rendered an absent drill as
+   * a clean sweep would be worse than one with no drill at all — the point of
+   * the rehearsal is to find out what actually happens, so "nothing ran" has to
+   * be distinguishable from "everything passed".
+   *
+   * The shape is inlined rather than imported from `connectors.ts`, matching how
+   * `pollConnector` and `getPublishedEvents` above declare theirs: this file is
+   * the contract every adapter is written against, and it must not depend on the
+   * one client that happens to implement it.
+   *
+   * Optional: only the ConnectorAdapter implements it.
+   */
+  runConnectorDrill?(sourceSystem: IntegrationHealth['sourceSystem']): Promise<{
+    sourceSystem: string;
+    /** False on a machine with no live upstream — then NO step can have matched. */
+    liveUpstreamConfigured: boolean;
+    steps: Array<{
+      step: string;
+      injected: 'AMBER' | 'RED' | null;
+      expectedTier: string;
+      tier: string;
+      matched: boolean;
+      emitted: number;
+      mode: string;
+      degradation: string;
+      upstream: string | null;
+      note: string | null;
+      why: string;
+    }>;
+    allMatched: boolean;
+  } | null>;
+
   /** The CloudEvents the connector actually emitted — evidence, not claim. Optional. */
   getPublishedEvents?(
     sourceSystem: IntegrationHealth['sourceSystem'],

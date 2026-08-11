@@ -9,6 +9,8 @@ import random
 
 from connectors_common.base import BaseConnector, ConnectorConfig
 from connectors_common.fallback import SourceUnavailable
+from connectors_common.poc3 import DEFAULT_LIMIT
+from connectors_common.replay import rows_to_events
 from connectors_common.synth import synth_cargo_event
 
 
@@ -29,6 +31,31 @@ class IcegateConnector(BaseConnector):
                 "ICEGATE: needs ICEGATE_BASE_URL + CLIENT_ID + DSC_THUMBPRINT (IEC + Class-3 DSC onboarding)"
             )
         raise SourceUnavailable("ICEGATE: live ICES 1.5 exchange not exercised in PoC build")
+
+    def replay_poll(self) -> list[dict]:
+        """Walk a real IGM the way the dashboard does — manifest, then containers.
+
+        Two hops rather than a ReplaySpec, because customs' container-level facts
+        live UNDER a manifest: there is no one-shot route that returns customs
+        rows keyed by container. `/api/customs/igm` gives a real manifest number
+        and `/api/customs/igm/{no}/containers` gives the containers declared on
+        it, which is exactly the path `Igm.tsx` drills through.
+
+        `CUSTOMS_FLAG` is the closest type in this connector's declared
+        vocabulary for "customs holds a record against this container". The
+        payload and rawRef name the register outright so the reading is never
+        hidden behind the label.
+        """
+        manifests = self.poc3.rows("/api/customs/igm", {"limit": 1})
+        igm_no = str(manifests[0].get("igm_no") or "").strip()
+        if not igm_no:
+            raise SourceUnavailable("POC-3: /api/customs/igm returned a manifest with no igm_no")
+        path = f"/api/customs/igm/{igm_no}/containers"
+        rows = self.poc3.rows(path, {"limit": DEFAULT_LIMIT})
+        return rows_to_events(
+            rows, self.source_system, "CUSTOMS_FLAG", path, limit=DEFAULT_LIMIT,
+            payload_keys=("igm_no", "seal_no", "container_status", "container_agent_code"),
+        )
 
     def synthetic_poll(self) -> list[dict]:
         n = self._rng.randint(2, 6)

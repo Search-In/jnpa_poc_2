@@ -227,3 +227,54 @@ describe('the decorator preserves what it wraps', () => {
     expect(lost, `ConnectorAdapter dropped: ${lost.join(', ')}`).toEqual([]);
   });
 });
+
+describe('the chaos drill — UC2-041', () => {
+  it('posts to the connector’s own /drill and returns its transcript', async () => {
+    const seen: string[] = [];
+    const report = {
+      sourceSystem: 'ULIP', liveUpstreamConfigured: true, allMatched: true,
+      steps: [{ step: '1 · baseline', tier: 'LIVE', matched: true }],
+    };
+    const fetchImpl = vi.fn(async (url: unknown) => {
+      seen.push(String(url));
+      return json(report);
+    });
+
+    const out = await adapter(fetchImpl).runConnectorDrill('ULIP');
+
+    expect(seen[0]).toContain('/connectors/ulip/drill');
+    expect(out).toEqual(report);
+  });
+
+  it('returns null — not an empty pass — when the connector does not answer', async () => {
+    const out = await adapter(vi.fn(async () => { throw new Error('down'); }))
+      .runConnectorDrill('ULIP');
+    expect(out).toBeNull();
+  });
+
+  it('rejects a transcript with no steps rather than rendering a clean sweep', async () => {
+    // A zero-step report would satisfy `allMatched` vacuously and read as a pass.
+    const out = await adapter(vi.fn(async () => json({
+      sourceSystem: 'ULIP', liveUpstreamConfigured: true, allMatched: true, steps: [],
+    }))).runConnectorDrill('ULIP');
+    expect(out).toBeNull();
+  });
+
+  it('returns null for a source that has no connector', async () => {
+    expect(await adapter(allUp()).runConnectorDrill('NOPE' as never)).toBeNull();
+  });
+
+  it('carries the connector’s upstream onto the health card', async () => {
+    // `mode: LIVE` alone is ambiguous once the connectors have a live tier that
+    // answers: it could mean ULIP was onboarded, or that the connector read the
+    // ingested corpus. The card has to say which.
+    const fetchImpl = vi.fn(async () => json({
+      ...card('ULIP'), upstream: 'POC-3 replay (traffic-three.searchintech.in)',
+    }));
+
+    const [h] = await adapter(fetchImpl).getIntegrationHealth();
+
+    expect(h!.upstream).toBe('POC-3 replay (traffic-three.searchintech.in)');
+    expect(h!.mode).toBe('LIVE');
+  });
+});

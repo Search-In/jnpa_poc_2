@@ -42,6 +42,13 @@ jobs:
           # were inlined into the JS bundle and readable by anyone with devtools.
           # Delete both from the repository secrets; nothing reads them now.
           VITE_AUTH_ENABLED: "true"
+          # Base adapter mode for the dashboard bundle (UC2-064). This is the ONLY
+          # place it can be set: the EC2 .env is read at runtime, and Vite inlines
+          # VITE_* at build time here on the runner. Unset resolves to "" and the
+          # app falls back to its `mock` default — which is exactly what every
+          # deploy so far has shipped, while docker-compose.aws.yml claimed `live`.
+          # Cargo/customs/export are unaffected either way; they come from POC-3.
+          VITE_DATA_MODE: ${{ vars.VITE_DATA_MODE }}
 
       - name: Configure SSH Key
         run: |

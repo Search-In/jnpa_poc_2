@@ -8,6 +8,22 @@
 
 name: jnpa-uc2
 
+# UC2-041 — the connectors' live tier.
+#
+# Passed through from the host env (or .env), never defaulted to a value: with
+# these absent every connector's live tier fails honestly and the fallback chain
+# serves SYNTHETIC, exactly as it did before the ticket. Setting them turns the
+# real LIVE→CACHED→SYNTHETIC drill on, because the replay reader is what finally
+# writes the fallback cache.
+#
+# There are no credentials in this file. POC3_USER/POC3_PASS name a core.app_user
+# account on the POC-3 gateway; POC3_TOKEN is a pre-issued JWT for unattended use.
+x-poc3-env: &poc3_env
+  POC3_BASE_URL: "${POC3_BASE_URL:-}"
+  POC3_USER: "${POC3_USER:-}"
+  POC3_PASS: "${POC3_PASS:-}"
+  POC3_TOKEN: "${POC3_TOKEN:-}"
+
 services:
   redpanda:
     image: redpandadata/redpanda:v24.2.7
@@ -88,6 +104,7 @@ services:
       context: .
       dockerfile: services/connectors/Dockerfile
     environment:
+      <<: *poc3_env
       DATA_MODE: mock
       CONNECTOR: ulip
       KAFKA_BROKERS: redpanda:29092
@@ -98,27 +115,48 @@ services:
         condition: service_healthy
   connector-icegate:
     <<: *connector
-    environment: { DATA_MODE: mock, CONNECTOR: icegate, KAFKA_BROKERS: redpanda:29092 }
+    environment:
+      <<: *poc3_env
+      DATA_MODE: mock
+      CONNECTOR: icegate
+      KAFKA_BROKERS: redpanda:29092
     ports:
       - "${CONNECTOR_ICEGATE_PORT:-8102}:8100"
   connector-tos:
     <<: *connector
-    environment: { DATA_MODE: mock, CONNECTOR: tos, KAFKA_BROKERS: redpanda:29092 }
+    environment:
+      <<: *poc3_env
+      DATA_MODE: mock
+      CONNECTOR: tos
+      KAFKA_BROKERS: redpanda:29092
     ports:
       - "${CONNECTOR_TOS_PORT:-8103}:8100"
   connector-fois:
     <<: *connector
-    environment: { DATA_MODE: mock, CONNECTOR: fois, FOIS_VIA_ULIP: "true", KAFKA_BROKERS: redpanda:29092 }
+    environment:
+      <<: *poc3_env
+      DATA_MODE: mock
+      CONNECTOR: fois
+      FOIS_VIA_ULIP: "true"
+      KAFKA_BROKERS: redpanda:29092
     ports:
       - "${CONNECTOR_FOIS_PORT:-8104}:8100"
   connector-eseal:
     <<: *connector
-    environment: { DATA_MODE: mock, CONNECTOR: eseal, KAFKA_BROKERS: redpanda:29092 }
+    environment:
+      <<: *poc3_env
+      DATA_MODE: mock
+      CONNECTOR: eseal
+      KAFKA_BROKERS: redpanda:29092
     ports:
       - "${CONNECTOR_ESEAL_PORT:-8105}:8100"
   connector-shipline:
     <<: *connector
-    environment: { DATA_MODE: mock, CONNECTOR: shipline, KAFKA_BROKERS: redpanda:29092 }
+    environment:
+      <<: *poc3_env
+      DATA_MODE: mock
+      CONNECTOR: shipline
+      KAFKA_BROKERS: redpanda:29092
     ports:
       - "${CONNECTOR_SHIPLINE_PORT:-8106}:8100"
 

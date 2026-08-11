@@ -36,13 +36,21 @@ class HealthCard:
     degradation: Degradation = Degradation.GREEN
     mode: IntegrationMode = IntegrationMode.SYNTHETIC
     note: Optional[str] = None
+    # WHICH upstream produced the serving tier — "POC-3 replay (host)", a source's
+    # own production API, or the built-in simulator (UC2-041).
+    #
+    # `mode` says which TIER served; this says who answered. They are different
+    # claims and conflating them is the failure UC2-040 spent a ticket removing:
+    # LIVE via a replay upstream must never be readable as "ULIP answered".
+    upstream: Optional[str] = None
     # forced fault for demo (Addendum B.1 fault injection); None = no override
     forced: Optional[Degradation] = field(default=None, repr=False)
 
-    def record_success(self, mode: IntegrationMode) -> None:
+    def record_success(self, mode: IntegrationMode, upstream: Optional[str] = None) -> None:
         self.last_good_poll_ts = _now_iso()
         self.error_count = 0
         self.mode = mode
+        self.upstream = upstream
         self.degradation = self.forced or (
             Degradation.GREEN if mode == IntegrationMode.LIVE else Degradation.AMBER
             if mode == IntegrationMode.CACHED else Degradation.AMBER
@@ -93,5 +101,6 @@ class HealthCard:
             "errorCount": self.error_count,
             "degradation": self.degradation.value,
             "mode": self.mode.value,
+            "upstream": self.upstream,
             "note": self.note,
         }

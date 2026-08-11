@@ -161,6 +161,65 @@ describe('Poc3CargoAdapter.createCargo — POST /api/cargo (201)', () => {
   });
 });
 
+describe('409 conflict messages — one status, several situations', () => {
+  const releaseConflict = async (detail?: unknown) => {
+    const fetchImpl = vi.fn(async () => errorRes(409, detail));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    return a.releaseCargo('MAEU6123458').catch((e) => e as CargoApiError);
+  };
+
+  it('reports a customs-blocked release as customs, not as a duplicate record', async () => {
+    // The MAEU6123458 case: VERIFIED + UNDER_INSPECTION, so `release_cargo` hits
+    // CUSTOMS_BLOCKS_RELEASE. Reporting that as "a cargo record with this
+    // container number already exists" sent operators hunting a duplicate that
+    // does not exist, for a release that was correctly refused.
+    const err = await releaseConflict({
+      error: 'customs_not_cleared', container_number: 'MAEU6123458',
+      customs_status: 'UNDER_INSPECTION', attempted_status: 'RELEASED',
+      message: 'Customs has not released these goods (customs_status=UNDER_INSPECTION).',
+    });
+    expect(err.status).toBe(409);
+    // The backend writes an operator-ready sentence; use it verbatim.
+    expect(err.userMessage).toBe('Customs has not released these goods (customs_status=UNDER_INSPECTION).');
+    expect(err.userMessage).not.toMatch(/already exists/i);
+  });
+
+  it('falls back to its own customs wording when the backend sends no message', async () => {
+    const err = await releaseConflict({
+      error: 'customs_not_cleared', container_number: 'MAEU6123458', customs_status: 'HELD',
+    });
+    expect(err.userMessage).toMatch(/customs has not released these goods/i);
+    expect(err.userMessage).toMatch(/HELD/);
+  });
+
+  it('names both ends of an illegal transition', async () => {
+    const err = await releaseConflict({
+      error: 'illegal_transition', container_number: 'MAEU6123458',
+      current_status: 'YARD_ASSIGNED', attempted_status: 'RELEASED',
+    });
+    expect(err.userMessage).toMatch(/YARD_ASSIGNED/);
+    expect(err.userMessage).toMatch(/RELEASED/);
+    expect(err.userMessage).not.toMatch(/already exists/i);
+  });
+
+  it('surfaces the 400 validation reason, which nests under `detail` not `message`', async () => {
+    const fetchImpl = vi.fn(async () => errorRes(400, {
+      error: 'validation_error', container_number: 'MAEU612345',
+      detail: 'MAEU612345 is not a valid ISO-6346 container number',
+    }));
+    const a = new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+    const err = await a.releaseCargo('MAEU612345').catch((e) => e as CargoApiError);
+    expect(err.userMessage).toBe('MAEU612345 is not a valid ISO-6346 container number');
+    expect(err.userMessage).not.toMatch(/[{}]/);
+  });
+
+  it('never shows the raw JSON detail blob', async () => {
+    const err = await releaseConflict({ error: 'something_new', container_number: 'MAEU6123458' });
+    expect(err.userMessage).not.toMatch(/[{}]/);
+    expect(err.userMessage).toMatch(/conflicts with/i);
+  });
+});
+
 describe('Poc3CargoAdapter.deleteCargo — DELETE /api/cargo/{id} (200)', () => {
   it('DELETEs the normalised resource and resolves on success', async () => {
     const fetchImpl = vi.fn(async () => ok({ deleted: true, container_number: 'MAEU6123458' }));
@@ -185,6 +244,12 @@ describe('Scan queue re-sourced from POC-3 cargo (no simulated release targets)'
     expect(held.result).toBe('HOLD');
     expect(mapCargoToScanEvent({ ...RECORD, customs_status: 'UNDER_INSPECTION' }).result).toBe('EXAM');
     expect(mapCargoToScanEvent({ ...RECORD, customs_status: 'PENDING' }).result).toBeUndefined();
+    // The RAW disposition rides along too. `result` is lossy — the Scan tab used
+    // to reconstruct customs_status from it and lost EXAM on the way, so the
+    // release dialog never learned the box was under examination.
+    const exam = mapCargoToScanEvent({ ...RECORD, customs_status: 'UNDER_INSPECTION' });
+    expect((exam as { customsStatus?: string }).customsStatus).toBe('UNDER_INSPECTION');
+    expect((held as { customsStatus?: string }).customsStatus).toBe('HELD');
   });
 
   it('getScanQueue reads the /scan-queue endpoint and enriches each member', async () => {

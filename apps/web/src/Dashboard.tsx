@@ -11,11 +11,12 @@ import {
   CalciteTabNav, CalciteTabTitle, CalciteLoader, CalciteButton, CalciteSegmentedControl,
   CalciteSegmentedControlItem,
 } from '@esri/calcite-components-react';
-import type { Role, Facility, Terminal } from '@jnpa/schemas';
+import type { Role, Facility, Terminal, IntegrationHealth } from '@jnpa/schemas';
 import { ROLES } from '@jnpa/schemas';
 import type { GateOpsDTO, PendencyDTO } from '@jnpa/data';
-import { useApp } from './state/AppContext.js';
+import { useApp, CARGO_SOURCE } from './state/AppContext.js';
 import { useAsync } from './state/useAsync.js';
+import { boardSummary, screenProvenance } from './state/provenance.js';
 import { authEnabled, getUsername, logout } from './auth/session.js';
 import { cargoTokenStore } from './state/cargoTokenStore.js';
 import { PortMap } from './map/PortMap.js';
@@ -52,9 +53,10 @@ import { simStore } from './sim/simStore.js';
 import { getScript, type TabId } from './sim/scenarioPlayer.js';
 import { IntegrationConsole } from './console/IntegrationConsole.js';
 import { faultStore } from './console/faultStore.js';
-import { useFaultStore } from './console/useFaultStore.js';
+import { useFaultStore, useFaultDep } from './console/useFaultStore.js';
 import { DataSourceToggle } from './components/DataSourceToggle.js';
 import { TABS, ROLE_TAB_IDS } from './tabs.js';
+import { ProvenanceBanner } from './panels/ProvenanceBanner.js';
 
 const DEMO_WINDOW = {
   from: new Date(Date.UTC(2026, 5, 15, 0, 0, 0)).toISOString(),
@@ -72,7 +74,24 @@ export function Dashboard() {
   const simDep = useSimDep();
   // Any injected integration fault → the DATA_MODE chip flips to a degraded look.
   const faults = useFaultStore();
+  const faultDep = useFaultDep();
   const faulted = faultStore.anyFaulted(faults);
+  // UC2-064 — what is ACTUALLY serving each screen, for the banner under the tab
+  // bar and the header chip. The connector probe is the same six /health calls
+  // the Integration tab makes; it is done at shell level so every screen can
+  // state its own source, not only the one that happens to be open.
+  const health = useAsync<IntegrationHealth[]>(
+    () => adapter.getIntegrationHealth(), [adapter, authReady, faultDep],
+  );
+  const provenanceCtx = {
+    cargoSource: CARGO_SOURCE,
+    baseMode: adapter.mode,
+    // null until the probe lands — never optimistically "live".
+    connectorsLive: health.loading
+      ? null
+      : (health.data ?? []).some((h) => h.source === 'CONNECTOR'),
+  };
+  const board = boardSummary(screenProvenance(provenanceCtx));
   // In live mode, panels must not fetch before the JWT lands → key on authReady.
   const facilities = useAsync<Facility[]>(() => adapter.getFacilities(role), [adapter, role, authReady]);
   const terminals = useAsync<Terminal[]>(() => adapter.getTerminals(), [adapter, authReady]);
@@ -202,19 +221,23 @@ export function Dashboard() {
           <CalciteButton appearance="outline" iconStart="play" scale="s" onClick={() => navigate('/simulator')}>
             Simulator
           </CalciteButton>
-          {/* DATA_MODE pre-flight gate (Integrity Rule §1): an always-visible chip
-              stating the global data mode. Default demo = SIMULATED (no viewer
-              can mistake it for live JNPA data). Clicking it opens the
-              Integration Simulator Console (per-source LIVE/DEGRADED/OFFLINE). */}
+          {/* Provenance chip (Integrity Rule §1, UC2-064).
+              It used to render `adapter.mode` — one word for the whole board —
+              which is wrong on every screen, because the board is genuinely
+              mixed: the base adapter is the simulator while cargo, customs and
+              the export chain come from POC-3's ingested corpus. It now reports
+              the MIXTURE, and the banner under the tab bar says what the screen
+              you are actually looking at is. Clicking still opens the
+              Integration Console (per-source LIVE/DEGRADED/OFFLINE). */}
           <CalciteChip
-            value={adapter.mode}
-            kind={adapter.mode === 'live' ? 'brand' : faulted ? 'inverse' : 'neutral'}
-            icon={adapter.mode === 'live' ? 'lightning' : faulted ? 'exclamation-mark-triangle' : 'play'}
+            value={board.label}
+            kind={board.label === 'LIVE' ? 'brand' : faulted ? 'inverse' : 'neutral'}
+            icon={board.label === 'LIVE' ? 'lightning' : faulted ? 'exclamation-mark-triangle' : 'play'}
             style={{ cursor: 'pointer' }}
-            title="Data mode — click to open the Integration Simulator Console"
+            title={`${board.detail} Click to open the Integration Console.`}
             onClick={() => faultStore.setOpen(true)}
           >
-            {adapter.mode === 'live' ? 'LIVE' : faulted ? 'SIMULATED · DEGRADED' : 'SIMULATED'}
+            {board.label}{faulted ? ' · DEGRADED' : ''} · {board.real}/{board.real + board.mixed + board.simulated} real
           </CalciteChip>
           <CalciteLabel layout="inline">
             {t('role', lang)}
@@ -507,6 +530,9 @@ export function Dashboard() {
             <div style={{ padding: 12 }} data-tour-tab="kpis">
               <KpiStrip />
             </div>
+            {/* UC2-064 — what is serving THIS screen, above the tabs so a panel
+                added later cannot forget to declare itself. */}
+            <ProvenanceBanner activeTab={activeTab as TabId} ctx={provenanceCtx} />
             {/* Controlled tabs: the active tab lives in React state (`activeTab`)
                 and is re-asserted via the `selected`/`tab` linkage on every
                 render. Without this, each sim-tick re-render would reset the
