@@ -46,6 +46,24 @@ export function computeCheckDigit(prefix10: string): number {
   return remainder === 10 ? 0 : remainder;
 }
 
+/**
+ * Does this SHAPE like a container number? Deliberately looser than
+ * {@link isValidContainerNo}: 4 letters then 5-7 digits, ignoring case and
+ * spaces. No check digit, no U/J/Z category check.
+ *
+ * It exists to route a single search box between "container number" and
+ * "vessel name", so being loose is the point:
+ *   • a mistyped or near-miss number (MAEU612345, ABCD1234567) still takes the
+ *     CONTAINER path, where the backend's ISO-6346 check digit rejects it with
+ *     its own message — the validation is untouched, and the operator is told
+ *     the number is wrong rather than being shown "no vessel found";
+ *   • free text (OOCL GERMANY, MSC ANNA) takes the VESSEL path and is never
+ *     put through container validation at all.
+ */
+export function looksLikeContainerNo(value: string): boolean {
+  return /^[A-Z]{4}\d{5,7}$/.test(value.trim().toUpperCase().replace(/\s+/g, ''));
+}
+
 /** True if `value` is a structurally- and check-digit-valid ISO 6346 number. */
 export function isValidContainerNo(value: string): boolean {
   if (!CONTAINER_NO_RE.test(value)) return false;

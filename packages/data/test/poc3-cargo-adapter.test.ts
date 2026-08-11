@@ -613,3 +613,117 @@ describe('Poc3CargoAdapter — JNPA Port-Data API feed state (UC2-006)', () => {
     expect(defects).toEqual([]);
   });
 });
+
+/**
+ * Vessel-name search.
+ *
+ * The bug: the Movements search box sent whatever was typed as `container_number`,
+ * so searching for the vessel OOCL GERMANY produced
+ *   400 {"error":"validation_error",
+ *        "detail":"invalid container_number (ISO-6346 check-digit failed)",
+ *        "container_number":"OOCLGERMANY"}
+ *
+ * The fix routes a vessel name to `vesselName`, which never populates
+ * `container_number`. POC-3 has no vessel filter (see the note on
+ * vesselSearchPage), so the adapter applies the predicate itself over pages the
+ * server DOES filter.
+ */
+describe('Poc3CargoAdapter — vessel-name search', () => {
+  const OOCL: CargoRecord = { ...RECORD, container_number: 'GESU5123996', vessel_name: 'OOCL GERMANY' };
+  const MSC: CargoRecord = { ...RECORD, container_number: 'MSCU7789010', vessel_name: 'MSC ANNA' };
+  const NO_VESSEL: CargoRecord = { ...RECORD, container_number: 'TCNU1234561', vessel_name: null };
+
+  const adapterWith = (fetchImpl: ReturnType<typeof vi.fn>) =>
+    new Poc3CargoAdapter(base(), { cargoBaseUrl: '/poc3', fetchImpl: fetchImpl as unknown as typeof fetch });
+
+  it('NEVER sends the vessel name as container_number — the reported 400 cannot recur', async () => {
+    const fetchImpl = vi.fn(async () => ok([OOCL, MSC, NO_VESSEL]));
+    const a = adapterWith(fetchImpl);
+
+    const { items, total } = await a.getContainerMovementsPage({ vesselName: 'OOCLGERMANY', limit: 50, offset: 0 });
+
+    for (const call of fetchImpl.mock.calls) {
+      expect(String(call[0])).not.toContain('container_number');
+    }
+    expect(items.map((m) => m.container.containerNo)).toEqual(['GESU5123996']);
+    expect(total).toBe(1);
+  });
+
+  it('matches regardless of spacing and case — "OOCLGERMANY" finds "OOCL GERMANY"', async () => {
+    for (const term of ['OOCLGERMANY', 'OOCL GERMANY', 'oocl germany', 'germany']) {
+      const fetchImpl = vi.fn(async () => ok([OOCL, MSC]));
+      const { items } = await adapterWith(fetchImpl).getContainerMovementsPage({ vesselName: term });
+      expect(items.map((m) => m.container.containerNo)).toEqual(['GESU5123996']);
+    }
+  });
+
+  it('still applies the filters POC-3 CAN do server-side, at its maximum page size', async () => {
+    const fetchImpl = vi.fn(async () => ok([OOCL]));
+    await adapterWith(fetchImpl).getContainerMovementsPage({
+      vesselName: 'OOCL GERMANY', customsStatus: 'CLEARED', isReleased: true,
+    });
+    const url = String(fetchImpl.mock.calls[0]![0]);
+    expect(url).toContain('customs_status=CLEARED');
+    expect(url).toContain('is_released=true');
+    expect(url).toContain('limit=1000'); // scan at the gateway's cap, not 50 at a time
+  });
+
+  it('walks the WHOLE register, so the count is exact rather than page 1 of it', async () => {
+    // 1000 non-matching rows (a full page ⇒ keep going), then a short page with
+    // two matches. A page-only filter would have reported zero.
+    const filler = Array.from({ length: 1000 }, (_, i) => ({
+      ...MSC, container_number: `MSCU000000${i}`,
+    })) as CargoRecord[];
+    const fetchImpl = vi.fn(async (url: unknown) =>
+      String(url).includes('offset=0') ? ok(filler) : ok([OOCL, { ...OOCL, container_number: 'GESU5123997' }]));
+    const a = adapterWith(fetchImpl);
+
+    const { items, total } = await a.getContainerMovementsPage({ vesselName: 'OOCL GERMANY', limit: 50 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2); // full page → second request; short page → stop
+    expect(total).toBe(2);
+    expect(items).toHaveLength(2);
+  });
+
+  it('pages through the matches without re-walking the register', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => ({
+      ...OOCL, container_number: `GESU000000${i}`,
+    })) as CargoRecord[];
+    const fetchImpl = vi.fn(async () => ok(many));
+    const a = adapterWith(fetchImpl);
+
+    const p1 = await a.getContainerMovementsPage({ vesselName: 'OOCL GERMANY', limit: 50, offset: 0 });
+    const p2 = await a.getContainerMovementsPage({ vesselName: 'OOCL GERMANY', limit: 50, offset: 50 });
+
+    expect(p1.total).toBe(120);
+    expect(p1.items).toHaveLength(50);
+    expect(p2.items).toHaveLength(50);
+    expect(p2.items[0]!.container.containerNo).not.toBe(p1.items[0]!.container.containerNo);
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // second page served from the scan
+  });
+
+  it('drops the cached scan on a write, so an edited row is never replayed stale', async () => {
+    // The write answers with the updated RECORD; the reads answer with the list.
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) =>
+      init?.method === 'PUT' ? ok({ ...OOCL, customs_status: 'HELD' }) : ok([OOCL]));
+    const a = adapterWith(fetchImpl);
+    await a.getContainerMovementsPage({ vesselName: 'OOCL GERMANY' });
+    await a.updateCargo('GESU5123996', { customs_status: 'HELD' });
+    await a.getContainerMovementsPage({ vesselName: 'OOCL GERMANY' });
+    // scan, write, scan again — the second search must not reuse the pre-write rows.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('leaves container-number search on its original path, untouched', async () => {
+    const fetchImpl = vi.fn(async () => ok([RECORD]));
+    const a = adapterWith(fetchImpl);
+
+    const { items } = await a.getContainerMovementsPage({ containerNo: 'MAEU6123458', limit: 50, offset: 0 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // one request, no scan
+    const url = String(fetchImpl.mock.calls[0]![0]);
+    expect(url).toContain('container_number=MAEU6123458');
+    expect(url).toContain('limit=50'); // the panel's page size, not the scan's
+    expect(items).toHaveLength(1);
+  });
+});

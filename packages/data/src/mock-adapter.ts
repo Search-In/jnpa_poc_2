@@ -104,6 +104,11 @@ export class MockAdapter implements DataAdapter {
       const norm = filter.containerNo.trim().toUpperCase().replace(/\s+/g, '');
       scoped = scoped.filter((c) => c.containerNo === norm);
     }
+    // Vessel-name search has no answer here: the simulator models no vessel per
+    // container (the Movements Vessel column reads "—" in mock cargo mode), so
+    // nothing can match. Returning the unfiltered list instead would report every
+    // container in the port as sailing on whatever vessel was typed.
+    if (filter.vesselName?.trim()) scoped = [];
 
     const roleFacilities =
       filter.role && FACILITY_SCOPED_ROLES.has(filter.role)

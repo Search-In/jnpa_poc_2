@@ -17,7 +17,7 @@ import {
   CalciteInput, CalciteLabel, CalciteLoader, CalciteList, CalciteListItem,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-import { computeCheckDigit, isValidContainerNo } from '@jnpa/schemas';
+import { computeCheckDigit, isValidContainerNo, looksLikeContainerNo } from '@jnpa/schemas';
 //
 // ORIGIN_STREAMS was also dropped: the Stream filter now builds its options from
 // the loaded rows, because that enum is the simulator's taxonomy and does not
@@ -599,7 +599,16 @@ export function ContainerMovements() {
         role,
         limit: PAGE_SIZE,
         offset: pageIndex * PAGE_SIZE,
-        ...(searchApplied ? { containerNo: searchApplied } : {}),
+        // One box, two searches. A container-shaped term keeps the existing exact
+        // ISO-6346 path (the backend still applies its check digit); anything else
+        // is a vessel name and goes to `vesselName`, which never touches
+        // `container_number`. Sending a vessel name as a container number is what
+        // produced the 400 `invalid container_number (ISO-6346 check-digit failed)`.
+        ...(searchApplied
+          ? looksLikeContainerNo(searchApplied)
+            ? { containerNo: searchApplied.toUpperCase().replace(/\s+/g, '') }
+            : { vesselName: searchApplied }
+          : {}),
         ...(stream !== 'ALL' ? { originStream: stream } : {}),
         ...(customsStatus !== 'ALL' ? { customsStatus } : {}),
         ...(released !== 'ALL' ? { isReleased: released === 'RELEASED' } : {}),
@@ -744,18 +753,22 @@ export function ContainerMovements() {
               unchanged). Search = exact ISO-6346 lookup (GET /api/cargo/{id});
               Customs status / Release state map to the existing GET /api/cargo params. */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', margin: '4px 0 8px' }}>
-            <CalciteLabel scale="s" style={{ minWidth: 220 }}>Search container (ISO-6346)
+            <CalciteLabel scale="s" style={{ minWidth: 220 }}>Search container or vessel
               <div style={{ display: 'flex', gap: 6 }}>
                 <CalciteInput
                   scale="s"
                   value={searchInput}
-                  placeholder="MAEU6123458"
+                  placeholder="MAEU6123458 or OOCL GERMANY"
                   onCalciteInputInput={(e) => setSearchInput((e.target as unknown as { value: string }).value)}
                 />
+                {/* Trim only. The upper-casing and space-stripping moved to the
+                    container branch of the filter above: applying it here as well
+                    turned "OOCL GERMANY" into "OOCLGERMANY" before anything could
+                    tell it was a vessel name. */}
                 <CalciteButton
                   scale="s"
                   iconStart="search"
-                  onClick={() => setSearchApplied(searchInput.trim().toUpperCase().replace(/\s+/g, ''))}
+                  onClick={() => setSearchApplied(searchInput.trim())}
                 >
                   Search
                 </CalciteButton>
@@ -771,6 +784,16 @@ export function ContainerMovements() {
                   </CalciteButton>
                 )}
               </div>
+              {/* Which of the two searches ran. The box takes either kind, so
+                  saying so is what keeps an empty vessel result from reading as
+                  a broken container lookup. */}
+              {searchApplied && (
+                <span style={{ fontSize: 11.5, color: tokens.color.textMuted, fontWeight: 400 }}>
+                  {looksLikeContainerNo(searchApplied)
+                    ? 'Container number — exact ISO-6346 match.'
+                    : 'Vessel name — containers whose vessel name contains this text.'}
+                </span>
+              )}
             </CalciteLabel>
             <CalciteLabel scale="s" style={{ minWidth: 150 }}>Customs status
               <CalciteSelect
