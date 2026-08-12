@@ -35,6 +35,7 @@ import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { SourceBadge } from './SourceBadge.js';
 import { EmptyTrtChains } from './EmptyTrtChains.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { tokens } from '../theme/tokens.js';
 
 /** Postgres numerics arrive as decimal STRINGS — coerce before any maths. */
@@ -408,17 +409,19 @@ export function CfsEcy() {
         </CalciteNotice>
       )}
 
-      {/* The scope limit is stated on screen, not just in code, so nobody reading
-          the panel mistakes a port-wide figure for a container's history. */}
-      <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '4px 0 10px' }}>
-        <div slot="title">Port-level statistics</div>
-        <div slot="message">
+      {/* The scope limit is still stated on screen — behind the (i) rather than as a
+          standing block, so nobody reading the panel mistakes a port-wide figure for
+          a container's history. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0 10px', fontSize: 12, color: tokens.color.textMuted }}>
+        Port-level statistics
+        <InfoPopover label="Port-level statistics">
+          <strong style={{ display: 'block', marginBottom: 4 }}>Port-level statistics</strong>
           Throughput and dwell for the off-dock CFS/ECY leg, measured across all containers
           in this feed. These container numbers do not appear on any manifest, advance list
           or gate document held here, so these figures describe the port — not the journey
           of any container shown on another tab.
-        </div>
-      </CalciteNotice>
+        </InfoPopover>
+      </div>
 
       {stats.loading || chains.loading ? (
         <CalciteLoader scale="s" label="Loading CFS/ECY statistics" />

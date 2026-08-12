@@ -26,6 +26,7 @@ import type { CargoCreateInput, CargoCustomsStatus, CargoLifecycleEvent, Contain
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { SuccessNotice } from '../components/SuccessNotice.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
@@ -750,23 +751,27 @@ export function ContainerMovements() {
               old badge read "TOS · ICEGATE · FOIS · e-Seal", claiming ICEGATE as a
               source for rows no ICEGATE document backs. Per-event source systems
               are still shown in the Source column and the timeline. */}
-          <div><SourceBadge source="POC-3 Cargo" live /></div>
+          {/* The provenance note sits behind the (i) rather than on the page: it is
+              context, read once, and as a standing block it pushed the grid down. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <SourceBadge source="POC-3 Cargo" live />
+            <InfoPopover label="These are POC-3 cargo records, not filed customs documents">
+              <strong style={{ display: 'block', marginBottom: 4 }}>
+                These are POC-3 cargo records, not filed customs documents
+              </strong>
+              This grid tracks the shared Cargo API. Its containers do not overlap the
+              filed manifests, bills of entry or gate documents shown on the Customs,
+              Scan and Gate tabs, so a customs status here is the cargo record&apos;s own
+              field — not evidence of a granted out-of-charge. Use the Import tab to
+              follow a container through its actual filed documents.
+            </InfoPopover>
+          </div>
           {customsError && (
             <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ margin: '6px 0' }}>
               <div slot="title">Could not record the customs disposition</div>
               <div slot="message">{customsError}</div>
             </CalciteNotice>
           )}
-          <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '6px 0 4px' }}>
-            <div slot="title">These are POC-3 cargo records, not filed customs documents</div>
-            <div slot="message">
-              This grid tracks the shared Cargo API. Its containers do not overlap the
-              filed manifests, bills of entry or gate documents shown on the Customs,
-              Scan and Gate tabs, so a customs status here is the cargo record&apos;s own
-              field — not evidence of a granted out-of-charge. Use the Import tab to
-              follow a container through its actual filed documents.
-            </div>
-          </CalciteNotice>
           {/* Container Search + POC-3 filters (additive; the Stream filter below is
               unchanged). Search = exact ISO-6346 lookup (GET /api/cargo/{id});
               Customs status / Release state map to the existing GET /api/cargo params. */}

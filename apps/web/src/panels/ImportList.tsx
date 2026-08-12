@@ -44,6 +44,7 @@ import { OocPanel } from './OocPanel.js';
 import { AwaitingOocQueue } from './AwaitingOocQueue.js';
 import { EdoPanel } from './EdoPanel.js';
 import { Smtp } from './CustomsRegisters.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { tokens } from '../theme/tokens.js';
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -494,17 +495,20 @@ function ImportOverview() {
 
   return (
     <>
-      <SourceBadge source="ICEGATE customs documents · terminal gate documents · shipping-line E-DO" live />
-
-      <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '8px 0 10px' }}>
-        <div slot="title">No container in this corpus traverses all ten steps</div>
-        <div slot="message">
+      {/* Context, not a status — kept on the page behind the (i) so it no longer
+          pushes the chain view down. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '8px 0 10px' }}>
+        <SourceBadge source="ICEGATE customs documents · terminal gate documents · shipping-line E-DO" live />
+        <InfoPopover label="No container in this corpus traverses all ten steps">
+          <strong style={{ display: 'block', marginBottom: 4 }}>
+            No container in this corpus traverses all ten steps
+          </strong>
           The document families are disjoint by design: the manifests, the bills of entry, the
           delivery orders and the gate documents each cover a different small set of boxes. A
           chain here is expected to be partial, and each unfilled step says which document is
           missing and why. Nothing is inferred to close a gap.
-        </div>
-      </CalciteNotice>
+        </InfoPopover>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', margin: '4px 0 12px' }}>
         <CalciteLabel scale="s" style={{ minWidth: 320 }}>Follow a container through its filed documents

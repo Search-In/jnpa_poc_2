@@ -41,6 +41,7 @@ import { SourceBadge } from './SourceBadge.js';
 import { LifecycleSteps, EXPORT_STEPS, EXPORT_VIEWS, SHARED_SURFACES } from './LifecycleSteps.js';
 import { UPLOAD_TARGETS } from './uploadTargets.js';
 import { ShippingBills, Leo } from './CustomsRegisters.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { tokens } from '../theme/tokens.js';
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -383,16 +384,17 @@ function ExportLoadList() {
               EAL_BMCT 588 for 587 — the source carries duplicate container rows.
               So this is a count of LINES, and the wording above says so. */}
           {truncated && (
-            <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '0 0 8px' }}>
-              <div slot="title">One page of a larger register</div>
-              <div slot="message">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 8px', fontSize: 12, color: tokens.color.textMuted }}>
+              One page of a larger register
+              <InfoPopover label="One page of a larger register">
+                <strong style={{ display: 'block', marginBottom: 4 }}>One page of a larger register</strong>
                 This shows the first {PAGE_SIZE} of {total!.toLocaleString()} lines. Search runs
                 against the whole register on the server, not just this page — so a container
                 further down the list is still findable by number, bill of lading or shipping
                 line. Counts here are advance-list <em>lines</em>; two terminals file a duplicate
                 container row, so lines slightly exceed distinct containers.
-              </div>
-            </CalciteNotice>
+              </InfoPopover>
+            </div>
           )}
 
           {rows.length === 0 ? (
@@ -620,15 +622,18 @@ function ExportDocuments() {
                   parser did not capture. Say so rather than implying this is all
                   the document contained. */}
               {open.doc_variant === 'form13_nsict_egate' && (
-                <CalciteNotice open kind="info" icon="information" scale="s" style={{ marginTop: 12 }}>
-                  <div slot="title">The scanned original carries more than this</div>
-                  <div slot="message">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, color: tokens.color.textMuted }}>
+                  The scanned original carries more than this
+                  <InfoPopover label="The scanned original carries more than this">
+                    <strong style={{ display: 'block', marginBottom: 4 }}>
+                      The scanned original carries more than this
+                    </strong>
                     This Form 13&apos;s printed copy shows a FORM HISTORY custody chain
                     (NSICT → UNF → the liner → the forwarder → the CFS → the transporter).
                     The parser did not capture it, so it is not shown here — it exists only
                     on the scanned image.
-                  </div>
-                </CalciteNotice>
+                  </InfoPopover>
+                </div>
               )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 14px', borderTop: `1px solid ${tokens.color.border}` }}>
@@ -722,17 +727,20 @@ export function ExportList({ onOpenTab, jumpToView }: {
 function ExportOverview() {
   return (
     <>
-      <SourceBadge source="Shipping lines · terminal gate documents · ICEGATE · EDI" live />
-      <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '8px 0 10px' }}>
-        <div slot="title">Pick a step above to see the documents behind it</div>
-        <div slot="message">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '8px 0 10px', fontSize: 12, color: tokens.color.textMuted }}>
+        <SourceBadge source="Shipping lines · terminal gate documents · ICEGATE · EDI" live />
+        Pick a step above to see the documents behind it
+        <InfoPopover label="Pick a step above to see the documents behind it">
+          <strong style={{ display: 'block', marginBottom: 4 }}>
+            Pick a step above to see the documents behind it
+          </strong>
           Nine of the ten canonical steps are backed by filed documents. The customs step is
           the one that cannot be closed: the Shipping Bills carry no container number and the
           LEOs share no SB number with them, so neither can be attached to a box. No real
           container in this corpus traverses the full chain — the ⚠ Synthetic chains view is
           the only place a complete ten-step sequence exists, and it is generated, not JNPA data.
-        </div>
-      </CalciteNotice>
+        </InfoPopover>
+      </div>
     </>
   );
 }
@@ -823,14 +831,12 @@ function ExportForm11() {
     <>
       <SourceBadge source="Terminal Form 11 · rail export pre-advice" live />
       {block('Form 11 — rail pre-advice',
-        <CalciteNotice open kind="info" icon="information" scale="s">
-          <div slot="message">
-            Each source workbook holds exactly one row — these are the templates the
-            terminals supplied, not a rake&apos;s full load. The <code>TRUCK_NO</code>,
-            <code> DRIVER_TRAIN_ID</code> and <code>SHIPPING_BILL_NO</code> columns exist
-            in the source but are empty in every one.
-          </div>
-        </CalciteNotice>,
+        <InfoPopover label="About the Form 11 rail pre-advice rows">
+          Each source workbook holds exactly one row — these are the templates the
+          terminals supplied, not a rake&apos;s full load. The <code>TRUCK_NO</code>,
+          <code> DRIVER_TRAIN_ID</code> and <code>SHIPPING_BILL_NO</code> columns exist
+          in the source but are empty in every one.
+        </InfoPopover>,
         (f11.data ?? []).length === 0 ? <p style={{ fontSize: 12, color: tokens.color.textMuted }}>None loaded.</p> : (
           <div style={{ overflowX: 'auto' }}>
             <CalciteTable caption="Form 11 rail pre-advice">
@@ -1122,18 +1128,20 @@ function ExportCutoffs() {
 
   return (
     <>
-      <SourceBadge source="Terminal berthing reports · VESSELS EXPECTED gate window" live />
-
-      <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '4px 0 10px' }}>
-        <div slot="title">Vessel cut-offs — the deadline, not the at-risk list</div>
-        <div slot="message">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0 10px', fontSize: 12, color: tokens.color.textMuted }}>
+        <SourceBadge source="Terminal berthing reports · VESSELS EXPECTED gate window" live />
+        Vessel cut-offs — the deadline, not the at-risk list
+        <InfoPopover label="Vessel cut-offs — the deadline, not the at-risk list">
+          <strong style={{ display: 'block', marginBottom: 4 }}>
+            Vessel cut-offs — the deadline, not the at-risk list
+          </strong>
           These are the gate windows the terminals publish. The per-container shutout-risk
           list EC-1 describes cannot be computed from this dataset: the export advance
           lists&apos; vessel visits appear in neither the berthing reports nor the vessel
           calls, so no container can be tied to a cut-off. Only NSICT and NSIGT publish
           these times.
-        </div>
-      </CalciteNotice>
+        </InfoPopover>
+      </div>
 
       {state.loading ? <CalciteLoader scale="s" label="Loading cut-offs" />
         : state.error ? (
