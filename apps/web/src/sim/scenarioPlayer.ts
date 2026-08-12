@@ -36,6 +36,8 @@ export interface MetricChange {
 }
 
 /** A patch applied to simStore when a step fires (all optional, additive). */
+import type { LifecycleHandoff } from './lifecycleHandoff.js';
+
 export interface StepPatch {
   gates?: Record<string, { queueLength?: number; avgTxnTimeMin?: number; openLanes?: number }>;
   pendency?: Record<string, number>;
@@ -96,6 +98,11 @@ export interface ScenarioScript {
   icon: string;
   /** Ordered storyline. */
   steps: ScenarioStep[];
+  /**
+   * Where this disruption continues once THIS twin has told its part. Absent on a
+   * scenario whose consequences stay inside cargo — see ./lifecycleHandoff.
+   */
+  handoff?: LifecycleHandoff;
 }
 
 // Real asset ids from config/terminals.json + the mock facilities, so the map
@@ -509,6 +516,100 @@ export const SCENARIO_SCRIPTS: ScenarioScript[] = [
         patch: { pendency: { [CFS_URAN]: 65 }, movementRate: 1.1 },
       },
     ],
+  },
+
+  // ── S7 · Monsoon Berthing Delay (UC-1 → UC-2 → UC-3) ──────────────────────
+  //
+  // The CARGO half of the cross-domain Monsoon chain. UC-1 (Vessel Traffic) holds
+  // pilotage when wind and wave cross the transfer limit; vessels queue at the
+  // anchorage and berth late. This scenario picks the story up at the quay: what a
+  // four-hour arrival hold upstream does to discharge, yard dwell and evacuation —
+  // and hands on to UC-3, where the recovered discharge becomes a truck surge on
+  // the corridor.
+  //
+  // It exists because there was no weather-driven scenario here at all. S1..S6 are
+  // triggered by a rake delay, a customs surge, a rake split, a lane closure, a
+  // driver shortage and a plug failure — none by an upstream vessel event — so the
+  // Monsoon chain had no honest landing point in the cargo twin.
+  {
+    id: 'S7',
+    title: 'Monsoon Berthing Delay → UC-3',
+    blurb:
+      'A pilotage hold upstream in UC-1 lands four vessels late; discharge compresses, yard dwell climbs, and the recovery pushes a truck surge to UC-3.',
+    icon: 'rain',
+    steps: [
+      {
+        title: 'Vessels berth late after the pilotage hold',
+        explain:
+          'Upstream in UC-1 the monsoon crossed the pilot-transfer limit and boarding was suspended for about four hours. Four inbound calls berth late in one block rather than spread across the shift, so their discharge windows overlap instead of queueing neatly.',
+        tab: 'import',
+        spotlight: [G_NSICT],
+        metrics: [
+          { label: 'Calls berthing late (from UC-1)', from: 0, to: 4, unit: 'vessels', tone: 'worse' },
+          { label: 'Discharge start slip', from: '—', to: '~4 h', tone: 'worse' },
+        ],
+        patch: { movementRate: 0.82 },
+      },
+      {
+        title: 'Discharge compresses into a shorter window',
+        explain:
+          'The same volume has to come off in less time. Quay moves bunch up, boxes land in the yard faster than they can be evacuated, and the yard starts holding more than it planned to.',
+        tab: 'pendency',
+        spotlight: [CFS_DRONAGIRI],
+        valueTargets: [{ kind: 'kpi', key: 'containerPendency' }],
+        metrics: [
+          { label: 'Yard dwell (simulated)', from: '2.4', to: '3.6', unit: 'days', tone: 'worse' },
+          { label: 'Boxes awaiting evacuation', from: 40, to: 118, unit: 'boxes', tone: 'worse' },
+        ],
+        patch: { movementRate: 0.78, pendency: { [CFS_DRONAGIRI]: 118 } },
+      },
+      {
+        title: 'Evacuation demand stacks behind the delay',
+        explain:
+          'Every late-discharged box still has to leave by road or rail. The backlog does not disappear when the weather clears — it converts into a concentrated evacuation demand that has to be worked off against a gate with finite lanes.',
+        tab: 'gate',
+        spotlight: [G_NSICT],
+        valueTargets: [{ kind: 'asset', id: G_NSICT }],
+        metrics: [
+          { label: 'Gate NSICT-G1 queue (simulated)', from: 6, to: 19, unit: 'trucks', tone: 'worse' },
+        ],
+        patch: {
+          movementRate: 0.8,
+          pendency: { [CFS_DRONAGIRI]: 118 },
+          gates: { [G_NSICT]: { queueLength: 19, avgTxnTimeMin: 4.7 } },
+        },
+      },
+      {
+        title: 'Recovery plan — and the surge it sends downstream',
+        explain:
+          'The twin works the backlog off with extra evacuation capacity, so yard dwell recovers. But the recovered discharge is exactly a truck surge on the corridor, arriving into the same monsoon that caused the hold — which is what UC-3 has to absorb. The chain continues there.',
+        tab: 'pendency',
+        spotlight: [CFS_DRONAGIRI, G_NSICT],
+        valueTargets: [{ kind: 'kpi', key: 'containerPendency' }],
+        metrics: [
+          { label: 'Yard dwell (simulated)', from: '3.6', to: '2.7', unit: 'days', tone: 'better' },
+          { label: 'Trucks released to corridor', from: '—', to: '~120', unit: 'trucks', tone: 'neutral' },
+        ],
+        patch: {
+          movementRate: 1.12,
+          pendency: { [CFS_DRONAGIRI]: 55 },
+          gates: { [G_NSICT]: { queueLength: 12, avgTxnTimeMin: 4.3 } },
+        },
+        action: {
+          kind: 'CROSS_TWIN_PUSH',
+          detail: 'Post-monsoon evacuation surge handed to UC-3 (corridor + gate)',
+        },
+      },
+    ],
+    handoff: {
+      twin: 'UC3',
+      scenarioId: 'MONSOON-FRIDAY',
+      cta: 'Continue in UC-3 · Traffic & Corridor',
+      because:
+        'Those ~120 released trucks arrive on a corridor that is still under the same rain. '
+        + 'Segment speeds are down and the gate has finite lanes — the last segment of this '
+        + 'monsoon plays out there.',
+    },
   },
 ];
 

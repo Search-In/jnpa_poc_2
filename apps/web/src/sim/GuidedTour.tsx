@@ -15,6 +15,7 @@ import { CalciteButton, CalciteChip, CalciteIcon } from '@esri/calcite-component
 import { simStore, TOUR_STEP_MS } from './simStore.js';
 import { useSimStore } from './useSimStore.js';
 import { getScript, type MetricChange, type TabId, type ValueTarget } from './scenarioPlayer.js';
+import { handoffUrl, TWIN_LABEL } from './lifecycleHandoff.js';
 import { tokens } from '../theme/tokens.js';
 
 const toneColor: Record<MetricChange['tone'], string> = {
@@ -517,6 +518,49 @@ export function GuidedTour({
             </div>
           )}
         </div>
+
+        {/* THE CHAIN DOES NOT END HERE.
+            One monsoon crosses all three twins: it suspends pilot transfer in UC-1, lands
+            the discharge late here, and releases that backlog as a truck surge onto UC-3's
+            corridor. Offered as a link on the LAST step rather than an automatic redirect
+            — the operator finishes reading the conclusion, the tab opens on a real click
+            (so the browser does not block it), and a twin that is not running costs a dead
+            tab rather than derailing the scenario on screen. */}
+        {isLast && script.handoff && (
+          <div
+            style={{
+              margin: '0 12px 10px',
+              padding: 10,
+              borderRadius: 6,
+              border: `1px solid ${tokens.color.border}`,
+              background: tokens.color.bgElevated,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 0.3, color: tokens.color.text }}>
+              This is not the end of the cycle
+            </div>
+            <div style={{ fontSize: 12, color: tokens.color.textMuted, lineHeight: 1.5 }}>
+              {script.handoff.because}
+            </div>
+            <CalciteButton
+              scale="s"
+              kind="brand"
+              iconEnd="launch"
+              width="full"
+              title={`Opens ${TWIN_LABEL[script.handoff.twin]} in a new tab, at the scenario that continues this one`}
+              onClick={() => {
+                const h = script.handoff!;
+                // noopener: the opened twin gets no handle back on this window.
+                window.open(handoffUrl(h), '_blank', 'noopener,noreferrer');
+              }}
+            >
+              {script.handoff.cta}
+            </CalciteButton>
+          </div>
+        )}
 
         {/* Footer controls */}
         <div

@@ -51,6 +51,7 @@ import { navigate } from './sim/useHashRoute.js';
 import { GuidedTour } from './sim/GuidedTour.js';
 import { simStore } from './sim/simStore.js';
 import { getScript, type TabId } from './sim/scenarioPlayer.js';
+import { takePendingScenario } from './sim/pendingScenario.js';
 import { IntegrationConsole } from './console/IntegrationConsole.js';
 import { faultStore } from './console/faultStore.js';
 import { useFaultStore, useFaultDep } from './console/useFaultStore.js';
@@ -191,7 +192,10 @@ export function Dashboard() {
   // straight into it.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    const id = q.get('scenario');
+    // Prefer the id captured at module load — see pendingScenario. With the sign-in gate
+    // on, THIS component does not mount until after login, by which point the URL is no
+    // longer a dependable place to read it from.
+    const id = takePendingScenario() ?? q.get('scenario');
     if (id && getScript(id) && simStore.getState().tour.scenarioId == null) {
       const auto = q.get('auto') !== '0';
       simStore.startScenario(id, auto);

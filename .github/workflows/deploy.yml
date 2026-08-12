@@ -49,6 +49,13 @@ jobs:
           # deploy so far has shipped, while docker-compose.aws.yml claimed `live`.
           # Cargo/customs/export are unaffected either way; they come from POC-3.
           VITE_DATA_MODE: ${{ vars.VITE_DATA_MODE }}
+          # Cross-twin scenario chain. The Monsoon disruption runs UC-1 -> UC-2 -> UC-3,
+          # and the hand-off button at the end of S7 opens UC-3 at MONSOON-FRIDAY, the
+          # scenario that continues it. Pinned rather than left to the code default so a
+          # host change is a config edit, not a rebuild.
+          VITE_UC1_APP_URL: "https://vessel-one.searchintech.in"
+          VITE_UC2_APP_URL: "https://logistics-two.searchintech.in"
+          VITE_UC3_APP_URL: "https://traffic-three.searchintech.in"
 
       - name: Configure SSH Key
         run: |
