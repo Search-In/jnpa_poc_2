@@ -17,7 +17,7 @@ import {
   CalciteInput, CalciteLabel, CalciteLoader, CalciteList, CalciteListItem,
 } from '@esri/calcite-components-react';
 import type { OriginStream } from '@jnpa/schemas';
-import { computeCheckDigit, isValidContainerNo } from '@jnpa/schemas';
+import { computeCheckDigit, isValidContainerNo, looksLikeContainerNo } from '@jnpa/schemas';
 //
 // ORIGIN_STREAMS was also dropped: the Stream filter now builds its options from
 // the loaded rows, because that enum is the simulator's taxonomy and does not
@@ -26,6 +26,7 @@ import type { CargoCreateInput, CargoCustomsStatus, CargoLifecycleEvent, Contain
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { Panel } from '../components/Panel.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { SuccessNotice } from '../components/SuccessNotice.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
 import { SourceBadge } from './SourceBadge.js';
@@ -604,7 +605,16 @@ export function ContainerMovements() {
         role,
         limit: PAGE_SIZE,
         offset: pageIndex * PAGE_SIZE,
-        ...(searchApplied ? { containerNo: searchApplied } : {}),
+        // One box, two searches. A container-shaped term keeps the existing exact
+        // ISO-6346 path (the backend still applies its check digit); anything else
+        // is a vessel name and goes to `vesselName`, which never touches
+        // `container_number`. Sending a vessel name as a container number is what
+        // produced the 400 `invalid container_number (ISO-6346 check-digit failed)`.
+        ...(searchApplied
+          ? looksLikeContainerNo(searchApplied)
+            ? { containerNo: searchApplied.toUpperCase().replace(/\s+/g, '') }
+            : { vesselName: searchApplied }
+          : {}),
         ...(stream !== 'ALL' ? { originStream: stream } : {}),
         ...(customsStatus !== 'ALL' ? { customsStatus } : {}),
         ...(released !== 'ALL' ? { isReleased: released === 'RELEASED' } : {}),
@@ -741,39 +751,47 @@ export function ContainerMovements() {
               old badge read "TOS · ICEGATE · FOIS · e-Seal", claiming ICEGATE as a
               source for rows no ICEGATE document backs. Per-event source systems
               are still shown in the Source column and the timeline. */}
-          <div><SourceBadge source="POC-3 Cargo" live /></div>
+          {/* The provenance note sits behind the (i) rather than on the page: it is
+              context, read once, and as a standing block it pushed the grid down. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <SourceBadge source="POC-3 Cargo" live />
+            <InfoPopover label="These are POC-3 cargo records, not filed customs documents">
+              <strong style={{ display: 'block', marginBottom: 4 }}>
+                These are POC-3 cargo records, not filed customs documents
+              </strong>
+              This grid tracks the shared Cargo API. Its containers do not overlap the
+              filed manifests, bills of entry or gate documents shown on the Customs,
+              Scan and Gate tabs, so a customs status here is the cargo record&apos;s own
+              field — not evidence of a granted out-of-charge. Use the Import tab to
+              follow a container through its actual filed documents.
+            </InfoPopover>
+          </div>
           {customsError && (
             <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ margin: '6px 0' }}>
               <div slot="title">Could not record the customs disposition</div>
               <div slot="message">{customsError}</div>
             </CalciteNotice>
           )}
-          <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '6px 0 4px' }}>
-            <div slot="title">These are POC-3 cargo records, not filed customs documents</div>
-            <div slot="message">
-              This grid tracks the shared Cargo API. Its containers do not overlap the
-              filed manifests, bills of entry or gate documents shown on the Customs,
-              Scan and Gate tabs, so a customs status here is the cargo record&apos;s own
-              field — not evidence of a granted out-of-charge. Use the Import tab to
-              follow a container through its actual filed documents.
-            </div>
-          </CalciteNotice>
           {/* Container Search + POC-3 filters (additive; the Stream filter below is
               unchanged). Search = exact ISO-6346 lookup (GET /api/cargo/{id});
               Customs status / Release state map to the existing GET /api/cargo params. */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', margin: '4px 0 8px' }}>
-            <CalciteLabel scale="s" style={{ minWidth: 220 }}>Search container (ISO-6346)
+            <CalciteLabel scale="s" style={{ minWidth: 220 }}>Search container or vessel
               <div style={{ display: 'flex', gap: 6 }}>
                 <CalciteInput
                   scale="s"
                   value={searchInput}
-                  placeholder="MAEU6123458"
+                  placeholder="MAEU6123458 or OOCL GERMANY"
                   onCalciteInputInput={(e) => setSearchInput((e.target as unknown as { value: string }).value)}
                 />
+                {/* Trim only. The upper-casing and space-stripping moved to the
+                    container branch of the filter above: applying it here as well
+                    turned "OOCL GERMANY" into "OOCLGERMANY" before anything could
+                    tell it was a vessel name. */}
                 <CalciteButton
                   scale="s"
                   iconStart="search"
-                  onClick={() => setSearchApplied(searchInput.trim().toUpperCase().replace(/\s+/g, ''))}
+                  onClick={() => setSearchApplied(searchInput.trim())}
                 >
                   Search
                 </CalciteButton>
@@ -789,6 +807,16 @@ export function ContainerMovements() {
                   </CalciteButton>
                 )}
               </div>
+              {/* Which of the two searches ran. The box takes either kind, so
+                  saying so is what keeps an empty vessel result from reading as
+                  a broken container lookup. */}
+              {searchApplied && (
+                <span style={{ fontSize: 11.5, color: tokens.color.textMuted, fontWeight: 400 }}>
+                  {looksLikeContainerNo(searchApplied)
+                    ? 'Container number — exact ISO-6346 match.'
+                    : 'Vessel name — containers whose vessel name contains this text.'}
+                </span>
+              )}
             </CalciteLabel>
             <CalciteLabel scale="s" style={{ minWidth: 150 }}>Customs status
               <CalciteSelect

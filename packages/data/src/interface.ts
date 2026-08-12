@@ -63,6 +63,15 @@ export interface ContainerMovementFilter {
   // by the mock/sim path (which has no customs/release projection).
   /** Exact ISO-6346 container number. Drives Container Search → GET /api/cargo/{id}. */
   containerNo?: string;
+  /**
+   * Vessel-name search (contains, case- and space-insensitive).
+   *
+   * The ONE filter here that is NOT a POC-3 query parameter: `GET /api/cargo`
+   * has no vessel filter, so Poc3CargoAdapter applies this itself. Mutually
+   * exclusive with `containerNo` — a vessel name must never be sent as a
+   * container number, or the gateway rejects it on the ISO-6346 check digit.
+   */
+  vesselName?: string;
   /** Customs clearance status filter (POC-3 `customs_status`). */
   customsStatus?: CargoCustomsStatus;
   /** Yard block filter (POC-3 `yard_block`). */

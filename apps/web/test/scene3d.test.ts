@@ -566,32 +566,31 @@ describe('live traffic overlay', () => {
     return out.map((g) => g.attributes as { congestion: number; level: string; routeId: string });
   };
 
-  it('lays segments only on the traced road network', () => {
+  it('draws only the declared routes, each one continuous', () => {
+    // The overlay is a fixed set of explicit road-true routes (TRAFFIC_ROUTES in
+    // scene3d.ts), the same shape UC-3 uses. It used to be cut from all five
+    // `truckroute:*` paths, which produced disjoint ribbons over yards and open
+    // ground. Today: the north line plus Central Gate → South Gate.
     const segs = graphicsFor3d.traffic(ops(4) as never, terminals, []);
     expect(segs.length).toBeGreaterThan(10);
-    const roads = Object.entries(placements)
-      .filter(([k, v]) => k.startsWith('truckroute:') && Array.isArray(v.path))
-      .map(([, v]) => v.path!);
-    for (const g of segs) {
-      const path = (g.geometry as unknown as { paths: [number, number][][] }).paths[0]!;
-      for (const p of path) {
-        const onRoad = Math.min(
-          ...roads.flatMap((r) =>
-            r.slice(1).map((w, i) => {
-              const a = r[i]!;
-              const ax = (a[0] - p[0]) * M_PER_DEG_LON;
-              const ay = (a[1] - p[1]) * M_PER_DEG_LAT;
-              const bx = (w[0] - p[0]) * M_PER_DEG_LON;
-              const by = (w[1] - p[1]) * M_PER_DEG_LAT;
-              const dx = bx - ax;
-              const dy = by - ay;
-              const len = dx * dx + dy * dy || 1;
-              const u = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len));
-              return Math.hypot(ax + u * dx, ay + u * dy);
-            }),
-          ),
+    const routes = [...new Set(segs.map((g) => (g.attributes as { routeId: string }).routeId))];
+    expect(routes.sort(), 'the declared traffic routes, and nothing else').toEqual([
+      'JNPT-CENTRAL-SOUTH', 'JNPT-MAIN',
+    ]);
+    // Each route's pieces are end-to-end, so each reads as one unbroken ribbon.
+    for (const id of routes) {
+      const paths = segs
+        .filter((g) => (g.attributes as { routeId: string }).routeId === id)
+        .map((g) => (g.geometry as unknown as { paths: [number, number][][] }).paths[0]!);
+      expect(paths.length, `${id} is segmented`).toBeGreaterThan(4);
+      for (let i = 0; i < paths.length - 1; i++) {
+        const end = paths[i]![paths[i]!.length - 1]!;
+        const start = paths[i + 1]![0]!;
+        const gap = Math.hypot(
+          (start[0] - end[0]) * M_PER_DEG_LON,
+          (start[1] - end[1]) * M_PER_DEG_LAT,
         );
-        expect(onRoad, 'traffic segment lies on a traced road').toBeLessThan(1);
+        expect(gap, `${id}: piece ${i} joins piece ${i + 1}`).toBeLessThan(1);
       }
     }
   });
@@ -673,9 +672,12 @@ describe('live traffic overlay', () => {
     expect(r1, 'recovery is gradual, not instant').toBeGreaterThan(jammed * 0.6);
   });
 
-  it('picks up any newly traced truckroute with no code change', () => {
-    const before = new Set(settle(6).map((s) => s.routeId));
-    expect(before.has('NEW-ROAD')).toBe(false);
+  it('ignores truck routes — a traced path adds no traffic line', () => {
+    // The overlay is the ROAD route, not the truck paths. Tracing a truck route
+    // must no longer add a ribbon: those paths run into yards and over gate
+    // aprons, and drawing traffic along them is what put green/amber lines on
+    // open ground. The trucks themselves still follow them (sceneAnim.ts).
+    const before = settle(6);
     placementStore.set('truckroute:NEW-ROAD', {
       lng: 72.945,
       lat: 18.946,
@@ -687,8 +689,8 @@ describe('live traffic overlay', () => {
     });
     try {
       const after = settle(6);
-      expect(new Set(after.map((s) => s.routeId)).has('NEW-ROAD'), 'new road is covered').toBe(true);
-      expect(after.filter((s) => s.routeId === 'NEW-ROAD').length, 'new road is segmented').toBeGreaterThan(4);
+      expect(new Set(after.map((s) => s.routeId)).has('NEW-ROAD'), 'truck route is not a traffic road').toBe(false);
+      expect(after.length, 'the overlay is unchanged by a traced truck route').toBe(before.length);
     } finally {
       placementStore.remove('truckroute:NEW-ROAD');
       resetTrafficState();

@@ -364,6 +364,9 @@ export class Poc3CargoAdapter implements DataAdapter {
   private async writeJson<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
     const res = await this.request(method, path, { body });
     if (!res.ok) return Poc3CargoAdapter.fail(res, path);
+    // Any write can change a row a cached vessel scan is holding — drop it so the
+    // post-write refetch re-reads from the API rather than replaying stale rows.
+    this.invalidateVesselScan();
     return (await res.json()) as T;
   }
 
@@ -398,6 +401,11 @@ export class Poc3CargoAdapter implements DataAdapter {
   async getContainerMovementsPage(
     filter: ContainerMovementFilter,
   ): Promise<{ items: ContainerMovementDTO[]; total: number | null }> {
+    // A vessel-name search is NOT a container lookup and must never be sent as
+    // one — that is what produced `400 invalid container_number (ISO-6346
+    // check-digit failed)` for a search on OOCL GERMANY. It takes its own path,
+    // which sends no `container_number` at all. See {@link vesselSearchPage}.
+    if (filter.vesselName?.trim()) return this.vesselSearchPage(filter);
     const query = {
       // Container Search. `/api/cargo` takes `container_number` as an EXACT match,
       // so the search runs server-side over the whole register and the row count in
@@ -437,6 +445,95 @@ export class Poc3CargoAdapter implements DataAdapter {
     });
   }
 
+  // -- vessel-name search ------------------------------------------------------
+  /**
+   * The API's maximum page size (`limit` is capped at 1000 by the gateway), and a
+   * safety stop well above the ~11.9k-row register so a runaway can't loop.
+   */
+  private static readonly VESSEL_SCAN_PAGE = 1000;
+  private static readonly VESSEL_SCAN_MAX_ROWS = 50_000;
+
+  /** Case- and space-insensitive form used on both sides of the vessel match. */
+  private static vesselKey(value: string | null | undefined): string {
+    return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  /**
+   * The last completed vessel scan, so paging through its results does not
+   * re-walk the register on every Next click. Dropped by any write (see
+   * {@link writeJson} and {@link deleteCargo}) so an edited row is never served
+   * from a stale scan.
+   */
+  private vesselScan: { key: string; rows: CargoRecord[] } | null = null;
+
+  private invalidateVesselScan(): void {
+    this.vesselScan = null;
+  }
+
+  /**
+   * Vessel-name search, applied HERE because POC-3 cannot do it.
+   *
+   * `GET /api/cargo` accepts container_number, customs_status, yard_block,
+   * is_released, vehicle_number, eseal_status, pre_document_status,
+   * origin_stream, status, role, limit and offset — and nothing else. There is no
+   * vessel filter in the route (gateway/routers/cargo.py) and none in the
+   * repository's `_FILTER_COLS` whitelist; `vessel_name` is a stored column and a
+   * RESPONSE field only. FastAPI silently DROPS an undeclared query parameter, so
+   * sending `?vessel_name=…` would return the whole unfiltered register with an
+   * X-Total-Count to match — a wrong answer wearing the costume of a filtered one.
+   *
+   * So every filter the API *does* understand is still applied server-side, and
+   * only the vessel predicate runs here. The scan walks the full filtered result
+   * set at the API's maximum page size, which is what makes the match complete and
+   * the count exact instead of "whatever page 1 happened to hold".
+   *
+   * Matching is CONTAINS on a normalised key (upper-case, non-alphanumerics
+   * stripped), so "OOCL GERMANY", "oocl germany" and "OOCLGERMANY" are one search
+   * — the same "vessel name contains" semantics POC-3 uses for the vessel filters
+   * it does implement (e.g. `GET /api/berthing?vessel=`).
+   */
+  private async vesselSearchPage(
+    filter: ContainerMovementFilter,
+  ): Promise<{ items: ContainerMovementDTO[]; total: number | null }> {
+    const want = Poc3CargoAdapter.vesselKey(filter.vesselName);
+    // Everything the API can filter on, minus paging — the scan owns limit/offset.
+    const scanQuery = {
+      customs_status: filter.customsStatus,
+      yard_block: filter.yardBlock,
+      is_released: filter.isReleased == null ? undefined : String(filter.isReleased),
+      vehicle_number: filter.vehicleNumber,
+      origin_stream: filter.originStream,
+    };
+    const key = `${want}|${JSON.stringify(scanQuery)}|${this.getDataMode() ?? ''}`;
+
+    let matches = this.vesselScan?.key === key ? this.vesselScan.rows : undefined;
+    if (!matches) {
+      const found: CargoRecord[] = [];
+      const page = Poc3CargoAdapter.VESSEL_SCAN_PAGE;
+      for (let offset = 0; offset < Poc3CargoAdapter.VESSEL_SCAN_MAX_ROWS; offset += page) {
+        const rows = await this.getList<CargoRecord>('/api/cargo', {
+          ...scanQuery,
+          limit: String(page),
+          offset: String(offset),
+        });
+        for (const row of rows) {
+          if (want && Poc3CargoAdapter.vesselKey(row.vessel_name).includes(want)) found.push(row);
+        }
+        if (rows.length < page) break; // short page = end of the result set
+      }
+      matches = found;
+      this.vesselScan = { key, rows: found };
+    }
+
+    const offset = filter.offset ?? 0;
+    const limit = filter.limit ?? 100;
+    return {
+      items: matches.slice(offset, offset + limit).map(mapCargoToMovement),
+      // Exact: the scan saw every row the server-side filters returned.
+      total: matches.length,
+    };
+  }
+
   // -- create (POST /api/cargo → 201) -----------------------------------------
   async createCargo(record: CargoCreateInput): Promise<ContainerMovementDTO> {
     const body: CargoCreateInput = {
@@ -466,6 +563,7 @@ export class Poc3CargoAdapter implements DataAdapter {
     const path = `/api/cargo/${encodeURIComponent(norm)}`;
     const res = await this.request('DELETE', path);
     if (!res.ok) await Poc3CargoAdapter.fail(res, path);
+    this.invalidateVesselScan(); // the deleted row must not survive in a cached scan
   }
 
   // -- POC-3 extended Cargo APIs (Jayesh handover — additive) ----------------

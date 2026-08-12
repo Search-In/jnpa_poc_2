@@ -1449,12 +1449,132 @@ interface RoadSegment {
 }
 
 /**
- * Cut every traced road into ~TRAFFIC_SEGMENT_M pieces and link them into a graph.
+ * The traffic route — ONE road-true polyline, the same pattern UC-3 uses.
  *
- * Roads are discovered by scanning the placement store for EVERY `truckroute:*`
- * key that carries a path, rather than by walking the terminal list — so a route
- * traced for a new road, or for anything that isn't a terminal id, is picked up
- * with no code change.
+ * UC-3 stores its corridor as a single hard-coded centreline (`CORRIDOR_ROAD` in
+ * `web/src/lib/roadSnap.ts`) and colours slices of that one line by jam factor,
+ * which is why its overlay reads as one continuous ribbon on the road. This is
+ * the UC-2 equivalent: the port's main carriageway, stored once, right here.
+ *
+ * These are the in-port vertices of UC-3's OWN corridor — it begins at JNPA
+ * Gate-1 (72.94936, 18.94922) and leaves the port to the south-east — so the two
+ * PoCs draw the shared stretch identically. Every 10 m sample sits a mean of
+ * 0.3 m (max 5.9 m) from a mapped road.
+ *
+ * Like UC-3's, it is the MAIN TRAFFIC ROAD ONLY and deliberately does NOT thread
+ * the gate checkpoints. Gates are terminal entrances on dead-end spurs; routing
+ * through them forces the line to drive in and back out of each one, which draws
+ * duplicated and parallel ribbons (UC-3 documents hitting exactly that, and
+ * measured 23 doubled-back vertices when we tried it here). Gates coupleTO the
+ * overlay by DISTANCE instead — TRAFFIC_GATE_REACH_M — which is unchanged.
+ *
+ * prettier-ignore — a coordinate TABLE, not code; 4 pairs per line keeps it
+ * scannable and keeps future diffs readable.
+ */
+// prettier-ignore
+const TRAFFIC_ROUTE: [number, number][] = [
+  [72.94936, 18.94922], [72.95032, 18.94879], [72.95075, 18.94933], [72.95123, 18.94995],
+  [72.95207, 18.95102], [72.95284, 18.95081], [72.95359, 18.95049], [72.95431, 18.95018],
+  [72.95525, 18.94978], [72.95659, 18.94922], [72.95711, 18.94988], [72.95771, 18.95070],
+  [72.95848, 18.95167], [72.95869, 18.95190], [72.95887, 18.95205], [72.95923, 18.95234],
+  [72.95949, 18.95247], [72.96020, 18.95247], [72.96049, 18.95247], [72.96075, 18.95248],
+  [72.96202, 18.95248], [72.96228, 18.95248], [72.96274, 18.95241], [72.96298, 18.95234],
+  [72.96363, 18.95206], [72.96425, 18.95175], [72.96486, 18.95139], [72.96541, 18.95101],
+  [72.96575, 18.95073], [72.96593, 18.95056], [72.96624, 18.95016], [72.96639, 18.94977],
+  [72.96648, 18.94934], [72.96657, 18.94891], [72.96662, 18.94846], [72.96660, 18.94800],
+  [72.96635, 18.94581], [72.96639, 18.94548], [72.96517, 18.93233], [72.96527, 18.93161],
+  [72.96543, 18.93096], [72.96574, 18.93023], [72.96619, 18.92955], [72.96671, 18.92895],
+  // ── South-east continuation, added to reach the reference layout ────────────
+  // The same corridor, carried on past the port down to Jaskhar (72.98166,
+  // 18.90759) and Sonari (72.98851, 18.91148): +4.00 km over 29 vertices, ending
+  // at 72.99127, 18.90165. These are UC-3's own CORRIDOR_ROAD vertices 44-72 —
+  // the 44 above are its 0-43 — so the line simply continues along the road it
+  // was already on, and UC-2 and UC-3 still draw the shared stretch identically.
+  // Nothing above this comment changed; this is an append.
+  [72.97109, 18.92451], [72.97175, 18.92395], [72.97194, 18.92379], [72.97342, 18.92228],
+  [72.97539, 18.92031], [72.97619, 18.91945], [72.97630, 18.91918], [72.97662, 18.91888],
+  [72.97764, 18.91785], [72.97813, 18.91737], [72.98056, 18.91493], [72.98225, 18.91325],
+  [72.98269, 18.91280], [72.98292, 18.91255], [72.98331, 18.91212], [72.98374, 18.91169],
+  [72.98405, 18.91136], [72.98440, 18.91094], [72.98461, 18.91068], [72.98479, 18.91046],
+  [72.98583, 18.90885], [72.98871, 18.90420], [72.98907, 18.90357], [72.98922, 18.90336],
+  [72.98971, 18.90283], [72.98990, 18.90264], [72.99011, 18.90251], [72.99093, 18.90190],
+  [72.99127, 18.90165],
+];
+
+/** Identifies the route in segment keys and the popup's "Road:" line. */
+const TRAFFIC_ROUTE_ID = 'JNPT-MAIN';
+
+/**
+ * Central Gate → South Gate, the second traffic route.
+ *
+ * Same pattern as {@link TRAFFIC_ROUTE} and as UC-3's `CORRIDOR_ROAD`: ONE
+ * explicit road-true polyline, stored once, sliced and coloured by the unchanged
+ * congestion model — nothing here sets a colour.
+ *
+ * It follows OpenStreetMap ways 807490638 / 807538919 / 807490640 (primary,
+ * "JNPT Terminal 2") south-east out of the central junction, past the southern
+ * gate complex, then east to the junction with the main line: 3.16 km over 28
+ * vertices, (72.94878, 18.93865) → (72.97194, 18.92379). Every vertex is an OSM
+ * carriageway vertex, so the line sits 0 m from a mapped road for its whole
+ * length — no shortcut across land, forest, yard, building or railway, and the
+ * nearest yard block is 579 m away.
+ *
+ * Its far end IS a vertex of TRAFFIC_ROUTE (a 0.00 m join), so the two lines meet
+ * with no gap. Apart from that junction it shares no ground with the north line —
+ * the approach closes on it monotonically instead of running beside it.
+ *
+ * The way's own first two vertices are deliberately not used — they jog north to
+ * a dead end at 72.94940, 18.93977 and rendered as a short dangling hook.
+ *
+ * As with the north line it does NOT thread the gate checkpoints (dead-end spurs
+ * draw duplicated in-and-out ribbons); GTI-G2 (9 m) and JNPCT-G1 (85 m) drive its
+ * colour through the unchanged TRAFFIC_GATE_REACH_M.
+ *
+ * prettier-ignore — a coordinate TABLE, not code (see the note above).
+ */
+// prettier-ignore
+const TRAFFIC_ROUTE_CENTRAL_SOUTH: [number, number][] = [
+  [72.94878, 18.93865], [72.94873, 18.93853], [72.94867, 18.93835], [72.94866, 18.93819],
+  [72.94880, 18.93794], [72.94912, 18.93758], [72.95059, 18.93585], [72.95547, 18.93015],
+  [72.95701, 18.92836],
+  // ── Continuation east to the junction with TRAFFIC_ROUTE ────────────────────
+  // The route used to stop at the vertex above, leaving it hanging short of the
+  // main corridor. It now carries on along the same carriageway (OSM ways
+  // 807538919 / 807490640, "JNPT Terminal 2") for a further 1 707 m and finishes
+  // ON the main line's vertex 72.97194, 18.92379 — a 0 m join, so the two lines
+  // meet with no gap. The last few vertices close on the main line monotonically
+  // (47 → 33 → 24 → 16 → 0 m): they converge into the junction rather than
+  // running beside it, so no parallel ribbon is drawn.
+  [72.95725, 18.92806], [72.95776, 18.92746], [72.95792, 18.92728], [72.95810, 18.92708],
+  [72.95915, 18.92632], [72.95954, 18.92604], [72.95994, 18.92584], [72.96068, 18.92562],
+  [72.96125, 18.92553], [72.96607, 18.92479], [72.96736, 18.92459], [72.96781, 18.92459],
+  [72.96928, 18.92436], [72.96998, 18.92425], [72.97089, 18.92411], [72.97113, 18.92407],
+  [72.97130, 18.92404], [72.97148, 18.92399], [72.97194, 18.92379],
+];
+
+/** Identifies the Central Gate → South Gate route. */
+const TRAFFIC_ROUTE_CENTRAL_SOUTH_ID = 'JNPT-CENTRAL-SOUTH';
+
+/**
+ * The traffic routes drawn. Each is an explicit road-true polyline — never a scan
+ * of `truckroute:*`, never one line per road.
+ */
+const TRAFFIC_ROUTES: { id: string; path: [number, number][] }[] = [
+  { id: TRAFFIC_ROUTE_ID, path: TRAFFIC_ROUTE },
+  { id: TRAFFIC_ROUTE_CENTRAL_SOUTH_ID, path: TRAFFIC_ROUTE_CENTRAL_SOUTH },
+];
+
+/**
+ * Cut the traffic route into ~TRAFFIC_SEGMENT_M pieces and link them into a graph.
+ *
+ * The geometry is {@link TRAFFIC_ROUTE} — ONE road-true line, as in UC-3.
+ *
+ * ⚠ It used to scan the placement store for EVERY `truckroute:*` path and cut all
+ * five of them. Those are operational truck paths, not roads: they run into
+ * container yards and across gate aprons, and there were five disjoint ones, so
+ * the overlay came out as several separate ribbons drawn over open ground. The
+ * trucks still follow those paths (sceneAnim.ts) — only this OVERLAY moved to the
+ * road.
  *
  * Two segments are neighbours when they are consecutive on the same road, or when
  * their ends meet within TRAFFIC_JUNCTION_M — that second case is what lets a
@@ -1462,11 +1582,9 @@ interface RoadSegment {
  */
 function roadSegments(): RoadSegment[] {
   const out: RoadSegment[] = [];
-  for (const [key, placement] of Object.entries(placementStore.all())) {
-    if (!key.startsWith('truckroute:')) continue;
-    const path = placement.path;
-    if (!path || path.length < 2) continue;
-    const routeId = key.slice('truckroute:'.length);
+  for (const route of TRAFFIC_ROUTES) {
+    const path = route.path;
+    const routeId = route.id;
     let n = 0;
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i]!;

@@ -29,6 +29,7 @@ import type { RmsScanContainer, RmsScanList } from '@jnpa/data';
 import { useApp } from '../state/AppContext.js';
 import { useAsync } from '../state/useAsync.js';
 import { ImportExportToolbar } from './ImportExportToolbar.js';
+import { InfoPopover } from '../components/InfoPopover.js';
 import { tokens } from '../theme/tokens.js';
 
 const val = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : String(v));
@@ -210,16 +211,19 @@ export function RmsScanDrawer({ onClose }: { onClose: () => void }) {
 
           {/* Detail: the containers this list selected for scanning. */}
           <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '10px 14px' }}>
-            {/* The corpus splits RMS and IGM on purpose; say so rather than let a
-                user read the absent join as a bug. */}
-            <CalciteNotice open kind="info" icon="information" scale="s" style={{ marginBottom: 10 }}>
-              <div slot="title">Scan lists do not join to the filed manifests</div>
-              <div slot="message">
+            {/* The corpus splits RMS and IGM on purpose; still said here — behind the
+                (i) — rather than let a user read the absent join as a bug. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 12, color: tokens.color.textMuted }}>
+              Scan lists do not join to the filed manifests
+              <InfoPopover label="Scan lists do not join to the filed manifests">
+                <strong style={{ display: 'block', marginBottom: 4 }}>
+                  Scan lists do not join to the filed manifests
+                </strong>
                 These scan lists reference IGM numbers that are not among the filed manifests in
                 this dataset, so a selected container never appears on the IGM tab&apos;s manifest
                 rows. The two sets are disjoint by design.
-              </div>
-            </CalciteNotice>
+              </InfoPopover>
+            </div>
 
             {active && (
               <div
