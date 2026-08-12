@@ -6,7 +6,9 @@ from __future__ import annotations
 import os
 import random
 
-from connectors_common.base import BaseConnector, ConnectorConfig
+from typing import Optional
+
+from connectors_common.base import BaseConnector, ConnectorConfig, ReplaySpec
 from connectors_common.fallback import SourceUnavailable
 from connectors_common.synth import synth_cargo_event
 
@@ -24,6 +26,26 @@ class EsealConnector(BaseConnector):
         if not self._feed_url:
             raise SourceUnavailable("ESEAL: ESEAL_FEED_URL not set (RFID reader feed)")
         raise SourceUnavailable("ESEAL: live RFID feed not exercised in PoC build")
+
+    def replay_spec(self) -> Optional[ReplaySpec]:
+        """Containers carrying a real e-seal number stand in for the RFID feed.
+
+        `core.cargo` records `eseal_number` / `eseal_status` per container, which
+        is what an e-seal reader produces. Rows WITHOUT a seal number are dropped
+        rather than emitted: this reader has nothing to say about a container it
+        never read, and an ESEAL event for an unsealed box would be fabrication.
+        If no row in the page carries a seal, the tier reports itself unavailable
+        and the chain falls through — which is the correct answer, not a failure.
+        """
+        return ReplaySpec(
+            path="/api/cargo",
+            event_type=lambda r: (
+                "ESEAL_BREAK" if str(r.get("eseal_status") or "").upper() in ("BROKEN", "TAMPERED")
+                else "ESEAL_AFFIX"
+            ),
+            row_filter=lambda r: bool(str(r.get("eseal_number") or "").strip()),
+            payload_keys=("eseal_number", "eseal_status"),
+        )
 
     def synthetic_poll(self) -> list[dict]:
         n = self._rng.randint(1, 4)

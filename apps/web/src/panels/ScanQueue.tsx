@@ -33,6 +33,18 @@ const lifecycleOf = (s: ScanEvent) =>
   (s as ScanEvent & { lifecycleStatus?: string }).lifecycleStatus ?? 'CREATED';
 
 /**
+ * The raw customs disposition, carried straight through by the mapper.
+ *
+ * ⚠ This used to be re-derived from the scan result as
+ * `result === 'HOLD' ? 'HELD' : undefined`, which silently dropped EXAM — so an
+ * UNDER_INSPECTION container reached the release dialog looking as though customs
+ * had no opinion on it, and the customs warning that exists for exactly that case
+ * never rendered. `result` is a lossy projection; the gate needs the original.
+ */
+const customsStatusOf = (s: ScanEvent) =>
+  (s as ScanEvent & { customsStatus?: string }).customsStatus;
+
+/**
  * Which gate this row is at. Delegates to the shared state-machine mirror so the
  * Scan tab and Movements cannot disagree.
  *
@@ -65,7 +77,7 @@ function ReleaseDialog({ row, onClose, onDone }: { row: ScanEvent; onClose: () =
       containerNo={row.containerNo}
       lifecycle={lifecycleOf(row)}
       yardBlock={yardBlockOf(row)}
-      customsStatus={row.result === 'HOLD' ? 'HELD' : undefined}
+      customsStatus={customsStatusOf(row)}
       onClose={onClose}
       onDone={(status) => onDone?.(row, status)}
     />

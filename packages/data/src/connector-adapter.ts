@@ -20,8 +20,8 @@
 import type { IntegrationHealth } from '@jnpa/schemas';
 import type { DataAdapter } from './interface.js';
 import {
-  CONNECTORS, connectorHealth, injectFault, pollConnector, publishedEvents,
-  type ConnectorDeps, type ConnectorPollBody, type PublishedEvent,
+  CONNECTORS, connectorHealth, injectFault, pollConnector, publishedEvents, runDrill,
+  type ConnectorDeps, type ConnectorDrillReport, type ConnectorPollBody, type PublishedEvent,
 } from './connectors.js';
 
 export interface ConnectorAdapterDeps {
@@ -118,6 +118,19 @@ export class ConnectorAdapter implements DataAdapter {
   ): Promise<ConnectorPollBody | null> {
     const c = CONNECTORS.find((x) => x.sourceSystem === sourceSystem);
     return c ? pollConnector(this.conn, c.slug) : null;
+  }
+
+  /**
+   * Run the UC2-041 chaos rehearsal on one connector and return its transcript.
+   *
+   * Null when the connector did not answer — the console must show "no drill
+   * ran", never an empty transcript that reads like a clean sweep.
+   */
+  async runConnectorDrill(
+    sourceSystem: IntegrationHealth['sourceSystem'],
+  ): Promise<ConnectorDrillReport | null> {
+    const c = CONNECTORS.find((x) => x.sourceSystem === sourceSystem);
+    return c ? runDrill(this.conn, c.slug) : null;
   }
 
   /** The CloudEvents a connector actually emitted — the evidence, not the claim. */

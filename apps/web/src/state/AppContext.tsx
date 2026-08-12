@@ -50,7 +50,7 @@ export const CARGO_API_BASE = (import.meta.env?.VITE_CARGO_API_BASE as string | 
 //   'mock'      — keep cargo on the synthetic simulator (pure base adapter).
 //   'reference' — layer a cargo-only decorator that serves container movements
 //                 from the JNPA reference dataset, fetched at runtime (below).
-const CARGO_SOURCE = (import.meta.env?.VITE_CARGO_SOURCE as string | undefined) ?? 'poc3';
+export const CARGO_SOURCE = (import.meta.env?.VITE_CARGO_SOURCE as string | undefined) ?? 'poc3';
 /**
  * The gate-queue model service. Relative by default so the Vite dev proxy (and a
  * same-origin reverse proxy in a deployed build) can reach a container that is

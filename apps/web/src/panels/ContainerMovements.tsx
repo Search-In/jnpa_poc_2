@@ -32,12 +32,14 @@ import { SourceBadge } from './SourceBadge.js';
 import { customsFlagStore } from '../state/customsFlagStore.js';
 import { CargoWorkflowDialog } from './CargoWorkflowDialog.js';
 import { NldsTrackDialog } from './NldsTrackDialog.js';
+import { Uc3HandoverDialog } from './Uc3HandoverDialog.js';
+import { isHandedOver } from './uc3Handover.js';
 import { cargoRefreshStore, useCargoRefresh } from '../state/cargoRefreshStore.js';
 import { cargoErrorMessage } from '../state/cargoError.js';
 import { SOURCE_LABELS } from '../console/faultStore.js';
 import {
-  nextGate, gateUi, customsLifecycleConflict, EXPORT_STATES,
-  type CargoGate, type VerifyKind,
+  nextGate, gateUi, customsLifecycleConflict, customsActionsFor, CUSTOMS_ACTION_UI,
+  EXPORT_STATES, type CargoGate, type VerifyKind,
 } from './cargoGates.js';
 import { scanSelectionFor } from './scanSelection.js';
 import { useRmsSelection } from '../state/useRmsSelection.js';
@@ -57,6 +59,7 @@ const verifyKindFor = (customsStatus: string | null | undefined,
   return scanSelectionFor(result, rmsSelected.has(containerNo.trim().toUpperCase())).reason
     ? 'SCAN' : 'RELEASE_CHECK';
 };
+
 import { CargoGateDialog } from './CargoGateDialog.js';
 import { tokens } from '../theme/tokens.js';
 import { t } from '../i18n/strings.js';
@@ -565,6 +568,8 @@ export function ContainerMovements() {
   const [workflowTarget, setWorkflowTarget] = useState<string | null>(null);
   // Container whose NLDS/LDB inland-transit track dialog is open.
   const [trackTarget, setTrackTarget] = useState<string | null>(null);
+  /** Released row whose UC-III handover is open (null = none). */
+  const [handoverTarget, setHandoverTarget] = useState<ContainerMovementDTO | null>(null);
   // Container Search + POC-3 list filters (Appendix-C UC-II R1 "visibility of
   // container movements … container details" + R3 customs-flagged real-time status).
   // ADDITIVE: reuses the existing ContainerMovementFilter the adapter already honours
@@ -653,37 +658,50 @@ export function ContainerMovements() {
   const flags = useSyncExternalStore(customsFlagStore.subscribe, customsFlagStore.getSnapshot, customsFlagStore.getSnapshot);
   const flaggedNos = useMemo(() => new Set(flags.map((f) => f.containerNo)), [flags]);
 
-  /** Container whose flag write is in flight (null = none), so the row can spin. */
-  const [flagging, setFlagging] = useState<string | null>(null);
-  const [flagError, setFlagError] = useState<string | null>(null);
+  /** Container whose customs write is in flight (null = none), so the row can spin. */
+  const [customsBusy, setCustomsBusy] = useState<string | null>(null);
+  const [customsError, setCustomsError] = useState<string | null>(null);
 
   /**
-   * Flag a container for a customs scan — for real.
+   * Record a customs disposition on the shared cargo record — for real.
    *
-   * Writes `customs_status = UNDER_INSPECTION` to the shared cargo record, so the
-   * flag survives a reload and is visible to every other panel and to UC-III. The
-   * in-memory notification is still raised alongside it (that is what the
-   * Notifications centre reads), but it is no longer the only effect: previously
-   * Flag did nothing but push a client-side notification that vanished on refresh.
+   * Writes `customs_status` via `PUT /api/cargo/{cn}`, so the decision survives a
+   * reload and is visible to every other panel and to UC-III. Flagging also raises
+   * the in-memory notification (that is what the Notifications centre reads), but
+   * it is no longer the only effect: Flag used to push a client-side notification
+   * that vanished on refresh.
+   *
+   * ⚠ This is the CUSTOMS track, and it is the ONLY place the UI writes it.
+   * `POST /verify` deliberately leaves `customs_status` alone, so recording a scan
+   * result never clears an examination — and the release gate refuses a container
+   * customs is still examining. Before this took both directions, an operator
+   * could flag a box, scan it, verify it, and then have no way to release it.
+   *
+   * ⚠ It is an OPERATOR act, not a filed document. These cargo rows share no
+   * containers with `core.ooc_item`, so a CLEARED written here is backed by no
+   * ICEGATE out-of-charge — which is why the customs badges label it SIMULATED
+   * (customsEvidence.ts). The button copy must not claim otherwise.
    *
    * ⚠ Flagging does NOT by itself put the box in the Scan queue. That queue is
    * membership-by-yard ("not released AND yard-assigned AND not yet verified") —
    * customs_status is not part of its rule. A flagged container appears there once
    * it has a yard assignment.
    */
-  const flagForScan = async (m: ContainerMovementDTO) => {
+  const recordCustoms = async (m: ContainerMovementDTO, status: CargoCustomsStatus) => {
     const cn = m.container.containerNo;
-    if (!adapter.updateCargo) { setFlagError('Cargo write is unavailable in this data mode.'); return; }
-    setFlagging(cn);
-    setFlagError(null);
+    if (!adapter.updateCargo) { setCustomsError('Cargo write is unavailable in this data mode.'); return; }
+    setCustomsBusy(cn);
+    setCustomsError(null);
     try {
-      await adapter.updateCargo(cn, { customs_status: 'UNDER_INSPECTION' });
-      customsFlagStore.flagForCustoms(cn, m.facilityId); // notification, as before
+      await adapter.updateCargo(cn, { customs_status: status });
+      // Only a NEW examination is notification-worthy; an out-of-charge is not a
+      // flag, and pushing it into the flag store would relabel the row "Flagged".
+      if (status === 'UNDER_INSPECTION') customsFlagStore.flagForCustoms(cn, m.facilityId);
       cargoRefreshStore.bump();
     } catch (e) {
-      setFlagError(`${cn}: ${cargoErrorMessage(e)}`);
+      setCustomsError(`${cn}: ${cargoErrorMessage(e)}`);
     } finally {
-      setFlagging(null);
+      setCustomsBusy(null);
     }
   };
 
@@ -733,10 +751,10 @@ export function ContainerMovements() {
               source for rows no ICEGATE document backs. Per-event source systems
               are still shown in the Source column and the timeline. */}
           <div><SourceBadge source="POC-3 Cargo" live /></div>
-          {flagError && (
+          {customsError && (
             <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s" style={{ margin: '6px 0' }}>
-              <div slot="title">Could not flag for customs</div>
-              <div slot="message">{flagError}</div>
+              <div slot="title">Could not record the customs disposition</div>
+              <div slot="message">{customsError}</div>
             </CalciteNotice>
           )}
           <CalciteNotice open kind="info" icon="information" scale="s" style={{ margin: '6px 0 4px' }}>
@@ -979,36 +997,59 @@ export function ContainerMovements() {
                         </span>
                       );
                     }
-                    // Already carrying a disposition — show it rather than re-offering Flag.
-                    if (cs !== 'PENDING' || sessionFlagged) {
-                      const label = cs === 'UNDER_INSPECTION' ? 'Flagged' : cs;
-                      const color = cs === 'CLEARED' ? tokens.kpi.better
-                        : cs === 'HELD' ? tokens.severity.CRIT : tokens.congestion.AMBER;
+                    // Nothing recorded yet — the bare Flag button, as before.
+                    if (cs === 'PENDING' && !sessionFlagged) {
                       return (
+                        <CalciteButton
+                          scale="s"
+                          appearance="outline"
+                          kind="danger"
+                          iconStart="flag"
+                          loading={customsBusy === m.container.containerNo}
+                          disabled={customsBusy !== null}
+                          title="Flag for a customs scan — sets customs_status to UNDER_INSPECTION on the shared record"
+                          onClick={() => void recordCustoms(m, 'UNDER_INSPECTION')}
+                        >
+                          Flag
+                        </CalciteButton>
+                      );
+                    }
+                    // Carrying a disposition. Still a CONTROL, not a label: an
+                    // examination or a hold BLOCKS release on the server, so the
+                    // cell that put the container there must be able to record the
+                    // outcome that takes it back out. This used to degrade to an
+                    // inert chip whose tooltip sent the operator to the Scan step —
+                    // which calls POST /verify and cannot write customs_status at
+                    // all, so the box stayed flagged and unreleasable forever.
+                    const label = cs === 'UNDER_INSPECTION' ? 'Flagged' : cs;
+                    const color = cs === 'CLEARED' ? tokens.kpi.better
+                      : cs === 'HELD' ? tokens.severity.CRIT : tokens.congestion.AMBER;
+                    const blocking = cs === 'UNDER_INSPECTION' || cs === 'HELD';
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         <CalciteChip scale="s" icon={cs === 'CLEARED' ? 'check' : 'flag'} value={label}
-                          title={cs === 'UNDER_INSPECTION'
-                            ? 'Flagged for customs scan — record the result on the Scan step of the Import tab.'
+                          title={blocking
+                            ? `Customs ${cs === 'HELD' ? 'is holding' : 'is examining'} these goods — the port `
+                              + 'will refuse to release this container until an out-of-charge is recorded.'
                             : cs === 'CLEARED'
                               ? 'Customs cleared (an out-of-charge sets this).'
                               : `Customs status: ${cs}`}
                           style={{ ['--calcite-chip-text-color' as never]: color }}>
                           {label}
                         </CalciteChip>
-                      );
-                    }
-                    return (
-                      <CalciteButton
-                        scale="s"
-                        appearance="outline"
-                        kind="danger"
-                        iconStart="flag"
-                        loading={flagging === m.container.containerNo}
-                        disabled={flagging !== null}
-                        title="Flag for a customs scan — sets customs_status to UNDER_INSPECTION on the shared record"
-                        onClick={() => void flagForScan(m)}
-                      >
-                        Flag
-                      </CalciteButton>
+                        {customsActionsFor(cs, { released }).map((action) => {
+                          const a = CUSTOMS_ACTION_UI[action];
+                          return (
+                            <CalciteButton key={action} scale="s" appearance="outline" kind={a.kind}
+                              iconStart={a.icon} title={a.title}
+                              loading={customsBusy === m.container.containerNo}
+                              disabled={customsBusy !== null}
+                              onClick={() => void recordCustoms(m, a.status)}>
+                              {a.label}
+                            </CalciteButton>
+                          );
+                        })}
+                      </span>
                     );
                   })()}
                 </CalciteTableCell>
@@ -1040,6 +1081,24 @@ export function ContainerMovements() {
                     }
                     const st = lifecycleOf(m);
                     const dir = (m.cargo?.direction ?? '').toUpperCase();
+                    // Released is the END of this lifecycle, not a missing gate. The
+                    // chip used to say so only in a tooltip, so the container's story
+                    // stopped dead at the last step of the demo: no trace that
+                    // cargo.released fired or what it carried. Make it openable.
+                    if (isHandedOver(m.cargo) && !EXPORT_STATES.includes(st) && dir !== 'EXPORT') {
+                      return (
+                        <CalciteButton
+                          scale="s"
+                          appearance="outline"
+                          kind="neutral"
+                          iconStart="hand-point-right"
+                          title="Released — see what UC-2 handed to UC-III, and who owns the truck leg"
+                          onClick={() => setHandoverTarget(m)}
+                        >
+                          Handed to UC-III
+                        </CalciteButton>
+                      );
+                    }
                     // No gate applies: either the export leg (different machine) or
                     // already released. Say which, so an absent button reads as a
                     // reason rather than a gap.
@@ -1111,6 +1170,13 @@ export function ContainerMovements() {
     {selected && <TimelineDrawer move={selected} onClose={() => setSelected(null)} />}
     {workflowTarget && <CargoWorkflowDialog containerNo={workflowTarget} onClose={() => setWorkflowTarget(null)} />}
     {trackTarget && <NldsTrackDialog containerNo={trackTarget} onClose={() => setTrackTarget(null)} />}
+    {handoverTarget && (
+      <Uc3HandoverDialog
+        containerNo={handoverTarget.container.containerNo}
+        cargo={handoverTarget.cargo}
+        onClose={() => setHandoverTarget(null)}
+      />
+    )}
     </>
   );
 }

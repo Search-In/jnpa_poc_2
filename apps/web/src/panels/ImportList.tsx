@@ -41,6 +41,7 @@ import { LifecycleSteps, IMPORT_STEPS, IMPORT_VIEWS, SHARED_SURFACES } from './L
 import { Igm } from './Igm.js';
 import { ScanQueueTable } from './ScanQueue.js';
 import { OocPanel } from './OocPanel.js';
+import { AwaitingOocQueue } from './AwaitingOocQueue.js';
 import { EdoPanel } from './EdoPanel.js';
 import { Smtp } from './CustomsRegisters.js';
 import { tokens } from '../theme/tokens.js';
@@ -467,7 +468,13 @@ export function ImportList({ onOpenTab, jumpToView }: {
 
       {view === 'igm' && <Igm />}
       {view === 'scan' && <ScanQueueTable />}
-      {view === 'ooc' && <OocPanel />}
+      {/* Two tables, deliberately. The queue is the OPERATIONAL worklist (cargo
+          records whose customs_status blocks release); OocPanel below is the FILED
+          register (real ICEGATE CHPOI10 Bills of Entry). They share zero containers
+          — 03_RMS_Scan_Data_Gap.md §6 — so merging them would put rows with one
+          populated column beside filings with twelve. Queue first: it is the thing
+          with work outstanding. */}
+      {view === 'ooc' && <><AwaitingOocQueue /><OocPanel /></>}
       {view === 'edo' && <EdoPanel />}
       {view === 'smtp' && <Smtp />}
       {view === 'overview' && <ImportOverview />}

@@ -18,9 +18,10 @@
  * card can never again be presented as a connector's own report.
  *
  * Service contract (`connectors_common/base.py :: build_app`):
- *   GET  /health        → {sourceSystem, lastGoodPollTs, errorCount, degradation, mode, note}
+ *   GET  /health        → {sourceSystem, lastGoodPollTs, errorCount, degradation, mode, upstream, note}
  *   POST /poll          → {emitted, tier, health}
- *   POST /inject-fault  → {level: "AMBER"|"RED"|null} → the health dict
+ *   POST /inject-fault  → {level: "AMBER"|"RED"|null, repoll?} → the health dict
+ *   POST /drill         → {sourceSystem, liveUpstreamConfigured, steps[], allMatched}
  *   GET  /published     → [{topic, event}]  (last 50)
  */
 import type { Degradation, IntegrationHealth, IntegrationMode, SourceSystem } from '@jnpa/schemas';
@@ -49,6 +50,8 @@ export interface ConnectorHealthBody {
   errorCount: number;
   degradation: string;
   mode: string;
+  /** Which upstream served this tier (UC2-041); absent on an older connector. */
+  upstream?: string | null;
   note?: string | null;
 }
 
@@ -78,6 +81,8 @@ export interface ConnectorDeps {
    * the whole point of keeping one.
    */
   timeoutMs?: number;
+  /** Separate, larger budget for `POST /drill` — see {@link runDrill}. */
+  drillTimeoutMs?: number;
 }
 
 async function withTimeout<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -119,6 +124,7 @@ export function toIntegrationHealth(
     degradation: degradation as Degradation,
     mode: mode as IntegrationMode,
     ...(body.note ? { note: body.note } : {}),
+    ...(body.upstream ? { upstream: body.upstream } : {}),
     source: 'CONNECTOR',
   };
 }
@@ -169,6 +175,61 @@ export async function injectFault(
       });
       if (!res.ok) return null;
       return toIntegrationHealth((await res.json()) as ConnectorHealthBody, sourceSystem);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** One step of the chaos rehearsal, as the connector reports it. */
+export interface ConnectorDrillStep {
+  step: string;
+  injected: 'AMBER' | 'RED' | null;
+  expectedTier: string;
+  tier: string;
+  matched: boolean;
+  emitted: number;
+  mode: string;
+  degradation: string;
+  upstream: string | null;
+  note: string | null;
+  why: string;
+}
+
+/** The whole rehearsal transcript for one source. */
+export interface ConnectorDrillReport {
+  sourceSystem: string;
+  liveUpstreamConfigured: boolean;
+  steps: ConnectorDrillStep[];
+  allMatched: boolean;
+}
+
+/**
+ * `POST /drill` — the UC2-041 rehearsal, run inside the connector.
+ *
+ * Server-side on purpose. Walking the tiers from the browser would mean four
+ * round-trips whose ordering the network could disturb, and the transcript would
+ * be assembled by the thing being tested. Here the connector performs four real
+ * polls under four real injected conditions and hands back what happened,
+ * including the steps that did NOT reach their tier.
+ *
+ * The budget is generous because a drill is four polls, each of which may make a
+ * live upstream call — this is the one endpoint that is allowed to take seconds.
+ */
+export async function runDrill(
+  deps: ConnectorDeps,
+  slug: string,
+): Promise<ConnectorDrillReport | null> {
+  const fetchImpl = deps.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+  try {
+    return await withTimeout(deps.drillTimeoutMs ?? 30000, async (signal) => {
+      const res = await fetchImpl(`${deps.baseUrlFor(slug).replace(/\/$/, '')}/drill`, {
+        method: 'POST', signal,
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as ConnectorDrillReport;
+      // A transcript with no steps proves nothing and must not render as a pass.
+      return Array.isArray(body?.steps) && body.steps.length > 0 ? body : null;
     });
   } catch {
     return null;

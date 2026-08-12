@@ -179,6 +179,17 @@ class FaultStore {
   ackReconciliation = (index: number) =>
     this.set((s) => ({ ...s, reconciliations: s.reconciliations.filter((_, i) => i !== index) }));
 
+  /**
+   * Force every subscriber to re-read, without changing any fault (UC2-041).
+   *
+   * The console now POSTs to real connectors, whose health lives on the service
+   * rather than in this store. Nothing in the store changes when a connector
+   * accepts an injection, so the panels bound to `useFaultDep` would keep
+   * rendering the pre-injection card until something else happened to move.
+   * This is the "reality moved, come and look" signal.
+   */
+  bump = () => this.set((s) => ({ ...s }));
+
   /** Reset every source back to healthy LIVE. */
   resetAll = () => this.set((s) => ({ ...s, sources: baseState().sources, reconciliations: [] }));
 
@@ -195,12 +206,25 @@ export const faultStore = new FaultStore();
  * quality drop; stale → a "serving old timestamps" note. This is what makes the
  * HealthCards tab + Operator Banner react live to the console (fallback tiers
  * come straight from the existing IntegrationMode: LIVE→CACHED→SYNTHETIC).
+ *
+ * ⚠ A CONNECTOR-BACKED CARD IS NEVER OVERWRITTEN (UC2-041).
+ *
+ * This function spreads `...h`, so before this guard it rewrote `degradation`
+ * and `mode` while leaving `source: 'CONNECTOR'` untouched — a browser-invented
+ * AMBER/CACHED presented as the connector's own report. That is precisely the
+ * confusion UC2-040 spent a ticket removing, reintroduced one layer up.
+ *
+ * The rule now: when a real connector answered, the console drives THAT
+ * connector (`POST /inject-fault`) and its own `/health` is the only thing that
+ * may change the card. The browser overlay applies solely to cards the browser
+ * already produced, which is exactly the demo-laptop case it was written for.
  */
 export function applyIntegrationFaults(
   base: IntegrationHealth[],
   faults: FaultState,
 ): IntegrationHealth[] {
   return base.map((h) => {
+    if (h.source === 'CONNECTOR') return h;
     const f = faults.sources[h.sourceSystem];
     if (!f) return h;
     const offline = f.killed || f.mode === 'OFFLINE';

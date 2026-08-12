@@ -104,6 +104,24 @@ export function HealthCards() {
                   Errors: {h.errorCount}
                   <br />
                   Last poll: {h.lastGoodPollTs ? new Date(h.lastGoodPollTs).toLocaleString() : '—'}
+                  {/* WHICH upstream served this tier (UC2-041). `mode: LIVE` on
+                      its own became ambiguous the moment the connectors gained a
+                      live tier that answers — it can mean the source was
+                      onboarded, or that the connector read the ingested corpus
+                      from POC-3. Those are very different claims to make. */}
+                  {h.upstream && (
+                    <>
+                      <br />
+                      <span style={{ opacity: 0.9 }}>via {h.upstream}</span>
+                    </>
+                  )}
+                  {/* The reason, which the connector has always produced and
+                      nothing ever rendered: how stale the cache is, or which
+                      credential is missing. It is the most useful line on a
+                      degraded card. */}
+                  {h.note && (
+                    <div style={{ marginTop: 4, lineHeight: 1.35, opacity: 0.9 }}>{h.note}</div>
+                  )}
                 </div>
                 <div slot="footer-start" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   {modeBadge(h.mode)}

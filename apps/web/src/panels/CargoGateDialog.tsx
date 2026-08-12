@@ -73,6 +73,15 @@ export function CargoGateDialog({
   const [block, setBlock] = useState(yardBlock ?? '');
   const ui = gateUi(gate, verifyKind);
   const needsBlock = gate === 'yard' && !block.trim();
+  /**
+   * The customs gate, which the SERVER enforces on release (`409
+   * customs_not_cleared`). Computed here rather than inside the notice below so
+   * the footer can disable the CTA too: offering a button whose only possible
+   * outcome is a 409 is what made a correctly-blocked release read as a broken
+   * one — the operator clicked Confirm and got told a duplicate record existed.
+   */
+  const clash = gate === 'release' ? customsLifecycleConflict(customsStatus, 'VERIFIED') : null;
+  const customsBlocked = !!clash?.blocksRelease;
 
   const run = async (pass = true) => {
     if (busy || done) return;
@@ -170,29 +179,28 @@ export function CargoGateDialog({
 
               {note}
 
-              {/* The lifecycle and the customs disposition are independent tracks:
-                  release is gated on VERIFIED and does NOT consult customs_status,
-                  so the server will permit this. Warn rather than block — refusing
-                  something the API allows would be its own kind of misdirection,
-                  but letting it pass silently would hide a live customs hold.
-
-                  ⚠ This used to test `customsStatus === 'HELD'` only, which let a
-                  container UNDER EXAMINATION be released in silence — and released
-                  goods that customs is still examining is not a state any real
-                  container can be in. Both dispositions now warn. */}
-              {gate === 'release' && (() => {
-                const clash = customsLifecycleConflict(customsStatus, 'VERIFIED');
-                if (!clash) return null;
-                return (
-                  <CalciteNotice open kind="warning" icon="exclamation-mark-triangle" scale="s">
-                    <div slot="title">
-                      Customs {customsStatus === 'HELD' ? 'has this container on HOLD'
-                        : 'still has this container under examination'}
-                    </div>
-                    <div slot="message">{clash.message}</div>
-                  </CalciteNotice>
-                );
-              })()}
+              {/* The lifecycle and the customs disposition are INDEPENDENT tracks,
+                  but release consults BOTH: the server refuses to release goods
+                  customs is holding or examining. Show that as the block it is,
+                  before the click, instead of letting the operator discover it as
+                  a 409 afterwards. */}
+              {clash && (
+                <CalciteNotice open kind="danger" icon="exclamation-mark-triangle" scale="s">
+                  <div slot="title">
+                    Customs {customsStatus === 'HELD' ? 'has this container on HOLD'
+                      : 'still has this container under examination'}
+                  </div>
+                  <div slot="message">
+                    {clash.message}{' '}
+                    {/* Name the place. The operator has to leave this dialog to fix
+                        it, and the action is NOT on the Scan step — POST /verify
+                        cannot write customs_status, which is what made a flagged
+                        container look permanently stuck. */}
+                    The <strong>Customs</strong> column on the Movements tab carries the
+                    out-of-charge action for this container.
+                  </div>
+                </CalciteNotice>
+              )}
 
               <CalciteNotice open kind="info" icon="information" scale="s" style={{ marginTop: 8 }}>
                 <div slot="title">{ui.title}</div>
@@ -242,8 +250,10 @@ export function CargoGateDialog({
                 </CalciteButton>
               )}
               <CalciteButton scale="s" kind="brand" iconStart={ui.icon} loading={busy}
-                disabled={busy || needsBlock}
-                title={needsBlock ? 'Enter the yard block first' : undefined}
+                disabled={busy || needsBlock || customsBlocked}
+                title={needsBlock ? 'Enter the yard block first'
+                  : customsBlocked ? 'Customs has not granted out-of-charge — the port will refuse this release'
+                    : undefined}
                 onClick={() => run(true)}>
                 {ui.cta}
               </CalciteButton>

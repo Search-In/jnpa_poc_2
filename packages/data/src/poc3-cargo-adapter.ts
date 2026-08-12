@@ -55,6 +55,8 @@ import type {
   EdoRecord,
   EirTransaction,
   EmptyPoolDTO,
+  GateEvent,
+  GateEventFilter,
   GateMovement,
   GateMovementGate,
   GateOpsDTO,
@@ -103,6 +105,23 @@ import type {
 import { mapCargoToMovement, mapCargoToScanEvent } from './cargo-mapper.js';
 
 /**
+ * The structured `detail` object the POC-3 gateway returns on a 4xx
+ * (`gateway/routers/cargo.py`). `error` names WHICH situation this is — the same
+ * HTTP status covers several — and the backend's own operator-ready sentence, when
+ * it wrote one, arrives under `message` (the customs gate) or a NESTED `detail`
+ * (the 400 validation_error). Both spellings are read; neither is guaranteed.
+ */
+export interface CargoErrorDetail {
+  error?: string;
+  message?: string;
+  detail?: string;
+  container_number?: string;
+  customs_status?: string;
+  current_status?: string;
+  attempted_status?: string;
+}
+
+/**
  * Typed error for every non-2xx response from the POC-3 Cargo API. Carries the
  * HTTP `status` so the UI can render a specific message per case (401/404/409/500)
  * and `userMessage` gives that ready-made, human-readable string.
@@ -120,6 +139,67 @@ export class CargoApiError extends Error {
     this.detail = detail;
   }
 
+  /**
+   * The backend's `detail` parsed back into the object it was sent as.
+   * {@link Poc3CargoAdapter.fail} JSON-stringifies a structured detail so `detail`
+   * stays a plain string for logging; the messages below need the fields back.
+   */
+  private get parsedDetail(): CargoErrorDetail | undefined {
+    if (!this.detail || this.detail[0] !== '{') return undefined;
+    try {
+      const parsed: unknown = JSON.parse(this.detail);
+      return parsed && typeof parsed === 'object' ? parsed as CargoErrorDetail : undefined;
+    } catch {
+      return undefined; /* not JSON after all — the raw string is the message */
+    }
+  }
+
+  /**
+   * The backend's own sentence, wherever it put it — `message` (the customs gate)
+   * or a nested `detail` (the 400 validation_error) — else the raw detail string
+   * when it was never structured. Never the JSON blob: a structured detail with
+   * neither field has nothing human-readable in it, so the caller's own wording
+   * is the better answer than showing the operator a serialised object.
+   */
+  private get detailMessage(): string | undefined {
+    const d = this.parsedDetail;
+    if (!d) return this.detail;
+    return d.message ?? (typeof d.detail === 'string' ? d.detail : undefined);
+  }
+
+  /**
+   * 409 is SEVERAL different situations on this API, and reporting them all as a
+   * duplicate record sent operators looking for a duplicate that did not exist.
+   *
+   *   duplicate_container  POST /api/cargo only — the record already exists.
+   *   customs_not_cleared  release refused because customs holds or is examining
+   *                        the goods. NOT a lifecycle fault: the box has passed
+   *                        every port gate, it is the goods that may not leave.
+   *   illegal_transition   a lifecycle gate ahead of this one has not been passed.
+   *
+   * The customs case ships its own operator-ready sentence, so prefer the
+   * backend's wording verbatim rather than paraphrasing it out of sync here.
+   */
+  private get conflictMessage(): string {
+    const d = this.parsedDetail;
+    const written = this.detailMessage;
+    if (written) return written;
+    switch (d?.error) {
+      case 'duplicate_container':
+        return 'A cargo record with this container number already exists.';
+      case 'customs_not_cleared':
+        return 'Customs has not released these goods'
+          + `${d.customs_status ? ` (customs status ${d.customs_status})` : ''} — a container `
+          + 'that is held or under examination cannot be released from the port.';
+      case 'illegal_transition':
+        return `This container is ${d.current_status || 'not in a state'} and cannot advance `
+          + `to ${d.attempted_status || 'the requested state'} — the lifecycle gate before it `
+          + 'has not been passed yet.';
+      default:
+        return "This operation conflicts with the container's current state.";
+    }
+  }
+
   /** A human-readable message for the panel notices, keyed on the HTTP status. */
   get userMessage(): string {
     switch (this.status) {
@@ -130,13 +210,13 @@ export class CargoApiError extends Error {
       case 404:
         return 'Container not found in the shared Cargo backend.';
       case 409:
-        return 'A cargo record with this container number already exists.';
+        return this.conflictMessage;
       case 400:
-        return this.detail || 'Invalid cargo details — check the container number (ISO-6346) and field values.';
+        return this.detailMessage || 'Invalid cargo details — check the container number (ISO-6346) and field values.';
       case 500:
         return 'The shared Cargo backend encountered an error. Please retry.';
       default:
-        return this.detail || `Cargo request failed (HTTP ${this.status}).`;
+        return this.detailMessage || `Cargo request failed (HTTP ${this.status}).`;
     }
   }
 }
@@ -900,6 +980,27 @@ export class Poc3CargoAdapter implements DataAdapter {
       limit: String(filter.limit ?? 500),
       offset: String(filter.offset ?? 0),
     });
+  }
+
+  /**
+   * Recorded gate crossings (`GET /api/gate/events`) — UC-III's `core.gate_event`.
+   *
+   * The missing half of the integration. UC-III's job flow writes the crossing
+   * here and updates only `customs_status` on `core.cargo`, so a completed
+   * gate-out never reached any UC-2 panel: the Gate tab reads `core.eir`,
+   * `core.pin_ticket` and CODECO, none of which UC-III touches.
+   *
+   * Returns `{items, count}` rather than a bare array, so it cannot go through
+   * `getList` (which also reads X-Total-Count — this endpoint sends none).
+   */
+  async getGateEvents(filter: GateEventFilter = {}): Promise<GateEvent[]> {
+    const qs = new URLSearchParams();
+    if (filter.containerNo) qs.set('container', filter.containerNo.trim().toUpperCase().replace(/\s+/g, ''));
+    if (filter.plate) qs.set('plate', filter.plate);
+    if (filter.jobId != null) qs.set('job_id', String(filter.jobId));
+    qs.set('limit', String(filter.limit ?? 100));
+    const body = await this.getJson<{ items?: GateEvent[] }>(`/api/gate/events?${qs.toString()}`);
+    return Array.isArray(body?.items) ? body.items : [];
   }
 
   // 12b) Shipping-lines API — advance lists (IAL / EAL) ----------------------

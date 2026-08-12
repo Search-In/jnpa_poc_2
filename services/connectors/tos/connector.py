@@ -8,7 +8,9 @@ from __future__ import annotations
 import os
 import random
 
-from connectors_common.base import BaseConnector, ConnectorConfig
+from typing import Optional
+
+from connectors_common.base import BaseConnector, ConnectorConfig, ReplaySpec
 from connectors_common.fallback import SourceUnavailable
 from connectors_common.synth import synth_cargo_event
 
@@ -34,6 +36,23 @@ class TosConnector(BaseConnector):
         if not configured:
             raise SourceUnavailable("TOS: no terminal feed configured (set TOS_<terminal>_URL or _DROP_DIR)")
         raise SourceUnavailable("TOS: live terminal feed not exercised in PoC build")
+
+    def replay_spec(self) -> Optional[ReplaySpec]:
+        """CODECO gate movements stand in for the terminals' own feeds (UC2-041).
+
+        A CODECO is issued BY the terminal operator, so it is genuinely TOS-side
+        data even though POC-3 files it under the shipping-line router.
+
+        ⚠ The event type is `GATE_MOVE`, not GATE_IN or GATE_OUT. The persisted
+        row (`core.codeco_movement`) has no direction column — the dashboard's
+        direction chip derives it elsewhere — and picking one here would be a
+        guess dressed as a fact. The payload carries what the row does say.
+        """
+        return ReplaySpec(
+            path="/api/shipping-lines/gate-movements",
+            event_type="GATE_MOVE",
+            payload_keys=("equipment_status", "delivery_mode", "seal_status", "gate_pass_no"),
+        )
 
     def synthetic_poll(self) -> list[dict]:
         n = self._rng.randint(4, 10)
