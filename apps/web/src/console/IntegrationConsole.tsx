@@ -28,7 +28,7 @@
  * real polls under four real injected conditions and returns what happened,
  * including the steps that did not reach their tier.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   CalciteButton, CalciteChip, CalciteIcon, CalciteSegmentedControl,
   CalciteSegmentedControlItem, CalciteSwitch, CalciteNotice, CalciteLoader,
@@ -136,7 +136,12 @@ export function IntegrationConsole() {
     () => (state.open ? adapter.getIntegrationHealth() : Promise.resolve([])),
     [adapter, faultDep, state.open],
   );
-  const cards = new Map((health.data ?? []).map((h) => [h.sourceSystem, h]));
+  // Memoised so `drive`/`runDrill` (which depend on it) keep a stable identity
+  // between health refetches — same data, same Map, fewer callback rebuilds.
+  const cards = useMemo(
+    () => new Map((health.data ?? []).map((h) => [h.sourceSystem, h])),
+    [health.data],
+  );
 
   const [drills, setDrills] = useState<Record<string, DrillReport | null>>({});
   const [running, setRunning] = useState<string | null>(null);

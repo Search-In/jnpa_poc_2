@@ -665,10 +665,14 @@ export function ExportList({ onOpenTab, jumpToView }: {
   const [view, setView] = useState<ExportView>('overview');
 
   // Keyed on the nonce so a repeat request for the same view still applies, and
-  // so the user is not snapped back after navigating away mid-tour.
+  // so the user is not snapped back after navigating away mid-tour. Extracted to
+  // primitives so the effect re-runs on a new request, never on a re-render that
+  // merely rebuilt the jumpToView object.
+  const jumpNonce = jumpToView?.nonce;
+  const jumpView = jumpToView?.view;
   useEffect(() => {
-    if (jumpToView) setView(jumpToView.view as ExportView);
-  }, [jumpToView?.nonce]);
+    if (jumpNonce !== undefined && jumpView) setView(jumpView as ExportView);
+  }, [jumpNonce, jumpView]);
 
   return (
     <>

@@ -15,8 +15,8 @@ beforeEach(() => {
 });
 
 describe('scenario tour engine', () => {
-  it('exposes the six §8.2 scenarios S1–S6', () => {
-    expect(SCENARIO_SCRIPTS.map((s) => s.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5', 'S6']);
+  it('exposes the §8.2 scenarios S1–S6 plus the S7 monsoon chain', () => {
+    expect(SCENARIO_SCRIPTS.map((s) => s.id)).toEqual(['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
     for (const s of SCENARIO_SCRIPTS) expect(s.steps.length).toBeGreaterThan(0);
   });
 

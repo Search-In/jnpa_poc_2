@@ -475,6 +475,11 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     }
   }
 
+  // Deliberately built ONCE: every method reads through layersRef/propsRef (see
+  // rebuildLayers/rebuildOne — no direct prop/state capture), so a first-render
+  // closure can never go stale. Satisfying exhaustive-deps here would mean
+  // wrapping the whole plain-function call graph (rebuildLayers → refreshTraffic
+  // → rebuildAnim …) in cascading useCallbacks — churn with no behaviour change.
   useImperativeHandle(ref, () => ({
     focus: focusAsset,
     clearSelection: clearYardFocus,
@@ -483,6 +488,7 @@ export const PortScene = forwardRef<PortSceneHandle, PortSceneProps>(function Po
     refreshRouteDraw,
     goToPreset,
     setLighting,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
   // ---- init: build the scene view + 3D layers + widgets ONCE ----

@@ -185,8 +185,10 @@ export function screenProvenance(ctx: ProvenanceContext): ScreenProvenance[] {
     {
       tab: 'scenarios',
       provenance: 'SIMULATED',
-      summary: `What-if runs execute against ${sim}. `
-        + 'Nothing here reaches a backend, and no scenario result is persisted.',
+      summary: `What-if runs execute against ${sim}, and the UC-2 scenario `
+        + 'studio computes its two scenarios in this browser from adapter data. '
+        + 'The audited answers are the exception: they fetch figures from the '
+        + 'shared UC-3 engine. No scenario run writes or persists anything.',
     },
     {
       tab: 'workflows',

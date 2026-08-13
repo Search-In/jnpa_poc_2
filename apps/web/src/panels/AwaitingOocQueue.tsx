@@ -187,7 +187,7 @@ function Table({
   const nos = useMemo(() => rows.map((m) => m.container.containerNo), [rows]);
   // One clock read per render, shared by every row: two rows computed a
   // millisecond apart must not disagree about where the day boundary is.
-  const now = useMemo(() => Date.now(), [rows]);
+  const now = Date.now();
   const allSelected = nos.length > 0 && nos.every((cn) => selected.has(cn));
 
   const toggle = (cn: string) => setSelected((s) => {

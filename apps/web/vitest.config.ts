@@ -12,5 +12,12 @@ export default defineConfig({
       '@jnpa/data': alias('../../packages/data/src/index.ts'),
     },
   },
-  test: { globals: true, environment: 'node', include: ['test/**/*.test.ts'] },
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['test/**/*.test.ts'],
+    // scene3d.test.ts OOMs the default worker heap when it runs alongside the
+    // rest of the pool (the ArcGIS scene graph is big); give workers room.
+    poolOptions: { forks: { execArgv: ['--max-old-space-size=4096'] } },
+  },
 });

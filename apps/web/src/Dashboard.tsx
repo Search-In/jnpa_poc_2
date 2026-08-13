@@ -113,8 +113,10 @@ export function Dashboard() {
     return out;
   }, [terminals.data]);
 
-  // Scale flow thickness/counts by the simulator's movement rate.
-  const liveFlows = useMemo(() => applyFlows(flows, sim), [flows, sim.movementRate]);
+  // Scale flow thickness/counts by the simulator's movement rate. `sim` is the
+  // store snapshot (stable between updates), and applyFlows reads only its
+  // movementRate — so depending on the snapshot recomputes at the same moments.
+  const liveFlows = useMemo(() => applyFlows(flows, sim), [flows, sim]);
 
   // Assets the simulator is driving → drawn with a highlight halo on the map.
   // During a guided What-If tour the step's explicit spotlight wins (it may

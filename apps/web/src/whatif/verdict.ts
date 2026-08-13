@@ -264,6 +264,54 @@ function degradedGate(f: VerdictInput["figures"]): Verdict {
   };
 }
 
+/* -- UC-2 locally computed scenarios (not in the shared jnpa-uc3-poc copy) --
+ * These two are COMPUTED IN THIS APP (packages/data/src/uc2), not fetched from
+ * the UC-3 engine, so their builders exist only in the UC-2 copy of this file.
+ */
+
+function uc2ExportLoading(f: VerdictInput["figures"]): Verdict {
+  const feasibility = String(f.feasibility ?? "");
+  const planned = req(f.planned_additional, "planned_additional");
+  const requested = req(f.requested_additional, "requested_additional");
+  const delay = req(f.completion_delay_hours, "completion_delay_hours");
+
+  if (feasibility === "NO_CHANGE") {
+    return {
+      headline: "No additional containers were requested — the original loading and sailing plan stand unchanged.",
+      tone: "ok",
+    };
+  }
+  if (feasibility === "NOT_FEASIBLE") {
+    return {
+      headline: `None of the ${plural(requested, "requested box", "requested boxes")} could be planned — the reasons are in the working, box by box.`,
+      detail: "The original plan is untouched; this was a simulation only.",
+      tone: "critical",
+    };
+  }
+  const partial = feasibility === "PARTIALLY_FEASIBLE";
+  return {
+    headline: `${partial ? `${n(planned, 0)} of the ${plural(requested, "requested box", "requested boxes")}` : `All ${plural(planned, "additional box", "additional boxes")}`} join${planned === 1 && !partial ? "s" : ""} the load list, and loading ${verb(planned, "runs", "runs")} ${hours(delay)} longer.`,
+    detail:
+      "Absolute sailing times are unavailable in this data — the sailing plan shifts by the same margin under the declared assumption. Vessel slot capacity could not be verified and is reported as unavailable, not assumed.",
+    tone: partial ? "warning" : "ok",
+  };
+}
+
+function uc2RtgPeak(f: VerdictInput["figures"]): Verdict {
+  const rank1 = String(f.rank1_strategy ?? "").replace(/_/g, " ").toLowerCase();
+  const rank2 = String(f.rank2_strategy ?? "").replace(/_/g, " ").toLowerCase();
+  if (!rank1 || !rank2) throw new Error("verdict: missing ranked strategies");
+  const moves = req(f.rank1_moves_served, "rank1_moves_served");
+  const over = f.demand_exceeds_capacity === true;
+  return {
+    headline: `Across ${plural(f.blocks_selected, "block")} at simultaneous peak, ${rank1} dispatch ranks first (${n(moves, 0)} moves served) and ${rank2} second.`,
+    detail: over
+      ? "Demand exceeds the configured peak capacity on at least one block — the strategy table shows where the queues form and which plan drains them fastest."
+      : "Demand stays within the configured peak capacity, so the strategies separate on idle time rather than queue relief.",
+    tone: over ? "warning" : "ok",
+  };
+}
+
 const BY_SCENARIO: Record<string, (f: VerdictInput["figures"], r: VerdictInput["result"]) => Verdict> = {
   "vessel-bunching": vesselBunching,
   "berth-cascade": (f) => berthCascade(f),
@@ -274,6 +322,8 @@ const BY_SCENARIO: Record<string, (f: VerdictInput["figures"], r: VerdictInput["
   "channel-closure": (f) => channelClosure(f),
   "yard-feedback": (f) => yardFeedback(f),
   "degraded-gate": (f) => degradedGate(f),
+  "uc2-export-loading": (f) => uc2ExportLoading(f),
+  "uc2-rtg-peak": (f) => uc2RtgPeak(f),
 };
 
 /**

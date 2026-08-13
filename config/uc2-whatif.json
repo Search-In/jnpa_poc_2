@@ -1,0 +1,48 @@
+{
+  "$comment": "UC-2 What-If parameters (Additional Export Loading + Yard RTG Peak Demand). Same convention as baselines.json: every value cites a source and NONE is a JNPA-confirmed figure. No vessel loading rate, RTG register, RTG productivity rating or per-block capacity exists anywhere in this repository or its feeds (see docs/ASSUMPTIONS.md and the yard-feedback scenario's own assumption trail) — so each entry below is a PARAMETER an evaluator can override here, or per-run in the What-If UI, without a code change. Simulations label them PARAMETER on screen; they must never be presented as measured data.",
+  "exportLoading": {
+    "berthMovesPerHour": {
+      "value": 45.58,
+      "unit": "gross moves/hour per berth",
+      "source": "PARAMETER",
+      "justification": "Fleet-mean gross berth productivity from the one captured UC-3 crane-productivity engine result (apps/web/src/whatif/__fixtures__/live-results.json: fleet_mean_moves_per_hour = 45.58, computed from core.berthing_record). A snapshot used as a planning default — NOT a live feed, and per-crane rates are impossible because cranes_deployed is null on every measured row."
+    }
+  },
+  "rtg": {
+    "rtgsPerBlock": {
+      "value": 2,
+      "unit": "RTGs assigned per yard block (home position)",
+      "source": "PARAMETER",
+      "justification": "No RTG register exists in this repository or its feeds; the only equipment count anywhere is the prose '4 RMGCs' for the BMCT rail yard (seed/jnpa_grounding.json), which is rail-mounted rail-yard equipment, not yard RTGs. Planning default only."
+    },
+    "maxRtgsPerBlock": {
+      "value": 4,
+      "unit": "physical RTG limit per block",
+      "source": "PARAMETER",
+      "justification": "Upper bound for dispatch re-allocation so no strategy stacks the whole fleet in one block. No published per-block gantry limit exists; planning default only."
+    },
+    "peakMovesPerHourPerRtg": {
+      "value": 20,
+      "unit": "moves/hour per RTG at configured peak operation",
+      "source": "PARAMETER",
+      "justification": "No rated RTG productivity exists in this repository. The only measured productivity anywhere is berth-level (45.58 gross moves/h per berth, all cranes combined) which cannot be decomposed per machine. Planning default an operator must review."
+    },
+    "demandMultiplier": {
+      "value": 1.5,
+      "unit": "x observed peak-hour demand",
+      "source": "PARAMETER",
+      "justification": "The scenario's stress lever: hypothetical simultaneous demand = each block's observed peak-hour rate x this factor. 1.0 replays the observed peak simultaneously across blocks; >1 stresses beyond it."
+    },
+    "stressHours": {
+      "value": 4,
+      "unit": "hours of simultaneous peak demand",
+      "source": "PARAMETER",
+      "justification": "Duration the simultaneous peak is held before demand returns to zero and queues drain. Planning default."
+    },
+    "scoringWeights": {
+      "value": { "idle": 0.334, "delay": 0.333, "throughput": 0.333 },
+      "source": "PARAMETER",
+      "justification": "Equal weighting of the three stated objectives (minimise idle time, reduce handling delays, maximise throughput). Shown on screen with the ranking; an evaluator can re-weight here."
+    }
+  }
+}

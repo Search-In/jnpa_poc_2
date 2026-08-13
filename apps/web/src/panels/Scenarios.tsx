@@ -22,6 +22,7 @@ import { simStore } from '../sim/simStore.js';
 import { useSimStore } from '../sim/useSimStore.js';
 import { SCENARIO_SCRIPTS } from '../sim/scenarioPlayer.js';
 import { AuditedAnswer } from '../whatif/AuditedAnswer.js';
+import { Uc2WhatIf } from '../whatif/Uc2WhatIf.js';
 
 export function Scenarios({ onResult }: { onResult?: (r: ScenarioResultDTO) => void }) {
   const { adapter, lang } = useApp();
@@ -59,6 +60,14 @@ export function Scenarios({ onResult }: { onResult?: (r: ScenarioResultDTO) => v
               audited answer; S1-S6 below are the walkthrough. */}
           <div style={{ marginTop: 12 }}>
             <AuditedAnswer />
+          </div>
+
+          {/* The two UC-2 requirements, computed locally by the pure engines in
+              @jnpa/data. Between the audited answers (remote) and the guided
+              walkthroughs (narrative) because they are the app's own auditable
+              simulations. */}
+          <div style={{ marginTop: 12 }}>
+            <Uc2WhatIf />
           </div>
 
           <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>

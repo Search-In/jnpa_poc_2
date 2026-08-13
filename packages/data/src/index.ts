@@ -34,6 +34,21 @@ export { mapCargoToMovement } from './cargo-mapper.js';
 // The deterministic scenario engine is reused by services/scenarios over the bus.
 export { runMockScenario } from './scenarios-mock.js';
 export type { ScenarioContext } from './scenarios-mock.js';
+// UC-2 local What-If engines (Additional Export Loading + Yard RTG Peak Demand).
+// Pure, deterministic, non-destructive; envelope mirrors the audited-answer shape.
+export {
+  runExportLoadingScenario, UC2_EXPORT_LOADING_ID, DEFAULT_BERTH_MOVES_PER_HOUR,
+} from './uc2/export-loading.js';
+export type { ExportLoadingInput, ExportLoadingParams } from './uc2/export-loading.js';
+export {
+  runRtgPeakScenario, nominalYardBlocks, DEFAULT_RTG_PARAMS,
+  UC2_RTG_PEAK_ID, BLOCKS_PER_TERMINAL,
+} from './uc2/rtg-dispatch.js';
+export type { RtgDispatchInput, RtgParams, StrategyId, StrategyMetrics } from './uc2/rtg-dispatch.js';
+export { UC2_HYPOTHETICAL_NOTICE } from './uc2/envelope.js';
+export type {
+  Uc2AnswerResult, Uc2Assumption, Uc2AssumptionSource, Uc2Query,
+} from './uc2/envelope.js';
 export { roleVisibleFacilityIds } from './rbac-scope.js';
 export { buildNotifications } from './notifications-derive.js';
 export {

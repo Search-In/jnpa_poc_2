@@ -432,10 +432,14 @@ export function ImportList({ onOpenTab, jumpToView }: {
 
   // Apply a tour's requested view. Keyed on the nonce, not the view string, so a
   // later step asking for the same view still re-applies it — and so the user is
-  // free to navigate away in between without being snapped back.
+  // free to navigate away in between without being snapped back. Extracted to
+  // primitives so the effect re-runs on a new request, never on a re-render that
+  // merely rebuilt the jumpToView object.
+  const jumpNonce = jumpToView?.nonce;
+  const jumpView = jumpToView?.view;
   useEffect(() => {
-    if (jumpToView) setView(jumpToView.view as ImportView);
-  }, [jumpToView?.nonce]);
+    if (jumpNonce !== undefined && jumpView) setView(jumpView as ImportView);
+  }, [jumpNonce, jumpView]);
 
   return (
     <>
